@@ -13,7 +13,10 @@ export default class PostgresConnection {
     constructor(host: string, port: number, user: string, password: string, database: string) {
         this.args = {
             host, port, user, password, database,
-            application_name: 'eosio-contract-api'
+            application_name: 'eosio-contract-api',
+            // Fail after some seconds if a connection can't be acquired. An error like this can
+            // help us understand if we have deadlocks due to non-released connections
+            connectionTimeoutMillis: 5_000
         };
         this.pool = new Pool(this.args);
 
