@@ -308,17 +308,15 @@ export default class AtomicMarketHandler extends ContractHandler {
             );
         });
 
-        // Temporary disabled as we have a suspicion that this slows the filler down a lot as
-        // calling the function is really slow. Must be enabled again later.
-        // this.filler.jobs.add('update_atomicmarket_sales_filters', 20, JobQueuePriority.HIGH, async () => {
-        //     await this.connection.database.query(
-        //         'SELECT update_atomicmarket_sales_filters()'
-        //     );
-        //
-        //     await this.connection.database.query(
-        //         'VACUUM atomicmarket_sales_filters_listed'
-        //     );
-        // });
+        this.filler.jobs.add('update_atomicmarket_sales_filters', 20, JobQueuePriority.HIGH, async () => {
+            await this.connection.database.query(
+                'SELECT update_atomicmarket_sales_filters()'
+            );
+
+            await this.connection.database.query(
+                'VACUUM atomicmarket_sales_filters_listed'
+            );
+        });
 
         this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
             await this.connection.database.query(
