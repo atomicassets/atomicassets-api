@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as express from 'express';
+import * as compression from 'compression';
 import {Server} from 'socket.io';
 import * as http from 'http';
 
@@ -133,6 +134,7 @@ export class WebServer {
             }
             next();
         }));
+        this.express.use(compression());
 
         if (this.server.config.rate_limit) {
             const client = this.server.connection.redis.nodeRedis;
