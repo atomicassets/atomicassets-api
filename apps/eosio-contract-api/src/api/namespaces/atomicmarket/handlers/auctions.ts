@@ -1,8 +1,8 @@
 import {buildBoundaryFilter, RequestValues} from '../../utils';
 import {AtomicMarketContext} from '../index';
 import QueryBuilder from '../../../builder';
-import {buildAuctionFilter, hasListingFilter} from '../utils';
-import {buildGreylistFilter, hasAssetFilter, hasDataFilters} from '../../atomicassets/utils';
+import {buildAuctionFilter} from '../utils';
+import {buildGreylistFilter} from '../../atomicassets/utils';
 import {fillAuctions} from '../filler';
 import {formatAuction} from '../format';
 import {ApiError} from '../../../error';
@@ -77,9 +77,7 @@ export async function getAuctionsAction(params: RequestValues, ctx: AtomicMarket
         name: {column: `(COALESCE(asset.mutable_data, '{}') || COALESCE(asset.immutable_data, '{}') || COALESCE(template.immutable_data, '{}'))->>'name'`, nullable: true, numericIndex: false},
     };
 
-    const ignoreIndex = (hasAssetFilter(params) || hasDataFilters(params) || hasListingFilter(params)) && sortMapping[args.sort].numericIndex;
-
-    query.append('ORDER BY ' + sortMapping[args.sort].column + (ignoreIndex ? ' + 1 ' : ' ') + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.auction_id ASC');
+    query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.auction_id ASC');
     query.paginate(args.page, args.limit);
 
     const auctionResult = await ctx.db.query(query.buildString(), query.buildValues());

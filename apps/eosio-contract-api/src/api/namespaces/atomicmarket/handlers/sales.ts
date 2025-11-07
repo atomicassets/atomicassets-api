@@ -1,13 +1,13 @@
 import { buildBoundaryFilter, RequestValues } from '../../utils';
-import { fillSales } from '../filler';
 import { formatSale } from '../format';
 import { ApiError } from '../../../error';
 import { AtomicMarketContext } from '../index';
 import { applyActionGreylistFilters, getContractActionLogs } from '../../../utils';
 import QueryBuilder from '../../../builder';
-import { buildSaleFilter, hasListingFilter } from '../utils';
-import { buildGreylistFilter, hasAssetFilter, hasDataFilters } from '../../atomicassets/utils';
+import {buildSaleFilter} from '../utils';
+import {buildGreylistFilter} from '../../atomicassets/utils';
 import { filterQueryArgs } from '../../validation';
+import { fillSales } from '../filler';
 
 export async function getSaleAction(params: RequestValues, ctx: AtomicMarketContext): Promise<any> {
     const args = await filterQueryArgs(ctx.pathParams, {
@@ -117,9 +117,7 @@ export async function getSalesAction(params: RequestValues, ctx: AtomicMarketCon
         name: {column: `(COALESCE(asset.mutable_data, '{}') || COALESCE(asset.immutable_data, '{}') || COALESCE(template.immutable_data, '{}'))->>'name'`, nullable: true, numericIndex: false},
     };
 
-    const preventIndexUsage = (hasAssetFilter(params) || hasDataFilters(params) || hasListingFilter(params)) && sortMapping[args.sort].numericIndex;
-
-    query.append('ORDER BY ' + sortMapping[args.sort].column + (preventIndexUsage ? ' + 1 ' : ' ') + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.sale_id ASC');
+    query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.sale_id ASC');
     query.paginate(args.page, args.limit);
 
     const saleQuery = await ctx.db.query(query.buildString(), query.buildValues());

@@ -1,8 +1,8 @@
 import { buildBoundaryFilter, RequestValues } from '../../utils';
 import { AtomicMarketContext } from '../index';
 import QueryBuilder from '../../../builder';
-import { buildBuyofferFilter, hasListingFilter } from '../utils';
-import { buildGreylistFilter, hasAssetFilter, hasDataFilters } from '../../atomicassets/utils';
+import { buildBuyofferFilter } from '../utils';
+import { buildGreylistFilter } from '../../atomicassets/utils';
 import { fillBuyoffers } from '../filler';
 import { formatBuyoffer } from '../format';
 import { ApiError } from '../../../error';
@@ -83,9 +83,7 @@ export async function getBuyOffersAction(params: RequestValues, ctx: AtomicMarke
         name: {column: `(COALESCE(asset.mutable_data, '{}') || COALESCE(asset.immutable_data, '{}') || COALESCE(template.immutable_data, '{}'))->>'name'`, nullable: true, numericIndex: false},
     };
 
-    const ignoreIndex = (hasAssetFilter(params) || hasDataFilters(params) || hasListingFilter(params)) && sortMapping[args.sort].numericIndex;
-
-    query.append('ORDER BY ' + sortMapping[args.sort].column + (ignoreIndex ? ' + 1 ' : ' ') + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.buyoffer_id ASC');
+    query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.buyoffer_id ASC');
     query.paginate(args.page, args.limit);
 
     const buyofferResult = await ctx.db.query(query.buildString(), query.buildValues());
