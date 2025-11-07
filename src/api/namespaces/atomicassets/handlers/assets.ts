@@ -6,7 +6,7 @@ import {
 } from '../../utils';
 import { AtomicAssetsContext } from '../index';
 import QueryBuilder from '../../../builder';
-import { buildAssetFilter, buildGreylistFilter, buildHideOffersFilter, hasStrongAssetFilter, hasDataFilters } from '../utils';
+import { buildAssetFilter, buildGreylistFilter, buildHideOffersFilter, hasDataFilters } from '../utils';
 import { ApiError } from '../../../error';
 import { applyActionGreylistFilters, getContractActionLogs } from '../../../utils';
 import { filterQueryArgs, FilterValues } from '../../validation';
@@ -189,7 +189,25 @@ export async function getRawAssetsAction(
         sorting = {column: 'asset.asset_id', nullable: false, numericIndex: true};
     }
 
-    const ignoreIndex = (hasStrongTemplateFilter || await hasStrongAssetFilter(params, ctx) || hasDataFilters(params))
+    // Refined index usage logic to fix timeout issues on simple queries
+    const hasComplexFilters = hasDataFilters(params); // JSONB searches are expensive
+    const hasBroadTemplateSearch = hasStrongTemplateFilter; // Broad template matches
+    
+    // Highly selective filters that should always use indexes (even with other filters)
+    const hasHighlySelectiveFilter = params.owner || params.asset_id;
+    
+    // Simple collection query without complex operations can use index efficiently
+    const isSimpleCollectionQuery = params.collection_name && !hasComplexFilters && !hasBroadTemplateSearch;
+    
+    // Large OFFSET pagination requires index usage (sorting + skipping in memory is extremely slow)
+    const offset = (args.page - 1) * args.limit;
+    const hasLargeOffset = offset > 1000;
+    
+    // Only disable index for complex operations, unless we have highly selective filters or large offset
+    const ignoreIndex = (hasBroadTemplateSearch || hasComplexFilters)
+        && !hasHighlySelectiveFilter
+        && !isSimpleCollectionQuery
+        && !hasLargeOffset
         && sorting.numericIndex;
 
     query.append('ORDER BY ' + sorting.column + (ignoreIndex ? ' + 1 ' : ' ') + args.order + ' ' + (sorting.nullable ? 'NULLS LAST' : '') + ', asset.asset_id ASC');
