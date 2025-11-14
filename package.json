@@ -10,6 +10,8 @@
     "lint": "eslint \"src/**/*.ts\"",
     "build": "pnpm run clean && tsc",
     "test": "mocha -r ts-node/register 'src/**/*.test.ts'",
+    "start": "node ./build/bin/server.js",
+    "start:eosio-contract-api": "node ./build/bin/server.js",
     "start:server": "node ./build/bin/server.js",
     "start:filler": "node ./build/bin/filler.js",
     "start:abiscan": "node ./build/bin/abiscan.js",
