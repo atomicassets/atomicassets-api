@@ -1,21 +1,23 @@
-FROM node:16-alpine
+# Use shared base image with Node.js, pnpm, and workspace dependencies pre-installed
+# Base image includes: node:22-alpine, pnpm 10.21.0, workspace deps, shared packages
+FROM local/atomichub-base
 
-RUN adduser --disabled-password application && \
-  mkdir -p /home/application/app/ && \
-  chown -R application:application /home/application
+# Copy service-specific code
+COPY --chown=application:application apps/eosio-contract-api ./apps/eosio-contract-api
 
-USER application
+# Install service dependencies
+RUN pnpm install --frozen-lockfile --filter "@atomichub/eosio-contract-api"
 
-WORKDIR /home/application/app
+# Build service (if build script exists)
+RUN pnpm --filter "@atomichub/eosio-contract-api" run build || true
 
-COPY yarn.lock .
-COPY package.json .
+# Set working directory to service
+WORKDIR /home/application/app/apps/eosio-contract-api
 
-RUN yarn install --ignore-scripts
+ARG VERSION
+ENV NODE_ENV=production
+ENV VERSION=${VERSION}
 
-COPY . .
-
-RUN yarn install
-
-ENV NODE_ENV production
 EXPOSE 9000
+
+CMD ["pnpm", "start"]
