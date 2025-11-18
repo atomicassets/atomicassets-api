@@ -6,7 +6,7 @@ import PostgresConnection from '../connections/postgres';
 import { IReaderConfig } from '../types/config';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const readerConfigs: IReaderConfig[] = require('../../config/readers.config.json');
+const readerConfigs: IReaderConfig[] = require('../../../config/readers.config.json');
 
 export async function upgradeDb(database: PostgresConnection): Promise<void> {
     if (!(await database.tableExists('dbinfo'))) {
