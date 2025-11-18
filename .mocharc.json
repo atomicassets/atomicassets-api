@@ -1,0 +1,7 @@
+{
+  "ui": "bdd",
+  "require": ["ts-node/register", "./test/setup.ts"],
+  "color": true,
+  "timeout": 5000,
+  "exit": true
+}
