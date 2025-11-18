@@ -1,21 +1,29 @@
 {
+  "extends": "@atomichub/tsconfig/service.json",
   "compilerOptions": {
-    "module": "commonjs",
+    "outDir": "./build/src",
+    "rootDir": "./src",
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false,
+    "noImplicitOverride": false,
     "noImplicitAny": false,
-    "target": "es2020",
-    "outDir": "./build",
-    "sourceMap": true,
-    "allowJs": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "noImplicitReturns": false,
     "skipLibCheck": true,
-    "strict": false
+    "declaration": false
   },
-  "include": [
-    "src/**/*"
-  ],
+  "include": ["src/**/*"],
   "exclude": [
     "node_modules",
-    "**/*.test.ts"
+    "../../node_modules",
+    "**/node_modules",
+    "dist",
+    "build",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "test/**/*"
   ]
 }
