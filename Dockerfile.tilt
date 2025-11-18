@@ -1,0 +1,11 @@
+# Tilt Dockerfile - Extends shared base image
+# The base image (local/tilt-base) contains the entire monorepo with node_modules and build artifacts
+# This avoids copying the monorepo 29 times - it's copied once in the base image
+
+FROM local/tilt-base:latest
+
+# Service-specific configuration
+EXPOSE 9000
+
+# Run this specific service
+CMD ["node", "--enable-source-maps", "apps/eosio-contract-api/build/src/bin/server.js"]
