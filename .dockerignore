@@ -1,7 +1,110 @@
-logs
-build
-test
-node_modules
-config
+# .dockerignore - Exclude files from Docker build context
+# This template can be copied to each service directory
 
-docker
+# Build artifacts (generated during build, not needed in context)
+**/build/
+**/dist/
+**/.turbo/
+.turbo-cache/
+**/*.tsbuildinfo
+**/*.d.ts.map
+**/*.js.map
+
+# Dependencies (installed from package.json, not copied)
+**/node_modules/
+
+# Test files (not needed in production images)
+**/*.test.ts
+**/*.test.tsx
+**/*.test.js
+**/*.test.jsx
+**/*.spec.ts
+**/*.spec.tsx
+**/*.spec.js
+**/*.spec.jsx
+**/__tests__/
+**/__mocks__/
+**/test/
+**/tests/
+*.test.json
+**/coverage/
+**/.nyc_output/
+
+# Documentation (not needed in images)
+**/*.md
+!**/README.md
+docs/
+*.mdx
+CHANGELOG*
+
+# IDE and editor files
+**/.vscode/
+**/.idea/
+**/*.swp
+**/*.swo
+**/*~
+.DS_Store
+*.iml
+
+# Git metadata
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# CI/CD configs
+.gitlab-ci.yml
+azure-pipelines.yml
+.circleci/
+**/.travis.yml
+
+# Environment files (secrets should be injected at runtime)
+.env
+.env.*
+!.env.example
+
+# Temporary files
+**/tmp/
+**/temp/
+**/*.tmp
+**/*.log
+**/*.pid
+**/*.seed
+
+# Cache directories
+**/.cache/
+**/.eslintcache
+**/.stylelintcache
+**/.parcel-cache/
+
+# Linting configs (not needed at runtime)
+.eslintrc.*
+.prettierrc.*
+.stylelintrc.*
+.editorconfig
+
+# Helm charts and values (infrastructure, not application)
+infrastructure/
+helm-charts/
+**/values-*.yaml
+
+# Local development files
+local-dev/
+Tiltfile
+tilt_modules/
+.tilt-cache/
+kubeconfig*
+
+# Terraform files
+**/*.tf
+**/*.tfvars
+**/.terraform/
+
+# Scripts (usually not needed in runtime image)
+scripts/
+**/*.sh
+!**/docker-entrypoint.sh
+
+# Docker-related files
+Dockerfile
+docker-compose.yml

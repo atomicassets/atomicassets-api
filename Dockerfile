@@ -1,4 +1,9 @@
-# Turbo Prune Dockerfile - Optimized 3-stage build
+# Turbo Prune Dockerfile - Optimized 3-stage build with BuildKit cache mounts
+# USAGE: Copy to apps/<service-name>/Dockerfile and replace:
+#   - @atomichub/eosio-contract-api with actual service package name (e.g., @atomichub/config-service)
+#   - apps/eosio-contract-api with actual service directory (e.g., apps/config-service)
+#   - Port number (default 9000)
+
 # Stage 1: Prepare - Prune monorepo for specific service
 FROM node:22-alpine AS prepare
 
@@ -6,20 +11,36 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 WORKDIR /app
 
-# Copy package files for dependency installation
+# Copy only files needed for turbo prune (minimal context)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY turbo.json ./
 
-# Install all dependencies including turbo (from lockfile)
-RUN pnpm install --frozen-lockfile=true
+# Copy package.json files for all workspaces (needed for dependency graph)
+# This is much lighter than copying entire source code
+COPY apps/*/package.json apps/
+COPY packages/*/package.json packages/
 
-# Copy entire monorepo for pruning
-COPY . .
+# Install only turbo CLI with proper env vars (lightweight, just for pruning)
+# IMPORTANT: PNPM_HOME must be set for global installs
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    export PNPM_HOME="/root/.local/share/pnpm" && \
+    export PATH="$PNPM_HOME:$PATH" && \
+    pnpm add -g turbo
+
+# Copy only the specific service source (needed for turbo prune to analyze)
+COPY apps/eosio-contract-api ./apps/eosio-contract-api
+
+# Copy shared packages source (needed for dependency resolution)
+COPY packages ./packages
+
+# Set ENV for global pnpm packages
+ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
 
 # Prune to create minimal workspace for this service
-RUN pnpm exec turbo prune @atomichub/eosio-contract-api --docker
+RUN turbo prune @atomichub/eosio-contract-api --docker
 
-# Stage 2: Builder - Install dependencies, type check, and build
+# Stage 2: Builder - Install dependencies and build
 FROM node:22-alpine AS builder
 
 RUN corepack enable && corepack prepare pnpm@latest --activate
@@ -32,19 +53,19 @@ RUN adduser --disabled-password application && \
 USER application
 WORKDIR /home/application/app
 
-# Copy pruned package.json files (for dependency installation)
-# This layer is cached unless lockfile changes
+# Copy pruned package.json files
 COPY --from=prepare --chown=application:application /app/out/json/ .
 
-# Install dependencies (cached unless lockfile changes)
-RUN pnpm install --frozen-lockfile=true
+# Install dependencies from pruned workspace with cache mount
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=1000,gid=1000 \
+    pnpm install --frozen-lockfile=true
 
-# Copy pruned source code and build configuration
+# Copy pruned source code
 COPY --from=prepare --chown=application:application /app/out/full/ .
 
-
-# Build the service (already type-checked)
-RUN pnpm turbo run build --filter="@atomichub/eosio-contract-api..."
+# Build the service with cache mount for turbo cache
+RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=1000 \
+    pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
 FROM node:22-alpine AS runtime
@@ -72,5 +93,4 @@ ENV VERSION=${VERSION}
 EXPOSE 9000
 
 # Run service directly with node (keeps CWD at /home/application/app where configs are mounted)
-# Default: server (for filler use: apps/eosio-contract-api/build/src/bin/filler.js, for abiscan: apps/eosio-contract-api/build/src/bin/abiscan.js)
-CMD ["node", "apps/eosio-contract-api/build/src/bin/server.js"]
+CMD ["node", "--enable-source-maps", "apps/eosio-contract-api/build/src/bin/server.js"]
