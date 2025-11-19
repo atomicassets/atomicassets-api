@@ -92,5 +92,5 @@ ENV VERSION=${VERSION}
 
 EXPOSE 9000
 
-# Run service directly with node (keeps CWD at /home/application/app where configs are mounted)
-CMD ["node", "--enable-source-maps", "apps/eosio-contract-api/build/src/bin/server.js"]
+# Run service from its directory so ./definitions paths work, but configs are still at /home/application/app/config
+CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/src/bin/server.js"]
