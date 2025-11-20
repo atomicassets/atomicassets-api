@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # Turbo Prune Dockerfile - Optimized 3-stage build with BuildKit cache mounts
 # USAGE: Copy to apps/<service-name>/Dockerfile and replace:
 #   - @atomichub/eosio-contract-api with actual service package name (e.g., @atomichub/config-service)
@@ -87,6 +88,9 @@ COPY --from=builder --chown=application:application /home/application/app .
 # This allows services to find config files using relative paths like ../config/config.json
 
 ARG VERSION
+# Disable telemetry
+ENV DO_NOT_TRACK=1
+
 ENV NODE_ENV=production
 ENV VERSION=${VERSION}
 
