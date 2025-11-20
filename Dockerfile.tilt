@@ -68,6 +68,9 @@ WORKDIR /home/application/app
 # Copy built application from builder
 COPY --from=builder --chown=application:application /home/application/app .
 
+# Disable telemetry
+ENV DO_NOT_TRACK=1
+
 ENV NODE_ENV=production
 
 EXPOSE 9000
