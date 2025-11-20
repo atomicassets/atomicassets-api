@@ -1,10 +1,67 @@
-# Tilt Dockerfile - Extends shared base image
-# The base image (local/tilt-base) contains the entire monorepo with node_modules and build artifacts
-# This avoids copying the monorepo 29 times - it's copied once in the base image
+# Tilt Dockerfile - Optimized 3-stage build with turbo prune
+# This avoids rebuilding all services when only one changes
 
+# Stage 1: Prepare - Prune monorepo to only this service + dependencies
+FROM node:22-alpine AS prepare
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy only files needed for turbo prune (minimal context)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+
+# Copy package.json files for dependency graph
+COPY apps/*/package.json apps/
+COPY packages/*/package.json packages/
+
+# Install turbo CLI (lightweight, just for pruning)
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    export PNPM_HOME="/root/.local/share/pnpm" && \
+    export PATH="$PNPM_HOME:$PATH" && \
+    pnpm add -g turbo
+
+# Copy this service's source (needed for turbo prune analysis)
+COPY apps/eosio-contract-api ./apps/eosio-contract-api
+
+# Copy shared packages source (needed for dependency resolution)
+COPY packages ./packages
+
+# Set ENV for global pnpm packages
+ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+# Prune to create minimal workspace for this service
+RUN turbo prune @atomichub/eosio-contract-api --docker
+
+# Stage 2: Builder - Install dependencies and build
+FROM localhost:5005/tilt-base:latest AS builder
+
+WORKDIR /home/application/app
+
+# Copy pruned package.json files
+COPY --from=prepare --chown=application:application /app/out/json/ .
+COPY --from=prepare --chown=application:application /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
+
+# Install dependencies from pruned workspace
+RUN pnpm install --frozen-lockfile
+
+# Copy pruned source code
+COPY --from=prepare --chown=application:application /app/out/full/ .
+
+# Build the service
+RUN pnpm turbo run build --filter="@atomichub/eosio-contract-api..."
+
+# Stage 3: Runtime - Extends base runtime image
 FROM localhost:5005/tilt-base:latest
 
-# Service-specific configuration
+WORKDIR /home/application/app
+
+# Copy built application from builder
+COPY --from=builder --chown=application:application /home/application/app .
+
+ENV NODE_ENV=production
+
 EXPOSE 9000
 
 # Run this specific service
