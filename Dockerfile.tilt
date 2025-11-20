@@ -76,4 +76,4 @@ ENV NODE_ENV=production
 EXPOSE 9000
 
 # Run this specific service
-CMD ["node", "--enable-source-maps", "apps/eosio-contract-api/build/src/bin/server.js"]
+CMD ["node", "--enable-source-maps", "apps/eosio-contract-api/build/bin/server.js"]
