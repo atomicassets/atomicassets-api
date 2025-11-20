@@ -50,6 +50,9 @@ WORKDIR /home/application/app
 # Copy pruned package.json files
 COPY --from=prepare --chown=application:application /app/out/json/ .
 
+# Copy turbo.json (needed for turbo to execute build tasks)
+COPY --from=prepare --chown=application:application /app/out/full/turbo.json ./turbo.json
+
 # Copy workspace packages source BEFORE install (needed for pnpm workspace links)
 COPY --from=prepare --chown=application:application /app/out/full/packages/ ./packages/
 
@@ -69,9 +72,6 @@ WORKDIR /home/application/app
 
 # Copy built application from builder
 COPY --from=builder --chown=application:application /home/application/app .
-
-# Disable telemetry
-ENV DO_NOT_TRACK=1
 
 ENV NODE_ENV=production
 
