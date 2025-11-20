@@ -1,17 +1,17 @@
 import 'mocha';
-import {expect} from 'chai';
-import {RequestValues} from '../../utils';
-import {initAtomicMarketTest} from '../test';
-import {getTestContext} from '../../../../utils/test';
-import {getSalesV2Action} from './sales2';
-import {SaleApiState} from '../index';
-import {OfferState} from '../../../../filler/handlers/atomicassets';
-import {SaleState} from '../../../../filler/handlers/atomicmarket';
-import {ApiError} from '../../../error';
+import { expect } from 'chai';
+import { RequestValues } from '../../utils';
+import { initAtomicMarketTest } from '../test';
+import { getTestContext } from '../../../../utils/test';
+import { getSalesV2Action } from './sales2';
+import { SaleApiState } from '../index';
+import { OfferState } from '../../../../filler/handlers/atomicassets';
+import { SaleState } from '../../../../filler/handlers/atomicmarket';
+import { ApiError } from '../../../error';
 
-const {client, txit} = initAtomicMarketTest();
+const { client, txit } = initAtomicMarketTest();
 
-async function getSalesIds(values: RequestValues, options = {refresh: true}): Promise<Array<number>> {
+async function getSalesIds(values: RequestValues, options = { refresh: true }): Promise<Array<number>> {
     const testContext = getTestContext(client);
 
     if (options.refresh) {
@@ -26,18 +26,18 @@ async function getSalesIds(values: RequestValues, options = {refresh: true}): Pr
 describe('AtomicMarket Sales API', () => {
     describe('getSalesAction V2', () => {
         txit('works without filters', async () => {
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
             expect(await getSalesIds({})).to.deep.equal([sale_id]);
         });
 
         txit('filters by waiting state', async () => {
             await client.createFullSale();
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 state: SaleState.WAITING,
             });
 
-            expect(await getSalesIds({state: `${SaleApiState.WAITING}`}))
+            expect(await getSalesIds({ state: `${SaleApiState.WAITING}` }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -52,20 +52,20 @@ describe('AtomicMarket Sales API', () => {
                 state: OfferState.ACCEPTED
             }, {});
 
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 state: SaleState.LISTED,
             });
 
-            expect(await getSalesIds({state: `${SaleApiState.LISTED}`}))
+            expect(await getSalesIds({ state: `${SaleApiState.LISTED}` }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by listed state (excluding sales that were unlisted)', async () => {
-            const {sale_id: sale_id2} = await client.createFullSale({
+            const { sale_id: sale_id2 } = await client.createFullSale({
                 state: SaleState.LISTED,
             });
 
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 state: SaleState.LISTED,
             });
 
@@ -73,28 +73,19 @@ describe('AtomicMarket Sales API', () => {
 
             await client.query(`UPDATE atomicmarket_sales SET state = ${SaleState.SOLD} WHERE sale_id = $1`, [sale_id2]);
 
-            expect(await getSalesIds({state: `${SaleApiState.LISTED}`}, {refresh: false}))
+            expect(await getSalesIds({ state: `${SaleApiState.LISTED}` }, { refresh: false }))
                 .to.deep.equal([sale_id]);
         });
 
-        // cancelled sales are not currently stored
-        // txit('filters by canceled state', async () => {
-        //     await client.createSale();
-        //     const {sale_id} = await client.createFullSale({
-        //         state: SaleState.CANCELED,
-        //     });
-        //
-        //     expect(await getSalesIds({state: `${SaleApiState.CANCELED}`}))
-        //         .to.deep.equal([sale_id]);
-        // });
+
 
         txit('filters by sold state', async () => {
             await client.createSale();
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 state: SaleState.SOLD,
             });
 
-            expect(await getSalesIds({state: `${SaleApiState.SOLD}`}))
+            expect(await getSalesIds({ state: `${SaleApiState.SOLD}` }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -107,63 +98,63 @@ describe('AtomicMarket Sales API', () => {
                 state: SaleState.LISTED,
             });
 
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 state: SaleState.LISTED,
             }, {}, {
                 state: OfferState.ACCEPTED,
             });
 
-            expect(await getSalesIds({state: `${SaleApiState.INVALID}`}))
+            expect(await getSalesIds({ state: `${SaleApiState.INVALID}` }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by multiple states', async () => {
             await client.createFullSale();
 
-            const {sale_id: sale_id1} = await client.createFullSale({
+            const { sale_id: sale_id1 } = await client.createFullSale({
                 state: SaleState.WAITING,
             });
 
-            const {sale_id: sale_id2} = await client.createFullSale({
+            const { sale_id: sale_id2 } = await client.createFullSale({
                 state: SaleState.SOLD,
             });
 
-            expect(await getSalesIds({state: `${SaleApiState.WAITING},${SaleApiState.SOLD}`}))
+            expect(await getSalesIds({ state: `${SaleApiState.WAITING},${SaleApiState.SOLD}` }))
                 .to.deep.equal([sale_id2, sale_id1]);
         });
 
         txit('filters by minimum asset count', async () => {
             await client.createFullSale();
 
-            const {sale_id, offer_id} = await client.createFullSale({});
-            await client.createOfferAsset({offer_id});
+            const { sale_id, offer_id } = await client.createFullSale({});
+            await client.createOfferAsset({ offer_id });
 
-            expect(await getSalesIds({min_assets: '2'}))
+            expect(await getSalesIds({ min_assets: '2' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by maximum asset count', async () => {
 
-            const {offer_id} = await client.createFullSale({});
-            await client.createOfferAsset({offer_id});
+            const { offer_id } = await client.createFullSale({});
+            await client.createOfferAsset({ offer_id });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({max_assets: '1'}))
+            expect(await getSalesIds({ max_assets: '1' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by settlement symbol', async () => {
 
-            await client.createToken({token_symbol: '1TOKEN'});
+            await client.createToken({ token_symbol: '1TOKEN' });
 
             await client.createFullSale({
                 settlement_symbol: '1TOKEN',
             });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({symbol: 'TEST'}))
+            expect(await getSalesIds({ symbol: 'TEST' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -171,36 +162,36 @@ describe('AtomicMarket Sales API', () => {
 
             let err;
             try {
-                await getSalesIds({min_price: '1'});
+                await getSalesIds({ min_price: '1' });
             } catch (e) {
                 err = e;
             }
 
-            expect(err).to.be.instanceof(ApiError);
-            expect(err.message).to.equal('Price range filters require the "symbol" filter');
+            expect(err as any).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Price range filters require the "symbol" filter');
         });
 
         txit('throws error when maximum price filter is set without settlement symbol', async () => {
 
             let err;
             try {
-                await getSalesIds({max_price: '1'});
+                await getSalesIds({ max_price: '1' });
             } catch (e) {
                 err = e;
             }
 
-            expect(err).to.be.instanceof(ApiError);
-            expect(err.message).to.equal('Price range filters require the "symbol" filter');
+            expect(err as any).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Price range filters require the "symbol" filter');
         });
 
         txit('filters by minimum price', async () => {
             await client.createFullSale({});
 
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 listing_price: 200000000,
             });
 
-            expect(await getSalesIds({symbol: 'TEST', min_price: '2'}))
+            expect(await getSalesIds({ symbol: 'TEST', min_price: '2' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -209,9 +200,9 @@ describe('AtomicMarket Sales API', () => {
                 listing_price: 200000000,
             });
 
-            const {sale_id} = await client.createFullSale({});
+            const { sale_id } = await client.createFullSale({});
 
-            expect(await getSalesIds({symbol: 'TEST', max_price: '1'}))
+            expect(await getSalesIds({ symbol: 'TEST', max_price: '1' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -226,11 +217,11 @@ describe('AtomicMarket Sales API', () => {
             await client.createContractCode({
                 account: 'whitelisted',
             });
-            const {sale_id} = await client.createFullSale({
+            const { sale_id } = await client.createFullSale({
                 seller: 'whitelisted',
             });
 
-            expect(await getSalesIds({show_seller_contracts: 'false', contract_whitelist: 'whitelisted,abc'}))
+            expect(await getSalesIds({ show_seller_contracts: 'false', contract_whitelist: 'whitelisted,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -239,9 +230,9 @@ describe('AtomicMarket Sales API', () => {
                 seller: 'blacklisted',
             });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({seller_blacklist: 'blacklisted,abc'}))
+            expect(await getSalesIds({ seller_blacklist: 'blacklisted,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -250,112 +241,112 @@ describe('AtomicMarket Sales API', () => {
                 buyer: 'blacklisted',
             });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({buyer_blacklist: 'blacklisted,abc'}))
+            expect(await getSalesIds({ buyer_blacklist: 'blacklisted,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by accounts', async () => {
             await client.createFullSale();
 
-            const {sale_id: sale_id1} = await client.createFullSale({buyer: 'x'});
-            const {sale_id: sale_id2} = await client.createFullSale({seller: 'x'});
+            const { sale_id: sale_id1 } = await client.createFullSale({ buyer: 'x' });
+            const { sale_id: sale_id2 } = await client.createFullSale({ seller: 'x' });
 
-            expect(await getSalesIds({account: 'x,abc'}))
+            expect(await getSalesIds({ account: 'x,abc' }))
                 .to.deep.equal([sale_id2, sale_id1]);
         });
 
         txit('filters by single seller', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({seller: 'x'});
+            const { sale_id } = await client.createFullSale({ seller: 'x' });
 
-            expect(await getSalesIds({seller: 'x'}))
+            expect(await getSalesIds({ seller: 'x' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by sellers', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({seller: 'x'});
+            const { sale_id } = await client.createFullSale({ seller: 'x' });
 
-            expect(await getSalesIds({seller: 'x,abc'}))
+            expect(await getSalesIds({ seller: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by single buyer', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({buyer: 'x'});
+            const { sale_id } = await client.createFullSale({ buyer: 'x' });
 
-            expect(await getSalesIds({buyer: 'x'}))
+            expect(await getSalesIds({ buyer: 'x' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by buyers', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({buyer: 'x'});
+            const { sale_id } = await client.createFullSale({ buyer: 'x' });
 
-            expect(await getSalesIds({buyer: 'x,abc'}))
+            expect(await getSalesIds({ buyer: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by maker marketplace', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({maker_marketplace: 'x'});
+            const { sale_id } = await client.createFullSale({ maker_marketplace: 'x' });
 
-            expect(await getSalesIds({maker_marketplace: 'x,abc'}))
+            expect(await getSalesIds({ maker_marketplace: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by taker marketplace', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({taker_marketplace: 'x'});
+            const { sale_id } = await client.createFullSale({ taker_marketplace: 'x' });
 
-            expect(await getSalesIds({taker_marketplace: 'x,abc'}))
+            expect(await getSalesIds({ taker_marketplace: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by maker or taker marketplace', async () => {
             await client.createFullSale();
 
-            const {sale_id: sale_id1} = await client.createFullSale({maker_marketplace: 'x'});
-            const {sale_id: sale_id2} = await client.createFullSale({taker_marketplace: 'x'});
+            const { sale_id: sale_id1 } = await client.createFullSale({ maker_marketplace: 'x' });
+            const { sale_id: sale_id2 } = await client.createFullSale({ taker_marketplace: 'x' });
 
-            expect(await getSalesIds({marketplace: 'x,abc'}))
+            expect(await getSalesIds({ marketplace: 'x,abc' }))
                 .to.deep.equal([sale_id2, sale_id1]);
         });
 
         txit('filters by single collection', async () => {
             await client.createFullSale();
 
-            const {sale_id, collection_name} = await client.createFullSale();
+            const { sale_id, collection_name } = await client.createFullSale();
 
-            expect(await getSalesIds({collection_name}))
+            expect(await getSalesIds({ collection_name }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by collections', async () => {
             await client.createFullSale();
 
-            const {sale_id, collection_name} = await client.createFullSale();
+            const { sale_id, collection_name } = await client.createFullSale();
 
-            expect(await getSalesIds({collection_name: `${collection_name},abc`}))
+            expect(await getSalesIds({ collection_name: `${collection_name},abc` }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by minimum and maximum template mint', async () => {
             await client.createFullSale();
-            await client.createFullSale({}, {template_mint: 1});
-            await client.createFullSale({}, {template_mint: 10});
+            await client.createFullSale({}, { template_mint: 1 });
+            await client.createFullSale({}, { template_mint: 10 });
 
-            const {sale_id} = await client.createFullSale({}, {template_mint: 5});
+            const { sale_id } = await client.createFullSale({}, { template_mint: 5 });
 
-            expect(await getSalesIds({min_template_mint: '4', max_template_mint: '6'}))
+            expect(await getSalesIds({ min_template_mint: '4', max_template_mint: '6' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -363,54 +354,54 @@ describe('AtomicMarket Sales API', () => {
             await client.createFullSale();
             await client.createFullSale({});
 
-            const {sale_id} = await client.createFullSale({}, {template_mint: 1});
+            const { sale_id } = await client.createFullSale({}, { template_mint: 1 });
 
-            expect(await getSalesIds({min_template_mint: '1'}))
+            expect(await getSalesIds({ min_template_mint: '1' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset_id', async () => {
             await client.createFullSale();
 
-            const {sale_id, asset_id} = await client.createFullSale();
+            const { sale_id, asset_id } = await client.createFullSale();
 
-            expect(await getSalesIds({asset_id}))
+            expect(await getSalesIds({ asset_id }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset owners', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {owner: 'x'});
+            const { sale_id } = await client.createFullSale({}, { owner: 'x' });
 
-            expect(await getSalesIds({owner: 'x,abc'}))
+            expect(await getSalesIds({ owner: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by single asset owner', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {owner: 'x'});
+            const { sale_id } = await client.createFullSale({}, { owner: 'x' });
 
-            expect(await getSalesIds({owner: 'x'}))
+            expect(await getSalesIds({ owner: 'x' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset burned', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {owner: null});
+            const { sale_id } = await client.createFullSale({}, { owner: null });
 
-            expect(await getSalesIds({burned: 'true'}))
+            expect(await getSalesIds({ burned: 'true' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset not burned', async () => {
-            await client.createFullSale({}, {owner: null});
+            await client.createFullSale({}, { owner: null });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({burned: 'false'}))
+            expect(await getSalesIds({ burned: 'false' }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -419,10 +410,10 @@ describe('AtomicMarket Sales API', () => {
                 template_id: (await client.createTemplate()).template_id,
             });
 
-            const {template_id} = await client.createTemplate();
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate();
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({template_id: `${template_id},-1`}))
+            expect(await getSalesIds({ template_id: `${template_id},-1` }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -431,10 +422,10 @@ describe('AtomicMarket Sales API', () => {
                 template_id: (await client.createTemplate()).template_id,
             });
 
-            const {template_id} = await client.createTemplate();
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate();
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({template_id: `${template_id}`}))
+            expect(await getSalesIds({ template_id: `${template_id}` }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -443,219 +434,219 @@ describe('AtomicMarket Sales API', () => {
                 template_id: (await client.createTemplate()).template_id,
             });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({template_id: 'null'}))
+            expect(await getSalesIds({ template_id: 'null' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by single schema', async () => {
             await client.createFullSale();
 
-            const {schema_name} = await client.createSchema();
-            const {sale_id} = await client.createFullSale({}, {schema_name});
+            const { schema_name } = await client.createSchema();
+            const { sale_id } = await client.createFullSale({}, { schema_name });
 
-            expect(await getSalesIds({schema_name}))
+            expect(await getSalesIds({ schema_name }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by schemas', async () => {
             await client.createFullSale();
 
-            const {schema_name} = await client.createSchema();
-            const {sale_id} = await client.createFullSale({}, {schema_name});
+            const { schema_name } = await client.createSchema();
+            const { sale_id } = await client.createFullSale({}, { schema_name });
 
-            expect(await getSalesIds({schema_name: `${schema_name},z`}))
+            expect(await getSalesIds({ schema_name: `${schema_name},z` }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset being transferable', async () => {
             await client.createFullSale({}, {
-                template_id: (await client.createTemplate({transferable: false})).template_id,
+                template_id: (await client.createTemplate({ transferable: false })).template_id,
             });
 
-            const {template_id} = await client.createTemplate({transferable: true});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ transferable: true });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({is_transferable: 'true'}))
+            expect(await getSalesIds({ is_transferable: 'true' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset not being transferable', async () => {
             await client.createFullSale({}, {
-                template_id: (await client.createTemplate({transferable: true})).template_id,
+                template_id: (await client.createTemplate({ transferable: true })).template_id,
             });
 
-            const {template_id} = await client.createTemplate({transferable: false});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ transferable: false });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({is_transferable: 'false'}))
+            expect(await getSalesIds({ is_transferable: 'false' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset being burnable', async () => {
             await client.createFullSale({}, {
-                template_id: (await client.createTemplate({burnable: false})).template_id,
+                template_id: (await client.createTemplate({ burnable: false })).template_id,
             });
 
-            const {template_id} = await client.createTemplate({burnable: true});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ burnable: true });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({is_burnable: 'true'}))
+            expect(await getSalesIds({ is_burnable: 'true' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by asset not being burnable', async () => {
             await client.createFullSale({}, {
-                template_id: (await client.createTemplate({burnable: true})).template_id,
+                template_id: (await client.createTemplate({ burnable: true })).template_id,
             });
 
-            const {template_id} = await client.createTemplate({burnable: false});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ burnable: false });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({is_burnable: 'false'}))
+            expect(await getSalesIds({ is_burnable: 'false' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by text data', async () => {
             await client.createFullSale();
 
-            const {template_id} = await client.createTemplate({immutable_data: JSON.stringify({'prop': 'TheValue'})});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ immutable_data: JSON.stringify({ 'prop': 'TheValue' }) });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({'data:text.prop': 'TheValue'}))
+            expect(await getSalesIds({ 'data:text.prop': 'TheValue' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by number template_data', async () => {
             await client.createFullSale();
 
-            const {template_id} = await client.createTemplate({immutable_data: JSON.stringify({'prop': 1})});
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { template_id } = await client.createTemplate({ immutable_data: JSON.stringify({ 'prop': 1 }) });
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({'template_data:number.prop': '1'}))
+            expect(await getSalesIds({ 'template_data:number.prop': '1' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by bool mutable_data', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {
-                mutable_data: JSON.stringify({'prop': 1}),
+            const { sale_id } = await client.createFullSale({}, {
+                mutable_data: JSON.stringify({ 'prop': 1 }),
             });
 
-            expect(await getSalesIds({'mutable_data:bool.prop': 'true'}))
+            expect(await getSalesIds({ 'mutable_data:bool.prop': 'true' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by untyped immutable_data', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {
-                immutable_data: JSON.stringify({'prop': 'this'}),
+            const { sale_id } = await client.createFullSale({}, {
+                immutable_data: JSON.stringify({ 'prop': 'this' }),
             });
 
-            expect(await getSalesIds({'immutable_data.prop': 'this'}))
+            expect(await getSalesIds({ 'immutable_data.prop': 'this' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by data.name', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {
-                immutable_data: JSON.stringify({name: 'Z'}),
+            const { sale_id } = await client.createFullSale({}, {
+                immutable_data: JSON.stringify({ name: 'Z' }),
             });
 
-            expect(await getSalesIds({'data.name': 'Z'}))
+            expect(await getSalesIds({ 'data.name': 'Z' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by search (template name filter)', async () => {
-            const {collection_name} = await client.createCollection();
+            const { collection_name } = await client.createCollection();
 
             await client.createFullSale({}, {
-                template_id: (await client.createTemplate({collection_name})).template_id,
+                template_id: (await client.createTemplate({ collection_name })).template_id,
             });
 
-            const {template_id} = await client.createTemplate({collection_name, immutable_data: JSON.stringify({name: 'aTEST'})});
-            const {sale_id} = await client.createFullSale({collection_name}, {template_id});
+            const { template_id } = await client.createTemplate({ collection_name, immutable_data: JSON.stringify({ name: 'aTEST' }) });
+            const { sale_id } = await client.createFullSale({ collection_name }, { template_id });
 
-            expect(await getSalesIds({search: 'test', collection_name}))
+            expect(await getSalesIds({ search: 'test', collection_name }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by match_immutable_name', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {
-                immutable_data: JSON.stringify({name: 'prefix_par%_tial_postfix'}),
+            const { sale_id } = await client.createFullSale({}, {
+                immutable_data: JSON.stringify({ name: 'prefix_par%_tial_postfix' }),
             });
 
-            expect(await getSalesIds({'match_immutable_name': 'par%_tial'}))
+            expect(await getSalesIds({ 'match_immutable_name': 'par%_tial' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by match_mutable_name', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale({}, {
-                mutable_data: JSON.stringify({name: 'prefix_par%_tial_postfix'}),
+            const { sale_id } = await client.createFullSale({}, {
+                mutable_data: JSON.stringify({ name: 'prefix_par%_tial_postfix' }),
             });
 
-            expect(await getSalesIds({'match_mutable_name': 'par%_tial'}))
+            expect(await getSalesIds({ 'match_mutable_name': 'par%_tial' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by match (template name)', async () => {
             await client.createFullSale();
 
-            const {template_id} = await client.createTemplate({
-                immutable_data: JSON.stringify({name: 'prefix_par%_tial_postfix'}),
+            const { template_id } = await client.createTemplate({
+                immutable_data: JSON.stringify({ name: 'prefix_par%_tial_postfix' }),
             });
-            const {sale_id} = await client.createFullSale({}, {template_id});
+            const { sale_id } = await client.createFullSale({}, { template_id });
 
-            expect(await getSalesIds({'match': 'par%_tial'}))
+            expect(await getSalesIds({ 'match': 'par%_tial' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by collection_whitelist', async () => {
             await client.createFullSale();
 
-            const {collection_name} = await client.createCollection({collection_name: 'x'});
-            const {sale_id} = await client.createFullSale({collection_name});
+            const { collection_name } = await client.createCollection({ collection_name: 'x' });
+            const { sale_id } = await client.createFullSale({ collection_name });
 
-            expect(await getSalesIds({collection_whitelist: 'x,abc'}))
+            expect(await getSalesIds({ collection_whitelist: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by collection_whitelist with lists', async () => {
-            await client.createFullList({list_name: 'whitelist'}, {item_name: 'zz'});
+            await client.createFullList({ list_name: 'whitelist' }, { item_name: 'zz' });
 
             await client.createFullSale();
 
-            const {collection_name} = await client.createCollection({collection_name: 'zz'});
-            const {sale_id} = await client.createFullSale({collection_name});
+            const { collection_name } = await client.createCollection({ collection_name: 'zz' });
+            const { sale_id } = await client.createFullSale({ collection_name });
 
-            expect(await getSalesIds({collection_whitelist: '$list:whitelist,abc'}))
+            expect(await getSalesIds({ collection_whitelist: '$list:whitelist,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by collection_blacklist', async () => {
-            const {collection_name} = await client.createCollection({collection_name: 'x'});
-            await client.createFullSale({collection_name});
+            const { collection_name } = await client.createCollection({ collection_name: 'x' });
+            await client.createFullSale({ collection_name });
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({collection_blacklist: 'x,abc'}))
+            expect(await getSalesIds({ collection_blacklist: 'x,abc' }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('filters by id (sale_id)', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
-            expect(await getSalesIds({ids: `${sale_id},-1`}))
+            expect(await getSalesIds({ ids: `${sale_id},-1` }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -664,12 +655,12 @@ describe('AtomicMarket Sales API', () => {
 
             const lower_bound = `${client.getId()}`;
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
             const upper_bound = `${client.getId()}`;
 
             await client.createFullSale();
 
-            expect(await getSalesIds({lower_bound, upper_bound}))
+            expect(await getSalesIds({ lower_bound, upper_bound }))
                 .to.deep.equal([sale_id]);
         });
 
@@ -678,125 +669,125 @@ describe('AtomicMarket Sales API', () => {
 
             const after = `${client.getId()}`;
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
             const before = `${client.getId()}`;
 
             await client.createFullSale();
 
-            expect(await getSalesIds({after, before}))
+            expect(await getSalesIds({ after, before }))
                 .to.deep.equal([sale_id]);
         });
 
         txit('returns count', async () => {
             await client.createFullSale();
 
-            const {sale_id} = await client.createFullSale();
+            const { sale_id } = await client.createFullSale();
 
             const testContext = getTestContext(client);
 
             await client.refreshSalesFilters();
 
-            const result = await getSalesV2Action({ids: `${sale_id}`, count: 'true'}, testContext);
+            const result = await getSalesV2Action({ ids: `${sale_id}`, count: 'true' }, testContext);
 
             expect(result).to.equal('1');
         });
 
         txit('orders ascending', async () => {
-            const {sale_id: sale_id1} = await client.createFullSale();
+            const { sale_id: sale_id1 } = await client.createFullSale();
 
-            const {sale_id: sale_id2} = await client.createFullSale();
+            const { sale_id: sale_id2 } = await client.createFullSale();
 
-            expect(await getSalesIds({order: 'asc'}))
+            expect(await getSalesIds({ order: 'asc' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders descending', async () => {
-            const {sale_id: sale_id1} = await client.createFullSale();
+            const { sale_id: sale_id1 } = await client.createFullSale();
 
-            const {sale_id: sale_id2} = await client.createFullSale();
+            const { sale_id: sale_id2 } = await client.createFullSale();
 
-            expect(await getSalesIds({order: 'desc'}))
+            expect(await getSalesIds({ order: 'desc' }))
                 .to.deep.equal([sale_id2, sale_id1]);
         });
 
         txit('orders by sale_id', async () => {
             const sale_id2 = `${client.getId()}`;
-            const {sale_id: sale_id1} = await client.createFullSale();
+            const { sale_id: sale_id1 } = await client.createFullSale();
 
-            await client.createFullSale({sale_id: sale_id2, created_at_time: sale_id2});
+            await client.createFullSale({ sale_id: sale_id2, created_at_time: sale_id2 });
 
-            expect(await getSalesIds({sort: 'sale_id'}))
+            expect(await getSalesIds({ sort: 'sale_id' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders by created', async () => {
             const created_at_time = `${client.getId()}`;
-            const {sale_id: sale_id1} = await client.createFullSale({});
+            const { sale_id: sale_id1 } = await client.createFullSale({});
 
-            const {sale_id: sale_id2} = await client.createFullSale({created_at_time});
+            const { sale_id: sale_id2 } = await client.createFullSale({ created_at_time });
 
-            expect(await getSalesIds({sort: 'created'}))
+            expect(await getSalesIds({ sort: 'created' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders by updated', async () => {
             const updated_at_time = `${client.getId()}`;
-            const {sale_id: sale_id1} = await client.createFullSale({});
+            const { sale_id: sale_id1 } = await client.createFullSale({});
 
-            const {sale_id: sale_id2} = await client.createFullSale({updated_at_time});
+            const { sale_id: sale_id2 } = await client.createFullSale({ updated_at_time });
 
-            expect(await getSalesIds({sort: 'updated'}))
+            expect(await getSalesIds({ sort: 'updated' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders by price', async () => {
             const sale_id2 = `${client.getId()}`;
-            const {sale_id: sale_id1} = await client.createFullSale({listing_price: 2});
+            const { sale_id: sale_id1 } = await client.createFullSale({ listing_price: 2 });
 
-            await client.createFullSale({listing_price: 1, sale_id: sale_id2});
+            await client.createFullSale({ listing_price: 1, sale_id: sale_id2 });
 
-            expect(await getSalesIds({sort: 'price'}))
+            expect(await getSalesIds({ sort: 'price' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders by template_mint', async () => {
-            const {sale_id: sale_id1} = await client.createFullSale({}, {template_mint: 2});
+            const { sale_id: sale_id1 } = await client.createFullSale({}, { template_mint: 2 });
 
-            const {sale_id: sale_id2} = await client.createFullSale({}, {template_mint: 1});
+            const { sale_id: sale_id2 } = await client.createFullSale({}, { template_mint: 1 });
 
-            expect(await getSalesIds({sort: 'template_mint'}))
+            expect(await getSalesIds({ sort: 'template_mint' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('orders by asset name', async () => {
-            const {sale_id: sale_id1} = await client.createFullSale({}, {
-                immutable_data: JSON.stringify({name: 'b'}),
+            const { sale_id: sale_id1 } = await client.createFullSale({}, {
+                immutable_data: JSON.stringify({ name: 'b' }),
             });
 
-            const {sale_id: sale_id2} = await client.createFullSale({}, {
-                immutable_data: JSON.stringify({name: 'a'}),
+            const { sale_id: sale_id2 } = await client.createFullSale({}, {
+                immutable_data: JSON.stringify({ name: 'a' }),
             });
 
-            expect(await getSalesIds({sort: 'name', order: 'asc'}))
+            expect(await getSalesIds({ sort: 'name', order: 'asc' }))
                 .to.deep.equal([sale_id2, sale_id1]);
         });
 
         txit('orders correctly when filtering by state', async () => {
             const sale_id2 = `${client.getId()}`;
-            const {sale_id: sale_id1} = await client.createFullSale({listing_price: 2});
+            const { sale_id: sale_id1 } = await client.createFullSale({ listing_price: 2 });
 
-            await client.createFullSale({listing_price: 1, sale_id: sale_id2});
+            await client.createFullSale({ listing_price: 1, sale_id: sale_id2 });
 
-            expect(await getSalesIds({sort: 'price', state: '1'}))
+            expect(await getSalesIds({ sort: 'price', state: '1' }))
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
         txit('paginates', async () => {
-            const {sale_id: sale_id1} = await client.createFullSale();
+            const { sale_id: sale_id1 } = await client.createFullSale();
 
             await client.createFullSale();
 
-            expect(await getSalesIds({page: '2', limit: '1'}))
+            expect(await getSalesIds({ page: '2', limit: '1' }))
                 .to.deep.equal([sale_id1]);
         });
 
@@ -818,18 +809,18 @@ describe('AtomicMarket Sales API', () => {
         context('with template_blacklist arg', () => {
             txit('filters out sales that contain the template id', async () => {
                 const included = await client.createTemplate();
-                const {sale_id: sale_id1} = await client.createFullSale({}, {
+                const { sale_id: sale_id1 } = await client.createFullSale({}, {
                     template_id: included.template_id,
                 });
 
-                const {sale_id: sale_id2} = await client.createFullSale({}, {});
+                const { sale_id: sale_id2 } = await client.createFullSale({}, {});
 
                 const excludedTemplate = await client.createTemplate();
                 await client.createFullSale({}, {
                     template_id: excludedTemplate.template_id,
                 });
 
-                expect((await getSalesIds({template_blacklist: `${excludedTemplate.template_id}`})).sort())
+                expect((await getSalesIds({ template_blacklist: `${excludedTemplate.template_id}` })).sort())
                     .to.deep.equal([sale_id1, sale_id2].sort());
             });
         });
