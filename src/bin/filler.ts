@@ -6,16 +6,16 @@ import express from 'express';
 import Filler from '../filler/filler';
 import ConnectionManager from '../connections/manager';
 import logger from '../utils/winston';
-import {IConnectionsConfig, IReaderConfig} from '../types/config';
-import {upgradeDb} from '../filler/upgrade-db';
-import {MetricsCollectorHandler} from '../metrics/handler';
-import {Registry} from 'prom-client';
-import {setAutoVacSettings} from '../filler/set-autovac-settings';
+import { IConnectionsConfig, IReaderConfig } from '../types/config';
+import { upgradeDb } from '../filler/upgrade-db';
+import { MetricsCollectorHandler } from '../metrics/handler';
+import { Registry } from 'prom-client';
+import { setAutoVacSettings } from '../filler/set-autovac-settings';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const readerConfigs: IReaderConfig[] = require('/home/application/app/config/readers.config.json');
 
-let connectionConfig: IConnectionsConfig = {postgres: {}, redis: {}, chain: {}} as IConnectionsConfig;
+let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -34,7 +34,6 @@ if (!readerConfigs || readerConfigs.length === 0) {
 if (cluster.isPrimary || cluster.isMaster) {
     logger.info('Starting workers...');
 
-    // init global tables if missing
     const connection = new ConnectionManager(connectionConfig);
 
     (async (): Promise<void> => {
@@ -61,7 +60,7 @@ if (cluster.isPrimary || cluster.isMaster) {
 
         for (let i = 0; i < readerConfigs.length; i++) {
             // @ts-ignore
-            const worker = cluster.fork({config_index: i});
+            const worker = cluster.fork({ config_index: i });
 
             worker.on('message', (data: any) => {
                 if (data.msg === 'failure') {
