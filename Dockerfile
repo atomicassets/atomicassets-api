@@ -57,6 +57,9 @@ WORKDIR /home/application/app
 # Copy pruned package.json files
 COPY --from=prepare --chown=application:application /app/out/json/ .
 
+# Copy workspace packages source BEFORE install (needed for pnpm workspace links)
+COPY --from=prepare --chown=application:application /app/out/full/packages/ ./packages/
+
 # Install dependencies from pruned workspace with cache mount
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=1000,gid=1000 \
     pnpm install --frozen-lockfile=true
