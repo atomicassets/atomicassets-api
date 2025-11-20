@@ -49,13 +49,15 @@ WORKDIR /home/application/app
 
 # Copy pruned package.json files
 COPY --from=prepare --chown=application:application /app/out/json/ .
-COPY --from=prepare --chown=application:application /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
+
+# Copy workspace packages source BEFORE install (needed for pnpm workspace links)
+COPY --from=prepare --chown=application:application /app/out/full/packages/ ./packages/
 
 # Install dependencies from pruned workspace
 RUN pnpm install --frozen-lockfile
 
-# Copy pruned source code
-COPY --from=prepare --chown=application:application /app/out/full/ .
+# Copy pruned service source code
+COPY --from=prepare --chown=application:application /app/out/full/apps/ ./apps/
 
 # Build the service
 RUN pnpm turbo run build --filter="@atomichub/eosio-contract-api..."
