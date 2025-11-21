@@ -24,9 +24,9 @@ COPY packages/*/package.json packages/
 # Install only turbo CLI with proper env vars (lightweight, just for pruning)
 # IMPORTANT: PNPM_HOME must be set for global installs
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-    export PNPM_HOME="/root/.local/share/pnpm" && \
-    export PATH="$PNPM_HOME:$PATH" && \
-    pnpm add -g turbo
+  export PNPM_HOME="/root/.local/share/pnpm" && \
+  export PATH="$PNPM_HOME:$PATH" && \
+  pnpm add -g turbo
 
 # Copy only the specific service source (needed for turbo prune to analyze)
 COPY apps/eosio-contract-api ./apps/eosio-contract-api
@@ -62,14 +62,14 @@ COPY --from=prepare --chown=application:application /app/out/full/packages/ ./pa
 
 # Install dependencies from pruned workspace with cache mount
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=1000,gid=1000 \
-    pnpm install --frozen-lockfile=true
+  pnpm install --frozen-lockfile=true
 
 # Copy pruned source code
 COPY --from=prepare --chown=application:application /app/out/full/ .
 
 # Build the service with cache mount for turbo cache
 RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=1000 \
-    pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
+  pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
 FROM node:22-alpine AS runtime
@@ -100,4 +100,4 @@ ENV VERSION=${VERSION}
 EXPOSE 9000
 
 # Run service from its directory so ./definitions paths work, but configs are still at /home/application/app/config
-CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/src/bin/server.js"]
+CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/bin/server.js"]
