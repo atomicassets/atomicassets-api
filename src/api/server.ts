@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import express from 'express';
 import compression from 'compression';
 import {Server} from 'socket.io';
@@ -27,7 +28,7 @@ import {GetInfoResult} from 'eosjs/dist/eosjs-rpc-interfaces';
 import { initListValidator } from './namespaces/lists';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const packageJson: any = require('../../../package.json');
+const packageJson: any = require(path.resolve(__dirname, '../../package.json'));
 
 export interface DB {
     query<T = any>(queryText: string, values?: any[]): Promise<QueryResult<T>>
