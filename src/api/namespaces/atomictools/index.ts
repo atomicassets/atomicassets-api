@@ -26,17 +26,26 @@ export class AtomicToolsNamespace extends ApiNamespace {
             throw new Error('Argument missing in atomictools api namespace: atomictools_account');
         }
 
-        const query = await this.connection.database.query(
-            'SELECT * FROM atomictools_config WHERE tools_contract = $1',
-            [this.args.atomictools_account]
-        );
+        try {
+            const query = await this.connection.database.query(
+                'SELECT * FROM atomictools_config WHERE tools_contract = $1',
+                [this.args.atomictools_account]
+            );
 
-        if (query.rowCount === 0) {
-            if (typeof this.args.atomicassets_account !== 'string') {
-                throw new Error('AtomicTools API is not initialized yet (reader not running)');
+            if (query.rowCount === 0) {
+                if (typeof this.args.atomicassets_account !== 'string') {
+                    throw new Error('AtomicTools API is not initialized yet (reader not running)');
+                }
+            } else {
+                this.args.atomicassets_account = query.rows[0].assets_contract;
             }
-        } else {
-            this.args.atomicassets_account = query.rows[0].assets_contract;
+        } catch (error) {
+            // If table doesn't exist yet (schema not initialized), gracefully handle
+            // The atomicassets_account arg will be used as fallback
+            if (typeof this.args.atomicassets_account !== 'string') {
+                throw new Error('AtomicTools API requires atomicassets_account argument when table is not initialized');
+            }
+            // Continue with provided atomicassets_account from config
         }
     }
 
