@@ -8,7 +8,7 @@ import { IReaderConfig } from '../types/config';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const readerConfigs: IReaderConfig[] = require('/home/application/app/config/readers.config.json');
 
-export async function upgradeDb(database: PostgresConnection): Promise<void> {
+export async function initBaseTables(database: PostgresConnection): Promise<void> {
     if (!(await database.tableExists('dbinfo'))) {
         logger.info('Could not find base tables. Create them now...');
 
@@ -17,8 +17,12 @@ export async function upgradeDb(database: PostgresConnection): Promise<void> {
         }));
 
         logger.info('Base tables successfully created');
+    } else {
+        logger.info('Base tables already exist');
     }
+}
 
+export async function runMigrations(database: PostgresConnection): Promise<void> {
     logger.info('Checking for available upgrades...');
 
     const client = await database.begin();
@@ -51,7 +55,7 @@ export async function upgradeDb(database: PostgresConnection): Promise<void> {
                 const filename = './definitions/migrations/' + version + '/' + handlerName + '.sql';
 
                 if (fs.existsSync(filename)) {
-                    await client.query(fs.readFileSync(filename, {encoding: 'utf8'}));
+                    await client.query(fs.readFileSync(filename, { encoding: 'utf8' }));
                 }
 
                 await handler.upgrade(client, version);
@@ -82,7 +86,7 @@ export async function upgradeDb(database: PostgresConnection): Promise<void> {
 
                 const handlerFilename = `${versionDir}${handlerName}.sql`;
                 if (fs.existsSync(handlerFilename)) {
-                    await client.query(fs.readFileSync(handlerFilename, {encoding: 'utf8'}));
+                    await client.query(fs.readFileSync(handlerFilename, { encoding: 'utf8' }));
                 }
 
                 await handler.upgrade(client, version);
@@ -97,4 +101,9 @@ export async function upgradeDb(database: PostgresConnection): Promise<void> {
     }
 
     client.release();
+}
+
+export async function upgradeDb(database: PostgresConnection): Promise<void> {
+    await initBaseTables(database);
+    await runMigrations(database);
 }
