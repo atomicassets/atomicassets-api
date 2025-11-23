@@ -1,4 +1,4 @@
-CREATE TABLE delphioracle_pairs (
+CREATE TABLE IF NOT EXISTS delphioracle_pairs (
     contract character varying(12) NOT NULL,
     delphi_pair_name character varying(12),
     base_symbol character varying(12) NOT NULL,

@@ -16,9 +16,22 @@ async function main(): Promise<void> {
     const connection = new ConnectionManager(connectionConfig);
     await connection.connect();
 
+    // Use PostgreSQL advisory lock to prevent concurrent schema initialization
+    // Lock ID: 1234567890 (arbitrary unique number for schema init)
+    const SCHEMA_INIT_LOCK_ID = 1234567890;
+
     try {
-        await initBaseTables(connection.database);
-        logger.info('Schema initialization completed successfully');
+        logger.info('Acquiring advisory lock for schema initialization...');
+        await connection.database.query('SELECT pg_advisory_lock($1)', [SCHEMA_INIT_LOCK_ID]);
+        logger.info('Advisory lock acquired');
+
+        try {
+            await initBaseTables(connection.database);
+            logger.info('Schema initialization completed successfully');
+        } finally {
+            await connection.database.query('SELECT pg_advisory_unlock($1)', [SCHEMA_INIT_LOCK_ID]);
+            logger.info('Advisory lock released');
+        }
     } catch (error) {
         logger.error('Failed to execute schema initialization', error);
         process.exit(1);
