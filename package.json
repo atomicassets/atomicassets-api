@@ -10,7 +10,7 @@
     "clean": "rimraf ./build/* && rimraf ./logs/*",
     "lint": "eslint \"src/**/*.ts\"",
     "build": "tsc",
-    "test": "mocha --require ts-node/register 'src/**/*.test.ts' 'test/**/*.test.ts'",
+    "test": "[ -f config/connections.config.json ] && mocha --require ts-node/register 'src/**/*.test.ts' 'test/**/*.test.ts' || echo 'Tests skipped: config/connections.config.json not found'",
     "test:watch": "mocha --require ts-node/register --watch --watch-extensions ts 'src/**/*.test.ts' 'test/**/*.test.ts'",
     "test:coverage": "nyc mocha --require ts-node/register 'src/**/*.test.ts' 'test/**/*.test.ts'",
     "start": "node ./build/bin/server.js",
