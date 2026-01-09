@@ -5,12 +5,16 @@
 #   - apps/eosio-contract-api with actual service directory (e.g., apps/config-service)
 #   - Port number (default 9000)
 
+# DHI Registry URL - injected via build-arg, varies by environment
+ARG DHI_REGISTRY
+
 # Stage 1: Prepare - Prune monorepo for specific service
-FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS prepare
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS prepare
 
 # DHI production image - create app directory
 USER root
-RUN mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
+RUN npm install -g pnpm@10.27.0 && \
+    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
 
 WORKDIR /app
 
@@ -25,8 +29,8 @@ COPY packages/*/package.json packages/
 
 # Install only turbo CLI with proper env vars (lightweight, just for pruning)
 # IMPORTANT: PNPM_HOME must be set for global installs
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-  export PNPM_HOME="/root/.local/share/pnpm" && \
+RUN --mount=type=cache,target=/home/nonroot/.local/share/pnpm/store \
+  export PNPM_HOME="/home/nonroot/.local/share/pnpm" && \
   export PATH="$PNPM_HOME:$PATH" && \
   pnpm add -g turbo
 
@@ -37,18 +41,19 @@ COPY apps/eosio-contract-api ./apps/eosio-contract-api
 COPY packages ./packages
 
 # Set ENV for global pnpm packages
-ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PNPM_HOME="/home/nonroot/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
 # Prune to create minimal workspace for this service
 RUN turbo prune @atomichub/eosio-contract-api --docker
 
 # Stage 2: Builder - Install dependencies and build
-FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS builder
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS builder
 
 # DHI production image - create app directory
 USER root
-RUN mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
+RUN npm install -g pnpm@10.27.0 && \
+    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
 
 USER nonroot
 WORKDIR /home/nonroot/app
@@ -60,7 +65,7 @@ COPY --from=prepare --chown=nonroot:nonroot /app/out/json/ .
 COPY --from=prepare --chown=nonroot:nonroot /app/out/full/packages/ ./packages/
 
 # Install dependencies from pruned workspace with cache mount
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=65532,gid=65532 \
+RUN --mount=type=cache,target=/home/nonroot/.local/share/pnpm/store,uid=65532,gid=65532 \
   pnpm install --frozen-lockfile=true
 
 # Copy pruned source code
@@ -71,7 +76,7 @@ RUN --mount=type=cache,target=/home/nonroot/app/.turbo-cache,uid=65532,gid=65532
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw AS runtime
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw AS runtime
 
 # DHI production image - create app directory
 USER root
