@@ -6,9 +6,9 @@
 #   - Port number (default 9000)
 
 # Stage 1: Prepare - Prune monorepo for specific service
-FROM node:22-alpine AS prepare
+FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS prepare
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.23.0
 
 WORKDIR /app
 
@@ -42,12 +42,12 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN turbo prune @atomichub/eosio-contract-api --docker
 
 # Stage 2: Builder - Install dependencies and build
-FROM node:22-alpine AS builder
+FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.23.0
 
 # Create application user
-RUN adduser --disabled-password application && \
+RUN useradd --system --uid 1000 --create-home application && \
   mkdir -p /home/application/app && \
   chown -R application:application /home/application
 
@@ -72,12 +72,12 @@ RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=10
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM node:22-alpine AS runtime
+FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS runtime
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN npm install -g pnpm@10.23.0
 
 # Create application user
-RUN adduser --disabled-password application && \
+RUN useradd --system --uid 1000 --create-home application && \
   mkdir -p /home/application/app && \
   chown -R application:application /home/application
 
