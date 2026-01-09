@@ -10,7 +10,8 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install --force -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0 && \
+    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
 
 WORKDIR /app
 
@@ -48,31 +49,27 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install --force -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0 && \
+    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
 
-# Create application user
-RUN useradd --system --uid 1000 --home-dir /home/application --create-home --shell /sbin/nologin application && \
-  mkdir -p /home/application/app && \
-  chown -R application:application /home/application
-
-USER application
-WORKDIR /home/application/app
+USER nonroot
+WORKDIR /home/nonroot/app
 
 # Copy pruned package.json files
-COPY --from=prepare --chown=application:application /app/out/json/ .
+COPY --from=prepare --chown=nonroot:nonroot /app/out/json/ .
 
 # Copy workspace packages source BEFORE install (needed for pnpm workspace links)
-COPY --from=prepare --chown=application:application /app/out/full/packages/ ./packages/
+COPY --from=prepare --chown=nonroot:nonroot /app/out/full/packages/ ./packages/
 
 # Install dependencies from pruned workspace with cache mount
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=1000,gid=1000 \
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=65532,gid=65532 \
   pnpm install --frozen-lockfile=true
 
 # Copy pruned source code
-COPY --from=prepare --chown=application:application /app/out/full/ .
+COPY --from=prepare --chown=nonroot:nonroot /app/out/full/ .
 
 # Build the service with cache mount for turbo cache
-RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=1000 \
+RUN --mount=type=cache,target=/home/nonroot/app/.turbo-cache,uid=65532,gid=65532 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
@@ -80,18 +77,14 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install --force -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0 && \
+    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
 
-# Create application user
-RUN useradd --system --uid 1000 --home-dir /home/application --create-home --shell /sbin/nologin application && \
-  mkdir -p /home/application/app && \
-  chown -R application:application /home/application
-
-USER application
-WORKDIR /home/application/app
+USER nonroot
+WORKDIR /home/nonroot/app
 
 # Copy built application from builder
-COPY --from=builder --chown=application:application /home/application/app .
+COPY --from=builder --chown=nonroot:nonroot /home/nonroot/app .
 
 # NOTE: Stay at monorepo root - don't change WORKDIR to apps/eosio-contract-api
 # This allows services to find config files using relative paths like ../config/config.json
@@ -105,5 +98,5 @@ ENV VERSION=${VERSION}
 
 EXPOSE 9000
 
-# Run service from its directory so ./definitions paths work, but configs are still at /home/application/app/config
+# Run service from its directory so ./definitions paths work, but configs are still at /home/nonroot/app/config
 CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/bin/server.js"]
