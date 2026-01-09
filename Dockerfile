@@ -74,7 +74,7 @@ RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS runtime
+FROM ${DHI_REGISTRY}/node:22-debian13 AS runtime
 
 # DHI production image - create app directory
 USER root
