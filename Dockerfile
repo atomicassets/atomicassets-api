@@ -49,10 +49,6 @@ RUN turbo prune @atomichub/eosio-contract-api --docker
 # Stage 2: Builder - Install dependencies and build
 FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS builder
 
-# DHI production image - create app directory
-USER root
-RUN mkdir -p /home/node/app && chown node:node /home/node/app
-
 USER node
 WORKDIR /home/node/app
 
@@ -75,10 +71,6 @@ RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
 
 # Stage 3: Runtime - Production image
 FROM ${DHI_REGISTRY}/node:22-debian13 AS runtime
-
-# DHI production image - create app directory
-USER root
-RUN mkdir -p /home/node/app && chown node:node /home/node/app
 
 USER node
 WORKDIR /home/node/app
