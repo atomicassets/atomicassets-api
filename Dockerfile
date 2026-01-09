@@ -8,6 +8,8 @@
 # Stage 1: Prepare - Prune monorepo for specific service
 FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS prepare
 
+# DHI images may run as non-root by default; ensure root for global installs
+USER root
 RUN npm install -g pnpm@10.23.0
 
 WORKDIR /app
@@ -44,6 +46,8 @@ RUN turbo prune @atomichub/eosio-contract-api --docker
 # Stage 2: Builder - Install dependencies and build
 FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS builder
 
+# DHI images may run as non-root by default; ensure root for global installs
+USER root
 RUN npm install -g pnpm@10.23.0
 
 # Create application user
@@ -74,6 +78,8 @@ RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=10
 # Stage 3: Runtime - Production image
 FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-dev AS runtime
 
+# DHI images may run as non-root by default; ensure root for global installs
+USER root
 RUN npm install -g pnpm@10.23.0
 
 # Create application user
