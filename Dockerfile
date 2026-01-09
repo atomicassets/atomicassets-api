@@ -10,7 +10,7 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0
 
 WORKDIR /app
 
@@ -48,7 +48,7 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0
 
 # Create application user
 RUN useradd --system --uid 1000 --create-home application && \
@@ -80,7 +80,7 @@ FROM 7wcqzqv2.c1.va1.container-registry.ovh.us/dhi-cache/node:22-debian13-sfw-de
 
 # DHI images may run as non-root by default; ensure root for global installs
 USER root
-RUN npm install -g pnpm@10.23.0
+RUN npm install --force -g pnpm@10.23.0
 
 # Create application user
 RUN useradd --system --uid 1000 --create-home application && \
