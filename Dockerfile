@@ -13,8 +13,7 @@ FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS prepare
 
 # DHI production image - create app directory
 USER root
-RUN npm install -g pnpm@10.27.0 && \
-    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
+RUN mkdir -p /home/node/app && chown node:node /home/node/app
 
 WORKDIR /app
 
@@ -29,8 +28,8 @@ COPY packages/*/package.json packages/
 
 # Install only turbo CLI with proper env vars (lightweight, just for pruning)
 # IMPORTANT: PNPM_HOME must be set for global installs
-RUN --mount=type=cache,target=/home/nonroot/.local/share/pnpm/store \
-  export PNPM_HOME="/home/nonroot/.local/share/pnpm" && \
+RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store \
+  export PNPM_HOME="/home/node/.local/share/pnpm" && \
   export PATH="$PNPM_HOME:$PATH" && \
   pnpm add -g turbo
 
@@ -41,7 +40,7 @@ COPY apps/eosio-contract-api ./apps/eosio-contract-api
 COPY packages ./packages
 
 # Set ENV for global pnpm packages
-ENV PNPM_HOME="/home/nonroot/.local/share/pnpm"
+ENV PNPM_HOME="/home/node/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
 # Prune to create minimal workspace for this service
@@ -52,41 +51,40 @@ FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS builder
 
 # DHI production image - create app directory
 USER root
-RUN npm install -g pnpm@10.27.0 && \
-    mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
+RUN mkdir -p /home/node/app && chown node:node /home/node/app
 
-USER nonroot
-WORKDIR /home/nonroot/app
+USER node
+WORKDIR /home/node/app
 
 # Copy pruned package.json files
-COPY --from=prepare --chown=nonroot:nonroot /app/out/json/ .
+COPY --from=prepare --chown=node:node /app/out/json/ .
 
 # Copy workspace packages source BEFORE install (needed for pnpm workspace links)
-COPY --from=prepare --chown=nonroot:nonroot /app/out/full/packages/ ./packages/
+COPY --from=prepare --chown=node:node /app/out/full/packages/ ./packages/
 
 # Install dependencies from pruned workspace with cache mount
-RUN --mount=type=cache,target=/home/nonroot/.local/share/pnpm/store,uid=65532,gid=65532 \
+RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=1000 \
   pnpm install --frozen-lockfile=true
 
 # Copy pruned source code
-COPY --from=prepare --chown=nonroot:nonroot /app/out/full/ .
+COPY --from=prepare --chown=node:node /app/out/full/ .
 
 # Build the service with cache mount for turbo cache
-RUN --mount=type=cache,target=/home/nonroot/app/.turbo-cache,uid=65532,gid=65532 \
+RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM ${DHI_REGISTRY}/node:22-debian13-sfw AS runtime
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS runtime
 
 # DHI production image - create app directory
 USER root
-RUN mkdir -p /home/nonroot/app && chown nonroot:nonroot /home/nonroot/app
+RUN mkdir -p /home/node/app && chown node:node /home/node/app
 
-USER nonroot
-WORKDIR /home/nonroot/app
+USER node
+WORKDIR /home/node/app
 
 # Copy built application from builder
-COPY --from=builder --chown=nonroot:nonroot /home/nonroot/app .
+COPY --from=builder --chown=node:node /home/node/app .
 
 # NOTE: Stay at monorepo root - don't change WORKDIR to apps/eosio-contract-api
 # This allows services to find config files using relative paths like ../config/config.json
@@ -100,5 +98,5 @@ ENV VERSION=${VERSION}
 
 EXPOSE 9000
 
-# Run service from its directory so ./definitions paths work, but configs are still at /home/nonroot/app/config
+# Run service from its directory so ./definitions paths work, but configs are still at /home/node/app/config
 CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/bin/server.js"]
