@@ -51,7 +51,7 @@ USER root
 RUN npm install --force -g pnpm@10.23.0
 
 # Create application user
-RUN adduser --system --uid 1000 --home /home/application --disabled-password --gecos "" application && \
+RUN useradd --system --uid 1000 --home-dir /home/application --create-home --shell /sbin/nologin application && \
   mkdir -p /home/application/app && \
   chown -R application:application /home/application
 
@@ -83,7 +83,7 @@ USER root
 RUN npm install --force -g pnpm@10.23.0
 
 # Create application user
-RUN adduser --system --uid 1000 --home /home/application --disabled-password --gecos "" application && \
+RUN useradd --system --uid 1000 --home-dir /home/application --create-home --shell /sbin/nologin application && \
   mkdir -p /home/application/app && \
   chown -R application:application /home/application
 
