@@ -71,6 +71,11 @@ WORKDIR /home/application/app
 # Copy built application from builder
 COPY --from=builder /home/application/app .
 
+# Create symlink for hardcoded /home/node/app paths in app code
+USER root
+RUN mkdir -p /home/node && ln -sf /home/application/app /home/node/app
+USER application
+
 ENV NODE_ENV=production
 
 EXPOSE 9000
