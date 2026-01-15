@@ -113,7 +113,7 @@ export default class StateHistoryBlockReader {
                     this.deserializeWorkers = new StaticPool({
                         size: this.options.ds_threads,
                         task: './build/workers/deserializer.js',
-                        workerData: {abi: data}
+                        workerData: {abi: JSON.stringify(this.abi)}
                     });
                 }
 
