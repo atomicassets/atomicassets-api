@@ -36,7 +36,7 @@ export default class Filler {
 
     private readonly handlers: ContractHandler[];
 
-    private readonly listPollers: ListPoller[] = []
+    private readonly listPollers: ListPoller[] = [];
 
     constructor(private readonly config: IReaderConfig, readonly connection: ConnectionManager) {
         this.handlers = getHandlers(config.contracts, this);
