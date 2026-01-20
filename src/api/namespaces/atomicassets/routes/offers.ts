@@ -55,7 +55,7 @@ export class OfferApi {
             offerResult.rows.map((row: any) => this.offerFormatter(offerLookup[row.offer_id])),
             this.assetFormatter, this.assetView, this.fillerHook
         );
-    }
+    };
 
     getOfferAction = async (params: RequestValues, ctx: AtomicAssetsContext): Promise<any> => {
         const args = await filterQueryArgs(ctx.pathParams, {
@@ -78,7 +78,7 @@ export class OfferApi {
         );
 
         return offers[0];
-    }
+    };
 
     endpoints(router: express.Router): any {
         const {caching, returnAsJSON} = this.server.web;

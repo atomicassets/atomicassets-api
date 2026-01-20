@@ -222,7 +222,7 @@ export class WebServer {
                 respondApiError(res, error);
             }
         };
-    }
+    };
 
     private middleware(): void {
         this.express.use(bodyParser.json({limit: '10MB'}));

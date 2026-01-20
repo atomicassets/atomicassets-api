@@ -5,13 +5,13 @@ import Api from '../api/api';
 import {MetricsServer} from '../metrics/server';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const serverConfig: IServerConfig = require('/home/application/app/config/server.config.json');
+const serverConfig: IServerConfig = require('/home/node/app/config/server.config.json');
 
 let connectionConfig: IConnectionsConfig = {postgres: {}, redis: {}, chain: {}} as IConnectionsConfig;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/application/app/config/connections.config.json');
+    connectionConfig = require('/home/node/app/config/connections.config.json');
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }

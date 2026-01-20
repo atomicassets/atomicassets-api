@@ -1,5 +1,15 @@
-import Redis from 'ioredis';
+import Redis, { RedisOptions } from 'ioredis';
 import { createClient, RedisClientType } from 'redis';
+
+export interface RedisConnectionOptions {
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+    tls?: {
+        rejectUnauthorized?: boolean;
+    };
+}
 
 export default class RedisConnection {
     readonly ioRedis: Redis;
@@ -10,12 +20,20 @@ export default class RedisConnection {
 
     private initialized = false;
 
-    constructor(host: string, port: number) {
-        this.ioRedis = new Redis({ host, port });
-        this.ioRedisSub = new Redis({ host, port });
+    constructor(options: RedisConnectionOptions) {
+        const { host, port, username, password, tls } = options;
 
-        this.nodeRedis = createClient({ url: `redis://${host}:${port}` });
-        this.nodeRedisSub = createClient({ url: `redis://${host}:${port}` });
+        const ioRedisOptions: RedisOptions = { host, port, username, password, tls };
+        this.ioRedis = new Redis(ioRedisOptions);
+        this.ioRedisSub = new Redis(ioRedisOptions);
+
+        // Build node-redis URL with auth if provided
+        const protocol = tls ? 'rediss' : 'redis';
+        const auth = username && password ? `${username}:${password}@` : (password ? `:${password}@` : '');
+        const nodeRedisUrl = `${protocol}://${auth}${host}:${port}`;
+
+        this.nodeRedis = createClient({ url: nodeRedisUrl });
+        this.nodeRedisSub = createClient({ url: nodeRedisUrl });
     }
 
     async connect(): Promise<void> {

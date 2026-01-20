@@ -8,7 +8,12 @@ export interface IConnectionsConfig {
     };
     redis: {
         host: string,
-        port: number
+        port: number,
+        username?: string,
+        password?: string,
+        tls?: {
+            rejectUnauthorized?: boolean
+        }
     };
     chain: {
         name: string,

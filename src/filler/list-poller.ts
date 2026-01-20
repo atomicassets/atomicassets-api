@@ -8,7 +8,7 @@ const DEFAULT_POLL_FREQUENCY = 60 * 10; // 10 minutes
 
 export default class ListPoller {
 
-    private interval: NodeJS.Timer
+    private interval: NodeJS.Timer;
 
     constructor(
         private readonly config: IListPollConfig,
@@ -110,7 +110,7 @@ const getListId = moize({
     maxArgs: 1,
 })(async (listName: string, database: PostgresConnection): Promise<number> => {
     return (
-        await database.fetchOne(`SELECT id FROM lists WHERE list_name = $1`, [listName])
-            ?? await database.fetchOne(`INSERT INTO lists (list_name) VALUES ($1) RETURNING id`, [listName])
+        await database.fetchOne('SELECT id FROM lists WHERE list_name = $1', [listName])
+            ?? await database.fetchOne('INSERT INTO lists (list_name) VALUES ($1) RETURNING id', [listName])
     ).id;
 });
