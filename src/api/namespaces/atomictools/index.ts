@@ -41,11 +41,9 @@ export class AtomicToolsNamespace extends ApiNamespace {
             }
         } catch (error) {
             // If table doesn't exist yet (schema not initialized), gracefully handle
-            // The atomicassets_account arg will be used as fallback
             if (typeof this.args.atomicassets_account !== 'string') {
                 throw new Error('AtomicTools API requires atomicassets_account argument when table is not initialized');
             }
-            // Continue with provided atomicassets_account from config
         }
     }
 

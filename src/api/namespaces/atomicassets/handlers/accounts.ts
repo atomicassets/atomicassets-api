@@ -9,10 +9,6 @@ import {filterQueryArgs} from '../../validation';
 export {getAccountAction} from './accounts/getAccountAction';
 
 // TODO: Separate the logic of building query to reuse it on getAccountsCountAction
-/**
- * Retrieves the asset count of several account using several filters
- * like: collection_name, match(owner name), template_id
- */
 export async function getAccountsAction(
     params: RequestValues,
     ctx: AtomicAssetsContext,
@@ -67,9 +63,6 @@ export async function getAccountsCountAction(params: RequestValues, ctx: AtomicA
     return getAccountsAction({...params, count: 'true'}, ctx);
 }
 
-/**
- * Retrieves the template and schema count for the given account and collection name
- */
 export async function getAccountCollectionAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<IAccountCollectionStats> {
     const templateQuery = await ctx.db.query(oneLine`
         SELECT template_id, COUNT(*) as assets 
@@ -94,7 +87,3 @@ export async function getAccountCollectionAction(params: RequestValues, ctx: Ato
         templates: templateQuery.rows
     };
 }
-
-
-
-
