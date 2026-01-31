@@ -1,4 +1,4 @@
-import Redis, { RedisOptions } from 'ioredis';
+import { Redis, RedisOptions } from '@atomichub/backend-common/redis';
 import { createClient, RedisClientType } from 'redis';
 
 export interface RedisConnectionOptions {

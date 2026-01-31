@@ -8,7 +8,7 @@ const DEFAULT_POLL_FREQUENCY = 60 * 10; // 10 minutes
 
 export default class ListPoller {
 
-    private interval: NodeJS.Timer;
+    private interval: NodeJS.Timeout;
 
     constructor(
         private readonly config: IListPollConfig,
