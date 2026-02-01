@@ -138,10 +138,11 @@ export class WebServer {
         this.express.use(compression());
 
         if (this.server.config.rate_limit) {
-            const client = this.server.connection.redis.nodeRedis;
+            const client = this.server.connection.redis.ioRedis;
 
             const store = new RedisStore({
-                sendCommand: (...args: string[]): any => client.sendCommand(args),
+                sendCommand: (command: string, ...args: string[]): Promise<any> =>
+                    client.call(command, ...args) as Promise<any>,
                 prefix: 'eosio-contract-api:' + server.connection.chain.name + ':rate-limit:'
             });
 
@@ -149,7 +150,7 @@ export class WebServer {
 
             this.limiter = rateLimit({
                 windowMs: this.server.config.rate_limit.interval * 1000,
-                max: this.server.config.rate_limit.requests,
+                limit: this.server.config.rate_limit.requests,
 
                 keyGenerator, store,
 
@@ -189,7 +190,7 @@ export class WebServer {
         }
 
         this.caching = expressRedisCache(
-            this.server.connection.redis.nodeRedis,
+            this.server.connection.redis.ioRedis,
             'eosio-contract-api:' + this.server.connection.chain.name + ':express-cache:',
             this.server.config.cache_life || 0,
             this.server.config.ip_whitelist || []
@@ -227,7 +228,7 @@ export class WebServer {
     private middleware(): void {
         this.express.use(bodyParser.json({limit: '10MB'}));
         this.express.use(bodyParser.urlencoded({extended: false, limit: '10MB'}));
-        this.express.use(cors({allowedHeaders: '*'}));
+        this.express.use(cors({origin: true, allowedHeaders: '*'}));
 
         this.express.use((req, res, next) => {
             res.setHeader('Access-Control-Allow-Headers', '*');

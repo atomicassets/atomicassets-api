@@ -15,7 +15,6 @@ describe('FillerMetricCollector', () => {
         }
     });
 
-
     before(async () => {
         await connections.connect();
     });

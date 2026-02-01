@@ -8,9 +8,6 @@ import {formatCollection, formatSchema, formatTemplate} from '../../format';
 import {ISchema} from 'atomicassets/build/Schema';
 import { arrayUnique } from '../../../../../utils';
 
-/**
- * Retrieves the account stats lie collection and assets count and templates
- */
 export async function getAccountAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<{
     collections: Array<{
         collection: ICollection;

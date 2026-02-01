@@ -77,8 +77,6 @@ describe('AtomicMarket Sales API', () => {
                 .to.deep.equal([sale_id]);
         });
 
-
-
         txit('filters by sold state', async () => {
             await client.createSale();
             const { sale_id } = await client.createFullSale({

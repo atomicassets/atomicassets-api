@@ -5,6 +5,6 @@ chai.use(chaiAsPromised);
 
 process.env.DO_NOT_TRACK = '1';
 process.env.NODE_ENV = 'test';
-process.env.LOG_LEVEL = 'error';  // Suppress logs during tests
+process.env.LOG_LEVEL = 'error';
 
 export default chai;
