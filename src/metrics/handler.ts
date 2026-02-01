@@ -132,7 +132,7 @@ export class MetricsCollectorHandler {
         if (this.collectFrom.redis_connection === false) return Promise.resolve();
 
         try {
-            const res = await this.connections.redis.nodeRedis.ping();
+            const res = await this.connections.redis.ioRedis.ping();
 
             this.metrics.redis_connection.labels(this.process, this.hostname).set(res === 'PONG' ? 1 : 0);
         } catch (e) {
