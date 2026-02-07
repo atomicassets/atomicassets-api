@@ -1,4 +1,5 @@
 {
+    "node-option": ["conditions=swc-node"],
     "extends": "../../.mocharc.json",
     "require": ["@swc-node/register", "./test/setup.ts"],
     "timeout": 5000
