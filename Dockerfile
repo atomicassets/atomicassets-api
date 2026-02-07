@@ -65,6 +65,9 @@ RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=10
 # Copy pruned source code
 COPY --from=prepare --chown=node:node /app/out/full/ .
 
+# Copy root SWC config (not included in turbo prune output)
+COPY --chown=node:node .swcrc .
+
 # Build the service with cache mount for turbo cache
 RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
