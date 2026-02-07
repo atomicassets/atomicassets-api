@@ -9,7 +9,7 @@
         "check-types": "tsc --noEmit",
         "clean": "rm -rf ./build/* && rm -rf ./logs/*",
         "lint": "eslint \"src/**/*.ts\"",
-        "build": "tsc",
+        "build": "swc src -d build --strip-leading-paths --config-file ../../.swcrc",
         "test": "[ -f config/connections.config.json ] && mocha --require ts-node/register 'src/**/*.test.ts' 'test/**/*.test.ts' || echo 'Tests skipped: config/connections.config.json not found'",
         "test:watch": "mocha --require ts-node/register --watch --watch-extensions ts 'src/**/*.test.ts' 'test/**/*.test.ts'",
         "test:coverage": "[ -f config/connections.config.json ] && nyc mocha --require ts-node/register 'src/**/*.test.ts' 'test/**/*.test.ts' || echo 'Coverage skipped: config/connections.config.json not found'",
