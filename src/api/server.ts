@@ -54,6 +54,8 @@ export class HTTPServer implements DB {
         this.web = new WebServer(this);
 
         this.httpServer = http.createServer(this.web.express);
+        this.httpServer.keepAliveTimeout = 65_000;
+        this.httpServer.headersTimeout = 66_000;
 
         this.httpServer.on('error', (error: NodeJS.ErrnoException) => {
             logger.error(error);
@@ -181,7 +183,7 @@ export class WebServer {
                             }
                         })();
 
-                        return sendFn(data);
+                        return sendFn(data) as unknown as express.Response;
                     };
 
                     limiter(req, res, next);
