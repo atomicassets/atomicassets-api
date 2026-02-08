@@ -7,7 +7,7 @@ let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} 
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/application/app/config/connections.config.json');
+    connectionConfig = require('/home/node/app/config/connections.config.json');
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }

@@ -25,7 +25,6 @@ export interface AtomicMarketNamespaceArgs {
     connected_reader: string;
 
     atomicmarket_account: string;
-    // optional
     atomicassets_account: string;
     delphioracle_account: string;
 

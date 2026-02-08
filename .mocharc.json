@@ -1,7 +1,6 @@
 {
-  "ui": "bdd",
-  "require": ["ts-node/register", "./test/setup.ts"],
-  "color": true,
-  "timeout": 5000,
-  "exit": true
+    "node-option": ["conditions=swc-node"],
+    "extends": "../../.mocharc.json",
+    "require": ["@swc-node/register", "./test/setup.ts"],
+    "timeout": 5000
 }

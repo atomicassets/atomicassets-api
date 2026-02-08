@@ -4,7 +4,6 @@ import {getTemplateStatsAction} from './stats';
 import {SaleApiState} from '../index';
 import {expect} from 'chai';
 
-
 const {client, txit} = initAtomicMarketTest();
 
 describe('AtomicMarket Stats API', () => {
@@ -65,7 +64,6 @@ describe('AtomicMarket Stats API', () => {
 
                 const response = await getTemplateStatsAction({symbol: 'TOKEN1', template_id: template_id}, context);
 
-
                 expect(response.results.length).to.equal(1);
                 expect(response.results[0]).to.deep.includes({
                     volume: '0', sales: '0',
@@ -89,7 +87,6 @@ describe('AtomicMarket Stats API', () => {
                 await client.refreshStatsMarket();
 
                 const response = await getTemplateStatsAction({symbol: 'TOKEN1', schema_name}, context);
-
 
                 expect(response.results.length).to.equal(1);
                 expect(response.results[0]).to.deep.includes({
@@ -115,7 +112,6 @@ describe('AtomicMarket Stats API', () => {
 
                 const response = await getTemplateStatsAction({symbol: 'TOKEN1', collection_name}, context);
 
-
                 expect(response.results.length).to.equal(1);
                 expect(response.results[0]).to.deep.contains({
                     volume: '0', sales: '0',
@@ -138,7 +134,6 @@ describe('AtomicMarket Stats API', () => {
                 await client.refreshStatsMarket();
 
                 const response = await getTemplateStatsAction({symbol: 'TOKEN1', search: 'test'}, context);
-
 
                 expect(response.results.length).to.equal(1);
                 expect(response.results[0]).to.deep.contains({
@@ -170,8 +165,6 @@ describe('AtomicMarket Stats API', () => {
                     updated_at_time: now,
                     taker_marketplace: 'X',
                 }, {template_id});
-
-
 
                 // Not included
                 await client.createFullSale({
@@ -206,7 +199,6 @@ describe('AtomicMarket Stats API', () => {
                 expect(response.results.length).to.equal(2);
                 const t1Result = response.results.find((t: { template: { template_id: string} }) => t.template.template_id === template_id);
                 const t2Result = response.results.find((t: { template: { template_id: string} }) => t.template.template_id === template_id2);
-
 
                 expect(t1Result).to.deep.contains({
                     volume: '1', sales: '1',

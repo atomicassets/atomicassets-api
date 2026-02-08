@@ -17,10 +17,18 @@ export default class ConnectionManager {
             process.env.CHAIN_ID || config.chain.chain_id
         );
 
-        this.redis = new RedisConnection(
-            process.env.REDIS_HOST || config.redis.host,
-            parseInt(process.env.REDIS_PORT, 10) || config.redis.port
-        );
+        // Build TLS config from environment variable or config file
+        const redisTls = process.env.REDIS_TLS === 'true'
+            ? { rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== 'false' }
+            : config.redis.tls;
+
+        this.redis = new RedisConnection({
+            host: process.env.REDIS_HOST || config.redis.host,
+            port: parseInt(process.env.REDIS_PORT, 10) || config.redis.port,
+            username: process.env.REDIS_USERNAME || config.redis.username,
+            password: process.env.REDIS_PASSWORD || config.redis.password,
+            tls: redisTls
+        });
 
         this.database = new PostgresConnection(
             process.env.POSTGRES_HOST || config.postgres.host,

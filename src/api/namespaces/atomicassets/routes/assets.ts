@@ -104,7 +104,7 @@ export class AssetApi {
         }
 
         return assets[0];
-    }
+    };
 
     singleAssetEndpoints(router: express.Router): any {
         const {caching, returnAsJSON} = this.server.web;

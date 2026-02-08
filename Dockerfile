@@ -5,10 +5,15 @@
 #   - apps/eosio-contract-api with actual service directory (e.g., apps/config-service)
 #   - Port number (default 9000)
 
-# Stage 1: Prepare - Prune monorepo for specific service
-FROM node:22-alpine AS prepare
+# DHI Registry URL - injected via build-arg, varies by environment
+ARG DHI_REGISTRY
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Stage 1: Prepare - Prune monorepo for specific service
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS prepare
+
+# DHI production image - create app directory
+USER root
+RUN mkdir -p /home/node/app && chown node:node /home/node/app
 
 WORKDIR /app
 
@@ -23,8 +28,8 @@ COPY packages/*/package.json packages/
 
 # Install only turbo CLI with proper env vars (lightweight, just for pruning)
 # IMPORTANT: PNPM_HOME must be set for global installs
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
-  export PNPM_HOME="/root/.local/share/pnpm" && \
+RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store \
+  export PNPM_HOME="/home/node/.local/share/pnpm" && \
   export PATH="$PNPM_HOME:$PATH" && \
   pnpm add -g turbo
 
@@ -35,57 +40,46 @@ COPY apps/eosio-contract-api ./apps/eosio-contract-api
 COPY packages ./packages
 
 # Set ENV for global pnpm packages
-ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PNPM_HOME="/home/node/.local/share/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
 # Prune to create minimal workspace for this service
 RUN turbo prune @atomichub/eosio-contract-api --docker
 
 # Stage 2: Builder - Install dependencies and build
-FROM node:22-alpine AS builder
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS builder
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Create application user
-RUN adduser --disabled-password application && \
-  mkdir -p /home/application/app && \
-  chown -R application:application /home/application
-
-USER application
-WORKDIR /home/application/app
+USER node
+WORKDIR /home/node/app
 
 # Copy pruned package.json files
-COPY --from=prepare --chown=application:application /app/out/json/ .
+COPY --from=prepare --chown=node:node /app/out/json/ .
 
 # Copy workspace packages source BEFORE install (needed for pnpm workspace links)
-COPY --from=prepare --chown=application:application /app/out/full/packages/ ./packages/
+COPY --from=prepare --chown=node:node /app/out/full/packages/ ./packages/
 
 # Install dependencies from pruned workspace with cache mount
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store,uid=1000,gid=1000 \
+RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=1000 \
   pnpm install --frozen-lockfile=true
 
 # Copy pruned source code
-COPY --from=prepare --chown=application:application /app/out/full/ .
+COPY --from=prepare --chown=node:node /app/out/full/ .
+
+# Copy root SWC config (not included in turbo prune output)
+COPY --chown=node:node .swcrc .
 
 # Build the service with cache mount for turbo cache
-RUN --mount=type=cache,target=/home/application/app/.turbo-cache,uid=1000,gid=1000 \
+RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM node:22-alpine AS runtime
+FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS runtime
 
-RUN corepack enable && corepack prepare pnpm@latest --activate
-
-# Create application user
-RUN adduser --disabled-password application && \
-  mkdir -p /home/application/app && \
-  chown -R application:application /home/application
-
-USER application
-WORKDIR /home/application/app
+USER node
+WORKDIR /home/node/app
 
 # Copy built application from builder
-COPY --from=builder --chown=application:application /home/application/app .
+COPY --from=builder --chown=node:node /home/node/app .
 
 # NOTE: Stay at monorepo root - don't change WORKDIR to apps/eosio-contract-api
 # This allows services to find config files using relative paths like ../config/config.json
@@ -99,5 +93,5 @@ ENV VERSION=${VERSION}
 
 EXPOSE 9000
 
-# Run service from its directory so ./definitions paths work, but configs are still at /home/application/app/config
+# Run service from its directory so ./definitions paths work, but configs are still at /home/node/app/config
 CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/bin/server.js"]

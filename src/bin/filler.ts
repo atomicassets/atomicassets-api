@@ -13,13 +13,13 @@ import { Registry } from 'prom-client';
 import { setAutoVacSettings } from '../filler/set-autovac-settings';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const readerConfigs: IReaderConfig[] = require('/home/application/app/config/readers.config.json');
+const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
 
 let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/application/app/config/connections.config.json');
+    connectionConfig = require('/home/node/app/config/connections.config.json');
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }

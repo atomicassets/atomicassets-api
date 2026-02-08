@@ -18,7 +18,7 @@ export class JobQueue extends EventEmitter {
 
     private readonly jobs: Array<Job> = [];
 
-    private pulseID: NodeJS.Timer;
+    private pulseID: NodeJS.Timeout;
     private readonly pulseInterval: number;
     private runningPriorities: Array<number> = [];
 

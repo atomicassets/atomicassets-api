@@ -78,7 +78,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         updated: {column: 'listing.updated_at_time', numericIndex: true},
         price: {column: 'listing.price', numericIndex: true},
         template_mint: {column: 'LOWER(listing.template_mint)', numericIndex: true},
-        name: {column: `SPLIT_PART(listing.asset_names, e'\\n', 1)`, nullable: true, numericIndex: false},
+        name: {column: 'SPLIT_PART(listing.asset_names, e\'\\n\', 1)', nullable: true, numericIndex: false},
     };
 
     if (args.sort === 'template_mint') {

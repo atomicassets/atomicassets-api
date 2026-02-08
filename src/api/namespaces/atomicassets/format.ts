@@ -43,7 +43,7 @@ export function formatTemplate(row: any): any {
 }
 
 export function formatSchema(row: any): any {
-    const {collection_name, authorized_accounts, ...data} = row;
+    const {collection_name: _collection_name, authorized_accounts: _authorized_accounts, ...data} = row;
 
     data.collection = formatCollection(data.collection);
 

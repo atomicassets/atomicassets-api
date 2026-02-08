@@ -36,7 +36,7 @@ export class TransferApi {
             result.rows.map(this.transferFormatter),
             this.assetFormatter, this.assetView, this.fillerHook
         );
-    }
+    };
 
     endpoints(router: express.Router): any {
         const {caching, returnAsJSON} = this.server.web;
