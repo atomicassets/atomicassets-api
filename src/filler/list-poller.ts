@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 import { IListPollConfig } from '../types/config';
 import PostgresConnection from '../connections/postgres';
 import logger from '../utils/winston';
@@ -31,7 +30,7 @@ export default class ListPoller {
                 headers: {
                     'X-API-Key': this.config.api_key,
                 },
-                timeout: 1000 * 60 * 5,
+                signal: AbortSignal.timeout(1000 * 60 * 5),
             });
 
             if (!response.ok) {

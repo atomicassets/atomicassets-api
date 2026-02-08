@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.4
 # Turbo Prune Dockerfile - Optimized 3-stage build with BuildKit cache mounts
 # USAGE: Copy to apps/<service-name>/Dockerfile and replace:
 #   - @atomichub/eosio-contract-api with actual service package name (e.g., @atomichub/config-service)
