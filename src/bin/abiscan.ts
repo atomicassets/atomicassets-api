@@ -1,4 +1,3 @@
-import fetch from 'node-fetch';
 
 import ConnectionManager from '../connections/manager';
 import logger from '../utils/winston';
