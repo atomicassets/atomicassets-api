@@ -80,6 +80,42 @@ if (cluster.isPrimary || cluster.isMaster) {
         }
     });
 
+    app.get('/status', async (req, res) => {
+        try {
+            const info = await connection.chain.rpc.get_info();
+            const result = await connection.database.query<{ name: string; block_num: string; block_time: string }>(
+                'SELECT name, block_num, block_time FROM contract_readers'
+            );
+
+            const fillers = result.rows.map((reader) => {
+                const currentBlock = parseInt(reader.block_num);
+                const headBlock = info.head_block_num;
+                const blocksBehind = headBlock - currentBlock;
+
+                return {
+                    identifier: reader.name,
+                    blockchain: connectionConfig.chain.name,
+                    type: 'block' as const,
+                    currentBlock,
+                    headBlock,
+                    blocksBehind,
+                    syncPercentage: headBlock > 0 ? Math.min(100, (currentBlock / headBlock) * 100) : null,
+                    isSynced: blocksBehind <= 10,
+                    lastUpdated: parseInt(reader.block_time),
+                };
+            });
+
+            res.json({
+                service: 'eosio-contract-api-filler',
+                timestamp: Date.now(),
+                fillers,
+            });
+        } catch (e) {
+            logger.error('Error collecting status', e);
+            res.status(500).json({ error: 'Failed to collect status' });
+        }
+    });
+
     app.all('/metrics', async (_req, res) => {
         const metricsHandler = new MetricsCollectorHandler(
             connection,
