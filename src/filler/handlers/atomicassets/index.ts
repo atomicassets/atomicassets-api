@@ -145,13 +145,6 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 throw new Error('AtomicAssets: Contract not deployed on the account');
             }
 
-            this.config = {
-                supported_tokens: [],
-                asset_counter: 0,
-                offer_counter: 0,
-                collection_format: []
-            };
-
             this.tokenconfigs = {
                 version: tokenconfigsTable.rows[0].version,
                 standard: tokenconfigsTable.rows[0].standard
@@ -165,6 +158,36 @@ export default class AtomicAssetsHandler extends ContractHandler {
             } else {
                 throw new Error('AtomicAssets: Tokenconfigs table empty');
             }
+
+            // Seed supported tokens from chain config
+            const configTable = await this.connection.chain.rpc.get_table_rows({
+                json: true, code: this.args.atomicassets_account,
+                scope: this.args.atomicassets_account, table: 'config'
+            });
+
+            if (configTable.rows.length > 0) {
+                for (const token of configTable.rows[0].supported_tokens) {
+                    await client.query(
+                        'INSERT INTO atomicassets_tokens (contract, token_symbol, token_contract, token_precision) ' +
+                        'VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                        [
+                            this.args.atomicassets_account,
+                            token.sym.split(',')[1],
+                            token.contract,
+                            token.sym.split(',')[0]
+                        ]
+                    );
+                }
+            }
+
+            this.config = {
+                supported_tokens: configTable.rows.length > 0
+                    ? configTable.rows[0].supported_tokens
+                    : [],
+                asset_counter: 0,
+                offer_counter: 0,
+                collection_format: []
+            };
         } else {
             const tokensQuery = await this.connection.database.query(
                 'SELECT * FROM atomicassets_tokens WHERE contract = $1',

@@ -214,11 +214,37 @@ export default class AtomicMarketHandler extends ContractHandler {
                 ]
             );
 
-            this.config = {
-                ...config,
-                supported_symbol_pairs: [],
-                supported_tokens: []
-            };
+            // Seed supported tokens from chain config
+            for (const token of config.supported_tokens) {
+                await client.query(
+                    'INSERT INTO atomicmarket_tokens (market_contract, token_contract, token_symbol, token_precision) ' +
+                    'VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                    [
+                        this.args.atomicmarket_account,
+                        token.token_contract,
+                        token.token_symbol.split(',')[1],
+                        token.token_symbol.split(',')[0]
+                    ]
+                );
+            }
+
+            // Seed supported symbol pairs from chain config
+            for (const pair of config.supported_symbol_pairs) {
+                await client.query(
+                    'INSERT INTO atomicmarket_symbol_pairs (market_contract, listing_symbol, settlement_symbol, delphi_contract, delphi_pair_name, invert_delphi_pair) ' +
+                    'VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING',
+                    [
+                        this.args.atomicmarket_account,
+                        pair.listing_symbol.split(',')[1],
+                        pair.settlement_symbol.split(',')[1],
+                        config.delphioracle_account,
+                        pair.delphi_pair_name,
+                        pair.invert_delphi_pair
+                    ]
+                );
+            }
+
+            this.config = config;
         } else {
             this.args.delphioracle_account = configQuery.rows[0].delphi_contract;
             this.args.atomicassets_account = configQuery.rows[0].assets_contract;
