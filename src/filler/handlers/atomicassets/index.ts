@@ -165,25 +165,25 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 scope: this.args.atomicassets_account, table: 'config'
             });
 
-            if (configTable.rows.length > 0) {
-                for (const token of configTable.rows[0].supported_tokens) {
-                    await client.query(
-                        'INSERT INTO atomicassets_tokens (contract, token_symbol, token_contract, token_precision) ' +
-                        'VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
-                        [
-                            this.args.atomicassets_account,
-                            token.sym.split(',')[1],
-                            token.contract,
-                            token.sym.split(',')[0]
-                        ]
-                    );
-                }
+            if (configTable.rows.length === 0) {
+                throw new Error('AtomicAssets: Config table empty — cannot seed supported tokens');
+            }
+
+            for (const token of configTable.rows[0].supported_tokens) {
+                await client.query(
+                    'INSERT INTO atomicassets_tokens (contract, token_symbol, token_contract, token_precision) ' +
+                    'VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING',
+                    [
+                        this.args.atomicassets_account,
+                        token.sym.split(',')[1],
+                        token.contract,
+                        token.sym.split(',')[0]
+                    ]
+                );
             }
 
             this.config = {
-                supported_tokens: configTable.rows.length > 0
-                    ? configTable.rows[0].supported_tokens
-                    : [],
+                supported_tokens: configTable.rows[0].supported_tokens,
                 asset_counter: 0,
                 offer_counter: 0,
                 collection_format: []
