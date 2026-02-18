@@ -10,7 +10,18 @@ const options = {
         format.colorize(),
         format.timestamp(),
         format.printf((info: any) => {
-            return `${info.timestamp} [PID:${process.pid}] [${info.level}] : ${info.message} ${Object.keys(info.metadata).length > 0 ? JSON.stringify(info.metadata) : ''}`;
+            let meta = '';
+            if (Object.keys(info.metadata).length > 0) {
+                const seen = new WeakSet();
+                meta = JSON.stringify(info.metadata, (_key, value) => {
+                    if (typeof value === 'object' && value !== null) {
+                        if (seen.has(value)) return '[Circular]';
+                        seen.add(value);
+                    }
+                    return value;
+                });
+            }
+            return `${info.timestamp} [PID:${process.pid}] [${info.level}] : ${info.message} ${meta}`;
         })
     )
 };

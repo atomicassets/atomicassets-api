@@ -1,7 +1,25 @@
+import * as fs from 'fs';
 import { Pool, PoolClient, PoolConfig, QueryResult } from 'pg';
 // @ts-ignore
 import exitHook from 'async-exit-hook';
 import logger from '../utils/winston';
+
+function buildSslConfig(): PoolConfig['ssl'] {
+    const sslMode = process.env.PGSSLMODE || 'prefer';
+    if (sslMode === 'disable') return false;
+
+    const caPath = process.env.PGSSLROOTCERT;
+    const ca = caPath && fs.existsSync(caPath) ? fs.readFileSync(caPath, 'utf8') : undefined;
+
+    if (sslMode === 'verify-ca') {
+        return { rejectUnauthorized: true, ca, checkServerIdentity: () => undefined };
+    }
+    if (sslMode === 'verify-full') {
+        return { rejectUnauthorized: true, ca };
+    }
+    // require, prefer, allow
+    return { rejectUnauthorized: false };
+}
 
 export default class PostgresConnection {
     readonly pool: Pool;
@@ -14,6 +32,7 @@ export default class PostgresConnection {
         this.args = {
             host, port, user, password, database,
             application_name: 'eosio-contract-api',
+            ssl: buildSslConfig(),
             // Fail after some seconds if a connection can't be acquired. An error like this can
             // help us understand if we have deadlocks due to non-released connections
             connectionTimeoutMillis: 5_000
