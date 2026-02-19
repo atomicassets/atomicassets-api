@@ -47,7 +47,7 @@ export class HTTPServer implements DB {
 
     constructor(readonly config: IServerConfig, readonly connection: ConnectionManager) {
         this.database = connection.database.createPool({
-            statement_timeout: config.max_query_time_ms || 10000,
+            query_timeout: config.max_query_time_ms || 10000,
             max: config.max_db_connections || 50,
             idleTimeoutMillis: 1000 * 60 * 10,
         });
