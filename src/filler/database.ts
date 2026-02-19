@@ -366,7 +366,11 @@ export class ContractDBTransaction {
             this.stats.operations += query.rowCount;
 
             if (query.rowCount === 0) {
-                throw new Error('Table ' + table + ' updated but no rows affacted ' + JSON.stringify(values) + ' ' + JSON.stringify(condition));
+                throw new Error(
+                    'Table ' + table + ' update affected 0 rows (data inconsistency). ' +
+                    'Reader: ' + this.name + ', Block: ' + (this.currentBlock || 'N/A') + '. ' +
+                    'Values: ' + JSON.stringify(values) + ', Condition: ' + JSON.stringify(condition)
+                );
             }
 
             if (selectQuery && selectQuery.rows.length > 0) {
@@ -570,7 +574,17 @@ export class ContractDBTransaction {
                 if (row.operation === 'insert') {
                     await this.insert(row.table, values, [], false, false);
                 } else if (row.operation === 'update') {
-                    await this.update(row.table, values, condition, [], false, false);
+                    try {
+                        await this.update(row.table, values, condition, [], false, false);
+                    } catch (e: any) {
+                        if (e.message && e.message.includes('update affected 0 rows')) {
+                            logger.warn('Rollback update affected 0 rows (row may have been removed by a prior rollback operation)', {
+                                table: row.table, values, condition
+                            });
+                        } else {
+                            throw e;
+                        }
+                    }
                 } else if (row.operation === 'delete') {
                     await this.delete(row.table, condition, false, false);
                 } else {
