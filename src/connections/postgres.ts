@@ -37,7 +37,10 @@ export default class PostgresConnection {
             // help us understand if we have deadlocks due to non-released connections
             connectionTimeoutMillis: 5_000
         };
-        this.pool = new Pool(this.args);
+        this.pool = new Pool({
+            ...this.args,
+            max: parseInt(process.env.PG_POOL_MAX || '20', 10)
+        });
 
         this.pool.on('error', (err) => {
             logger.warn('PG pool error', err);
