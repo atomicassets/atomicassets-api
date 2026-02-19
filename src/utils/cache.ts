@@ -1,6 +1,6 @@
 import express from 'express';
 import * as crypto from 'crypto';
-import type { Redis } from '@atomichub/backend-common/redis';
+import type { RedisClientInstance } from '@atomichub/backend-common/redis';
 
 import logger from './winston';
 import { mergeRequestData } from '../api/namespaces/utils';
@@ -16,7 +16,7 @@ export type ExpressRedisCacheOptions = {
 export type ExpressRedisCacheHandler = (options?: ExpressRedisCacheOptions) => express.RequestHandler;
 
 export function expressRedisCache(
-    redis: Redis, prefix: string, expire: number, whitelistedIPs?: string[]
+    redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[]
 ): ExpressRedisCacheHandler {
     return (options: ExpressRedisCacheOptions = {}) => {
         return (req: express.Request, res: express.Response, next: express.NextFunction): void => {

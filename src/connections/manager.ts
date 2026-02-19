@@ -27,7 +27,8 @@ export default class ConnectionManager {
             port: parseInt(process.env.REDIS_PORT, 10) || config.redis.port,
             username: process.env.REDIS_USERNAME || config.redis.username,
             password: process.env.REDIS_PASSWORD || config.redis.password,
-            tls: redisTls
+            tls: redisTls,
+            connectionType: process.env.REDIS_CONNECTION_TYPE || 'standalone',
         });
 
         this.database = new PostgresConnection(

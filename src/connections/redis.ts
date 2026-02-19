@@ -1,4 +1,4 @@
-import { Redis, RedisOptions } from '@atomichub/backend-common/redis';
+import { Redis, Cluster, RedisOptions, ClusterOptions, RedisClientInstance } from '@atomichub/backend-common/redis';
 
 export interface RedisConnectionOptions {
     host: string;
@@ -8,18 +8,27 @@ export interface RedisConnectionOptions {
     tls?: {
         rejectUnauthorized?: boolean;
     };
+    connectionType?: string;
 }
 
 export default class RedisConnection {
-    readonly ioRedis: Redis;
-    readonly ioRedisSub: Redis;
+    readonly ioRedis: RedisClientInstance;
+    readonly ioRedisSub: RedisClientInstance;
 
     constructor(options: RedisConnectionOptions) {
-        const { host, port, username, password, tls } = options;
+        const { host, port, username, password, tls, connectionType } = options;
 
-        const ioRedisOptions: RedisOptions = { host, port, username, password, tls };
-        this.ioRedis = new Redis(ioRedisOptions);
-        this.ioRedisSub = new Redis(ioRedisOptions);
+        if (connectionType === 'cluster') {
+            const clusterOptions: ClusterOptions = {
+                redisOptions: { username, password, tls },
+            };
+            this.ioRedis = new Cluster([{ host, port }], clusterOptions);
+            this.ioRedisSub = new Cluster([{ host, port }], clusterOptions);
+        } else {
+            const ioRedisOptions: RedisOptions = { host, port, username, password, tls };
+            this.ioRedis = new Redis(ioRedisOptions);
+            this.ioRedisSub = new Redis(ioRedisOptions);
+        }
     }
 
     async connect(): Promise<void> {
