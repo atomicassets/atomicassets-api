@@ -41,6 +41,7 @@ export interface IServerConfig {
     };
 
     ip_whitelist: string[];
+    cors?: string[];
     slow_query_threshold: number;
 
     max_query_time_ms: number;

@@ -230,7 +230,17 @@ export class WebServer {
     private middleware(): void {
         this.express.use(bodyParser.json({limit: '10MB'}));
         this.express.use(bodyParser.urlencoded({extended: false, limit: '10MB'}));
-        this.express.use(cors({origin: true, allowedHeaders: '*'}));
+        const publicCors = cors({origin: true, allowedHeaders: '*'});
+        const restrictedCors = this.server.config.cors?.length
+            ? cors({origin: this.server.config.cors.map(d => new RegExp(d, 'i')), allowedHeaders: '*'})
+            : publicCors;
+
+        this.express.use((req, res, next) => {
+            if (req.hostname?.endsWith('.atomicassets.io')) {
+                return publicCors(req, res, next);
+            }
+            return restrictedCors(req, res, next);
+        });
 
         this.express.use((req, res, next) => {
             res.setHeader('Access-Control-Allow-Headers', '*');
