@@ -5,7 +5,7 @@ import compression from 'compression';
 import {Server} from 'socket.io';
 import * as http from 'http';
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 
 import bodyParser from 'body-parser';
@@ -148,7 +148,7 @@ export class WebServer {
                 prefix: 'eosio-contract-api:' + server.connection.chain.name + ':rate-limit:'
             });
 
-            const keyGenerator = (req: express.Request): string => req.ip;
+            const keyGenerator = (req: express.Request): string => ipKeyGenerator(req.ip);
 
             this.limiter = rateLimit({
                 windowMs: this.server.config.rate_limit.interval * 1000,
