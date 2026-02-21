@@ -387,8 +387,8 @@ export class ContractDBTransaction {
             this.stats.operations += query.rowCount;
 
             if (query.rowCount === 0) {
-                throw new Error(
-                    'Table ' + table + ' update affected 0 rows (data inconsistency). ' +
+                logger.warn(
+                    'Table ' + table + ' update affected 0 rows (possible fork replay). ' +
                     'Reader: ' + this.name + ', Block: ' + (this.currentBlock || 'N/A') + '. ' +
                     'Values: ' + JSON.stringify(values) + ', Condition: ' + JSON.stringify(condition)
                 );
