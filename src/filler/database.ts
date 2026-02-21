@@ -240,7 +240,9 @@ export class ContractDBTransaction {
     }
 
     async insert(
-        table: string, values: Record<string, any>, primaryKey: string[], reversible: boolean = true, lock: boolean = true
+        table: string, values: Record<string, any>, primaryKey: string[],
+        reversible: boolean = true, lock: boolean = true,
+        onConflict: 'update' | 'nothing' | 'error' = 'error'
     ): Promise<QueryResult> {
         await this.acquireLock(lock);
 
@@ -284,6 +286,25 @@ export class ContractDBTransaction {
             let queryStr = 'INSERT INTO ' + this.client.escapeIdentifier(table) + ' ';
             queryStr += '(' + keys.map(this.client.escapeIdentifier).join(', ') + ') ';
             queryStr += 'VALUES ' + queryRows.join(', ') + ' ';
+
+            if (onConflict === 'update' && primaryKey.length > 0) {
+                const conflictKeys = primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ');
+                const updateCols = keys
+                    .filter(key => primaryKey.indexOf(key) === -1)
+                    .map(key => this.client.escapeIdentifier(key) + ' = EXCLUDED.' + this.client.escapeIdentifier(key));
+
+                if (updateCols.length > 0) {
+                    queryStr += 'ON CONFLICT (' + conflictKeys + ') DO UPDATE SET ' + updateCols.join(', ') + ' ';
+                } else {
+                    queryStr += 'ON CONFLICT (' + conflictKeys + ') DO NOTHING ';
+                }
+            } else if (onConflict === 'nothing') {
+                if (primaryKey.length > 0) {
+                    queryStr += 'ON CONFLICT (' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ') DO NOTHING ';
+                } else {
+                    queryStr += 'ON CONFLICT DO NOTHING ';
+                }
+            }
 
             if (primaryKey.length > 0) {
                 queryStr += 'RETURNING ' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ' ';

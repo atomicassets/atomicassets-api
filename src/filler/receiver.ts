@@ -148,6 +148,17 @@ export default class StateReceiver {
         logger.info('Reader stopped at block #' + this.currentBlock);
     }
 
+    private static readonly TRANSIENT_PG_CODES = new Set([
+        '23505', // duplicate key (fork replay)
+        '40001', // serialization failure
+        '40P01', // deadlock detected
+        '57P01', // admin shutdown
+        '08006', // connection failure
+    ]);
+
+    private static readonly MAX_BLOCK_RETRIES = 3;
+    private static readonly RETRY_DELAY_MS = 1000;
+
     private async consumer(resp: ShipBlockResponse): Promise<void> {
         await this.dsLock.acquire();
 
@@ -155,18 +166,33 @@ export default class StateReceiver {
         const contractRows = await this.prepareContractRows(resp.this_block.block_num, resp.deltas);
 
         this.dsQueue.add(async () => {
-            try {
-                await this.process(resp, actionTraces, contractRows);
-            } catch (error) {
-                this.dsQueue.clear();
-                this.dsQueue.pause();
+            for (let attempt = 1; attempt <= StateReceiver.MAX_BLOCK_RETRIES; attempt++) {
+                try {
+                    await this.process(resp, actionTraces, contractRows);
+                    this.dsLock.release();
+                    return;
+                } catch (error) {
+                    const pgCode = (error as any)?.code;
+                    const isTransient = typeof pgCode === 'string'
+                        && StateReceiver.TRANSIENT_PG_CODES.has(pgCode);
 
-                logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
+                    if (isTransient && attempt < StateReceiver.MAX_BLOCK_RETRIES) {
+                        logger.warn(
+                            `Transient DB error (${pgCode}) at block #${resp.this_block.block_num}, ` +
+                            `retry ${attempt}/${StateReceiver.MAX_BLOCK_RETRIES}`
+                        );
+                        await new Promise(resolve => setTimeout(resolve, StateReceiver.RETRY_DELAY_MS * attempt));
+                        continue;
+                    }
 
-                return;
+                    this.dsQueue.clear();
+                    this.dsQueue.pause();
+
+                    logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
+
+                    return;
+                }
             }
-
-            this.dsLock.release();
         }).then();
     }
 
