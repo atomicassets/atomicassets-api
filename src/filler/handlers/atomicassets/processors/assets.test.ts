@@ -113,8 +113,8 @@ describe('assetProcessor', () => {
             expect(asset.schema_name).to.equal('testschema11');
             expect(asset.template_id).to.equal('1');
             expect(asset.owner).to.equal('owner1111111');
-            expect(asset.mutable_data).to.equal('{}');
-            expect(asset.immutable_data).to.equal('{}');
+            expect(asset.mutable_data).to.deep.equal({});
+            expect(asset.immutable_data).to.deep.equal({});
             expect(asset.burned_by_account).to.be.null;
             expect(asset.burned_at_block).to.be.null;
             expect(Number(asset.minted_at_block)).to.equal(block.block_num);

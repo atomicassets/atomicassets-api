@@ -68,7 +68,7 @@ export async function getAccountCollectionAction(params: RequestValues, ctx: Ato
         SELECT template_id, COUNT(*) as assets 
         FROM atomicassets_assets asset 
         WHERE contract = $1 AND owner = $2 AND collection_name = $3 
-        GROUP BY template_id ORDER BY assets DESC
+        GROUP BY template_id ORDER BY assets DESC, template_id ASC NULLS LAST
     `,
         [ctx.coreArgs.atomicassets_account, ctx.pathParams.account, ctx.pathParams.collection_name]
     );
@@ -77,7 +77,7 @@ export async function getAccountCollectionAction(params: RequestValues, ctx: Ato
         SELECT schema_name, COUNT(*) as assets
         FROM atomicassets_assets asset
         WHERE contract = $1 AND owner = $2 AND collection_name = $3
-        GROUP BY schema_name ORDER BY assets DESC
+        GROUP BY schema_name ORDER BY assets DESC, schema_name ASC
     `,
         [ctx.coreArgs.atomicassets_account, ctx.pathParams.account, ctx.pathParams.collection_name]
     );
