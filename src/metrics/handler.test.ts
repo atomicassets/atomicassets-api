@@ -6,13 +6,20 @@ import {Registry} from 'prom-client';
 import ConnectionManager from '../connections/manager';
 import {expect} from 'chai';
 
-describe('FillerMetricCollector', () => {
-    const connections = new ConnectionManager({
-        ...connectionConfig,
-        postgres: getTestPostgresConfig(),
-    });
+let hasFullConfig = false;
+try {
+    require('../../config/connections.config.json');
+    hasFullConfig = true;
+} catch { /* CI mode - no full config */ }
+
+(hasFullConfig ? describe : describe.skip)('FillerMetricCollector', () => {
+    let connections: ConnectionManager;
 
     before(async () => {
+        connections = new ConnectionManager({
+            ...connectionConfig,
+            postgres: getTestPostgresConfig(),
+        });
         await connections.connect();
     });
 

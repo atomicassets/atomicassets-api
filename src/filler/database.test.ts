@@ -1,13 +1,22 @@
 import 'mocha';
 import ConnectionManager from '../connections/manager';
 import {ContractDB} from './database';
+import {connectionConfig} from '../utils/test';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const config = require('../../config/connections.config.json');
+let hasFullConfig = false;
+try {
+    require('../../config/connections.config.json');
+    hasFullConfig = true;
+} catch { /* CI mode - no full config */ }
 
-describe('database tests', () => {
-    const connection = new ConnectionManager(config);
-    const contract = new ContractDB('test', connection);
+(hasFullConfig ? describe : describe.skip)('database tests', () => {
+    let connection: ConnectionManager;
+    let contract: ContractDB;
+
+    before(() => {
+        connection = new ConnectionManager(connectionConfig);
+        contract = new ContractDB('test', connection);
+    });
 
     it('Contract DB Transaction Insert', async () => {
         const transaction = await contract.startTransaction(1);

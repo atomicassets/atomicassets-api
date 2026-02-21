@@ -83,7 +83,7 @@ describe('offerProcessor', () => {
             const data: LogNewOfferActionData = {
                 offer_id: '100001',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001', '1002'],
                 recipient_asset_ids: ['2001'],
                 memo: 'trade me',
@@ -99,7 +99,7 @@ describe('offerProcessor', () => {
             expect(offerResult.rowCount).to.equal(1);
             const offer = offerResult.rows[0];
             expect(offer.sender).to.equal('sender111111');
-            expect(offer.recipient).to.equal('receiver11111');
+            expect(offer.recipient).to.equal('receiver1111');
             expect(offer.memo).to.equal('trade me');
             expect(offer.state).to.equal(OfferState.PENDING.valueOf());
             expect(Number(offer.created_at_block)).to.equal(block.block_num);
@@ -112,7 +112,7 @@ describe('offerProcessor', () => {
             const data: LogNewOfferActionData = {
                 offer_id: '100002',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001', '1002'],
                 recipient_asset_ids: ['2001'],
                 memo: 'trade',
@@ -128,7 +128,7 @@ describe('offerProcessor', () => {
             expect(assetsResult.rowCount).to.equal(3);
 
             // Recipient asset
-            const recipientAssets = assetsResult.rows.filter((r: any) => r.owner === 'receiver11111');
+            const recipientAssets = assetsResult.rows.filter((r: any) => r.owner === 'receiver1111');
             expect(recipientAssets).to.have.length(1);
             expect(recipientAssets[0].asset_id).to.equal('2001');
 
@@ -145,7 +145,7 @@ describe('offerProcessor', () => {
             const data: LogNewOfferActionData = {
                 offer_id: '100003',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001'],
                 recipient_asset_ids: [],
                 memo: longMemo,
@@ -170,7 +170,7 @@ describe('offerProcessor', () => {
             const createData: LogNewOfferActionData = {
                 offer_id: '200001',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001'],
                 recipient_asset_ids: [],
                 memo: 'test',
@@ -204,7 +204,7 @@ describe('offerProcessor', () => {
             const createData: LogNewOfferActionData = {
                 offer_id: '200002',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001'],
                 recipient_asset_ids: [],
                 memo: 'test',
@@ -237,7 +237,7 @@ describe('offerProcessor', () => {
             const createData: LogNewOfferActionData = {
                 offer_id: '200003',
                 sender: 'sender111111',
-                recipient: 'receiver11111',
+                recipient: 'receiver1111',
                 sender_asset_ids: ['1001'],
                 recipient_asset_ids: [],
                 memo: 'test',

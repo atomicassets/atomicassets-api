@@ -128,7 +128,7 @@ describe('collectionProcessor', () => {
             expect(col.notify_accounts).to.deep.equal(['notifier1111']);
             expect(parseFloat(col.market_fee)).to.equal(0.05);
 
-            const data = JSON.parse(col.data);
+            const data = (typeof col.data === 'string' ? JSON.parse(col.data) : col.data);
             expect(data.name).to.equal('My Cool Collection');
             expect(data.img).to.equal('QmTest123');
         });
@@ -188,7 +188,7 @@ describe('collectionProcessor', () => {
             expect(col.authorized_accounts).to.deep.equal(['creator11111', 'newauth11111']);
             expect(parseFloat(col.market_fee)).to.equal(0.03);
 
-            const data = JSON.parse(col.data);
+            const data = (typeof col.data === 'string' ? JSON.parse(col.data) : col.data);
             expect(data.name).to.equal('Updated Name');
             expect(data.img).to.equal('QmUpdated');
         });

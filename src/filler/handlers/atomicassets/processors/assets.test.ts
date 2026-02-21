@@ -111,7 +111,7 @@ describe('assetProcessor', () => {
             const asset = assetResult.rows[0];
             expect(asset.collection_name).to.equal('testcol11111');
             expect(asset.schema_name).to.equal('testschema11');
-            expect(asset.template_id).to.equal(1);
+            expect(asset.template_id).to.equal('1');
             expect(asset.owner).to.equal('owner1111111');
             expect(asset.mutable_data).to.equal('{}');
             expect(asset.immutable_data).to.equal('{}');
@@ -183,8 +183,8 @@ describe('assetProcessor', () => {
                 [CONTRACT, data.asset_id]
             );
             const row = result.rows[0];
-            expect(JSON.parse(row.immutable_data)).to.deep.equal({ name: 'Test NFT' });
-            expect(JSON.parse(row.mutable_data)).to.deep.equal({ level: '5' });
+            expect((typeof row.immutable_data === 'string' ? JSON.parse(row.immutable_data) : row.immutable_data)).to.deep.equal({ name: 'Test NFT' });
+            expect((typeof row.mutable_data === 'string' ? JSON.parse(row.mutable_data) : row.mutable_data)).to.deep.equal({ level: '5' });
         });
     });
 
@@ -281,7 +281,7 @@ describe('assetProcessor', () => {
             );
             expect(result.rowCount).to.equal(1);
             const row = result.rows[0];
-            expect(JSON.parse(row.mutable_data)).to.deep.equal({ level: '5', xp: '100' });
+            expect((typeof row.mutable_data === 'string' ? JSON.parse(row.mutable_data) : row.mutable_data)).to.deep.equal({ level: '5', xp: '100' });
             expect(Number(row.updated_at_block)).to.equal(updateBlock.block_num);
         });
     });
@@ -312,7 +312,7 @@ describe('assetProcessor', () => {
             const transferData: LogTransferActionData = {
                 collection_name: 'testcol11111',
                 from: 'sender111111',
-                to: 'receiver11111',
+                to: 'receiver1111',
                 asset_ids: ['4000000000001'],
                 memo: 'test transfer',
             };
@@ -324,7 +324,7 @@ describe('assetProcessor', () => {
                 'SELECT owner, transferred_at_block FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
                 [CONTRACT, '4000000000001']
             );
-            expect(assetResult.rows[0].owner).to.equal('receiver11111');
+            expect(assetResult.rows[0].owner).to.equal('receiver1111');
             expect(Number(assetResult.rows[0].transferred_at_block)).to.equal(transferBlock.block_num);
 
             // Check transfer record created (store_transfers = true)
@@ -334,7 +334,7 @@ describe('assetProcessor', () => {
             );
             expect(transferResult.rowCount).to.equal(1);
             expect(transferResult.rows[0].sender).to.equal('sender111111');
-            expect(transferResult.rows[0].recipient).to.equal('receiver11111');
+            expect(transferResult.rows[0].recipient).to.equal('receiver1111');
             expect(transferResult.rows[0].memo).to.equal('test transfer');
 
             // Check transfer assets record
@@ -380,7 +380,7 @@ describe('assetProcessor', () => {
             const transferData: LogTransferActionData = {
                 collection_name: 'testcol11111',
                 from: 'sender111111',
-                to: 'receiver11111',
+                to: 'receiver1111',
                 asset_ids: ['4000000000002'],
                 memo: 'test transfer no record',
             };
@@ -392,7 +392,7 @@ describe('assetProcessor', () => {
                 'SELECT owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
                 [CONTRACT, '4000000000002']
             );
-            expect(assetResult.rows[0].owner).to.equal('receiver11111');
+            expect(assetResult.rows[0].owner).to.equal('receiver1111');
 
             // But no transfer record
             const transferResult = await client.query(

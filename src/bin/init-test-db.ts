@@ -47,7 +47,7 @@ async function main(): Promise<void> {
 
     // Initialize handler tables without requiring readers.config.json.
     // These are the handlers whose tables are needed by integration tests.
-    const testHandlers = ['atomicassets', 'atomicmarket'];
+    const testHandlers = ['atomicassets', 'delphioracle', 'atomicmarket'];
 
     const setupClient = await connection.begin();
     for (const handlerName of testHandlers) {
