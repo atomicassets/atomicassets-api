@@ -24,7 +24,7 @@ import {ActionHandler, ActionHandlerContext} from './actionhandler';
 import {ApiNamespace} from './namespaces/interfaces';
 import {mergeRequestData} from './namespaces/utils';
 import {Send} from 'express-serve-static-core';
-import {GetInfoResult} from 'eosjs/dist/eosjs-rpc-interfaces';
+type GetInfoResult = any;
 import { initListValidator } from './namespaces/lists';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
