@@ -12,6 +12,8 @@
         "build": "swc src -d build --strip-leading-paths --config-file ../../.swcrc",
         "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/api/utils.test.ts' 'src/api/namespaces/validation.test.ts'",
         "test:integration": "[ -f config/connections.config.json ] && mocha --require @swc-node/register 'src/**/*.test.ts' || echo 'Integration tests skipped: config/connections.config.json not found'",
+        "test:init-db": "node --require @swc-node/register src/bin/init-test-db.ts",
+        "test:e2e:ci": "pnpm test:init-db && mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
         "test:watch": "mocha --require @swc-node/register --watch --watch-extensions ts 'src/**/*.test.ts'",
         "test:coverage": "[ -f config/connections.config.json ] && nyc mocha --require @swc-node/register 'src/**/*.test.ts' || echo 'Coverage skipped: config/connections.config.json not found'",
         "start": "node ./build/bin/server.js",
