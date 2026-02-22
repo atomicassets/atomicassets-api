@@ -42,7 +42,7 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['market_contract', 'auction_id']);
+            }, ['market_contract', 'auction_id'], true, true, 'update');
 
             await db.insert('atomicmarket_auctions_assets', trace.act.data.asset_ids.map((row, index) => ({
                 market_contract: contract,
@@ -52,7 +52,7 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
                 asset_id: row
             })), [
                 'market_contract', 'auction_id', 'assets_contract', 'asset_id'
-            ]);
+            ], true, true, 'update');
 
             notifier.sendActionTrace('auctions', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_AUCTION.valueOf()
