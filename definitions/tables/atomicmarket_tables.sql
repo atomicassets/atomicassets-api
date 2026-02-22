@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS atomicmarket_stats_markets (
     buyer varchar(12) not null,
     seller varchar(12) not null,
     maker_marketplace varchar(12),
-    taker_marketplace varchar(12) not null,
+    taker_marketplace varchar(12),
     assets_contract varchar(12) not null,
     collection_name varchar(12),
     schema_name varchar(12),
