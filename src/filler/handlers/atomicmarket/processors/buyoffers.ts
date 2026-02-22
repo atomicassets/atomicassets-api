@@ -42,7 +42,7 @@ export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProc
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['market_contract', 'buyoffer_id']);
+            }, ['market_contract', 'buyoffer_id'], true, true, 'update');
 
             await db.insert('atomicmarket_buyoffers_assets', trace.act.data.asset_ids.map((assetID, index) => ({
                 market_contract: core.args.atomicmarket_account,
@@ -50,7 +50,7 @@ export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProc
                 assets_contract: core.args.atomicassets_account,
                 index: index + 1,
                 asset_id: assetID
-            })), ['market_contract', 'buyoffer_id', 'assets_contract', 'asset_id']);
+            })), ['market_contract', 'buyoffer_id', 'assets_contract', 'asset_id'], true, true, 'update');
 
             notifier.sendActionTrace('buyoffer', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_BUYOFFER.valueOf()

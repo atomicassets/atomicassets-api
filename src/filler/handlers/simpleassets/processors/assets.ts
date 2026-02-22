@@ -54,7 +54,7 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
                 const chunks = arrayChunk(tableInserts.assets, 50);
 
                 for (const chunk of chunks) {
-                    await db.insert('simpleassets_assets', chunk, ['contract', 'asset_id']);
+                    await db.insert('simpleassets_assets', chunk, ['contract', 'asset_id'], true, true, 'update');
                 }
             }
 
@@ -133,14 +133,14 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
                     txid: Buffer.from(tx.id, 'hex'),
                     created_at_block: block.block_num,
                     created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'transfer_id']);
+                }, ['contract', 'transfer_id'], true, true, 'update');
 
                 await db.insert('simpleassets_transfers_assets', trace.act.data.assetids.map((assetID, index) => ({
                     transfer_id: trace.global_sequence,
                     contract: contract,
                     index: index + 1,
                     asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id']);
+                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
             }
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
@@ -174,14 +174,14 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
                     txid: Buffer.from(tx.id, 'hex'),
                     created_at_block: block.block_num,
                     created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'transfer_id']);
+                }, ['contract', 'transfer_id'], true, true, 'update');
 
                 await db.insert('simpleassets_transfers_assets', trace.act.data.assetids.map((assetID, index) => ({
                     transfer_id: trace.global_sequence,
                     contract: contract,
                     index: index + 1,
                     asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id']);
+                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
             }
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
