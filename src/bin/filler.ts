@@ -126,17 +126,40 @@ if (cluster.isPrimary || cluster.isMaster) {
         res.send(await metricsHandler.getMetrics(new Registry()));
     });
 
-    app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
+    const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
+
+    process.on('SIGTERM', () => {
+        logger.info('Primary received SIGTERM — shutting down workers');
+
+        server.close();
+
+        // @ts-ignore
+        for (const id in cluster.workers) {
+            // @ts-ignore
+            cluster.workers[id]?.process.kill('SIGTERM');
+        }
+    });
 } else {
     logger.info('Worker ' + process.pid + ' started');
 
     const index = parseInt(process.env.config_index, 10);
+    let filler: Filler | null = null;
+
+    process.on('SIGTERM', async () => {
+        logger.info(`Worker ${process.pid} received SIGTERM — stopping filler`);
+
+        if (filler) {
+            await filler.stopFiller();
+        }
+
+        process.exit(0);
+    });
 
     // delay startup for each reader to avoid startup transaction conflicts
     setTimeout(async () => {
         const connection = new ConnectionManager(connectionConfig);
-        const reader = new Filler(readerConfigs[index], connection);
+        filler = new Filler(readerConfigs[index], connection);
 
-        await reader.startFiller(5);
+        await filler.startFiller(5);
     }, index * 1000);
 }
