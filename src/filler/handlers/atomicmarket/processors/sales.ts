@@ -9,6 +9,7 @@ import {
     LogNewSaleActionData, LogSaleStartActionData, PurchaseSaleActionData
 } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
+import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
 import logger from '../../../../utils/winston';
 
@@ -30,7 +31,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 settlement_symbol: trace.act.data.settlement_symbol.split(',')[1],
                 assets_contract: core.args.atomicassets_account,
                 offer_id: null,
-                maker_marketplace: trace.act.data.maker_marketplace,
+                maker_marketplace: normalizeMarketplace(trace.act.data.maker_marketplace),
                 taker_marketplace: null,
                 collection_name: trace.act.data.collection_name,
                 collection_fee: trace.act.data.collection_fee,
@@ -125,7 +126,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 buyer: trace.act.data.buyer,
                 final_price: preventInt64Overflow(finalPrice),
                 state: SaleState.SOLD.valueOf(),
-                taker_marketplace: trace.act.data.taker_marketplace,
+                taker_marketplace: normalizeMarketplace(trace.act.data.taker_marketplace),
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
             }, {

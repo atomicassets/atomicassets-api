@@ -7,6 +7,7 @@ import AtomicMarketHandler, { AtomicMarketUpdatePriority, BuyofferState } from '
 import ApiNotificationSender from '../../../notifier';
 import { AcceptBuyofferActionData, CancelBuyofferActionData, DeclineBuyofferActionData, LogNewBuyofferActionData } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
+import { normalizeMarketplace } from '../../../../utils/marketplace';
 import logger from '../../../../utils/winston';
 
 export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
@@ -31,7 +32,7 @@ export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProc
                 price: preventInt64Overflow(trace.act.data.price.split(' ')[0].replace('.', '')),
                 token_symbol: trace.act.data.price.split(' ')[1],
                 assets_contract: core.args.atomicassets_account,
-                maker_marketplace: trace.act.data.maker_marketplace,
+                maker_marketplace: normalizeMarketplace(trace.act.data.maker_marketplace),
                 taker_marketplace: null,
                 collection_name: trace.act.data.collection_name,
                 collection_fee: trace.act.data.collection_fee,
@@ -77,7 +78,7 @@ export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProc
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<AcceptBuyofferActionData>): Promise<void> => {
             await db.update('atomicmarket_buyoffers', {
                 state: BuyofferState.ACCEPTED.valueOf(),
-                taker_marketplace: trace.act.data.taker_marketplace,
+                taker_marketplace: normalizeMarketplace(trace.act.data.taker_marketplace),
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
             }, {
