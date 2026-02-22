@@ -17,7 +17,7 @@ RUN mkdir -p /home/node/app && chown node:node /home/node/app
 WORKDIR /app
 
 # Copy only files needed for turbo prune (minimal context)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY turbo.json ./
 
 # Copy package.json files for all workspaces (needed for dependency graph)
