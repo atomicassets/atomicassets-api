@@ -74,7 +74,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 const chunks = arrayChunk(tableInserts.mints, 50);
 
                 for (const chunk of chunks) {
-                    await db.insert('atomicassets_mints', chunk, ['contract', 'asset_id'], true, true, 'update');
+                    await db.insert('atomicassets_mints', chunk, ['contract', 'asset_id']);
                 }
             }
 
