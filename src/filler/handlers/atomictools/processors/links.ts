@@ -31,7 +31,7 @@ export function linkProcessor(core: AtomicToolsHandler, processor: DataProcessor
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['tools_contract', 'link_id']);
+            }, ['tools_contract', 'link_id'], true, true, 'update');
 
             const rows = trace.act.data.asset_ids.map((assetID, index) => ({
                 tools_contract: core.args.atomictools_account,
@@ -41,7 +41,7 @@ export function linkProcessor(core: AtomicToolsHandler, processor: DataProcessor
                 asset_id: assetID
             }));
 
-            await db.insert('atomictools_links_assets', rows, ['tools_contract', 'link_id', 'assets_contract', 'asset_id']);
+            await db.insert('atomictools_links_assets', rows, ['tools_contract', 'link_id', 'assets_contract', 'asset_id'], true, true, 'update');
         }, AtomicToolsUpdatePriority.ACTION_CREATE_LINK.valueOf()
     ));
 
