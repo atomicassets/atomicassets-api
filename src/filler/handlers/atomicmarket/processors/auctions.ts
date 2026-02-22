@@ -12,6 +12,7 @@ import {
     LogNewAuctionActionData
 } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
+import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
 import { AuctionsTableRow } from '../types/tables';
 
@@ -30,7 +31,7 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
                 price: preventInt64Overflow(trace.act.data.starting_bid.split(' ')[0].replace('.', '')),
                 token_symbol: trace.act.data.starting_bid.split(' ')[1],
                 assets_contract: core.args.atomicassets_account,
-                maker_marketplace: trace.act.data.maker_marketplace,
+                maker_marketplace: normalizeMarketplace(trace.act.data.maker_marketplace),
                 taker_marketplace: null,
                 collection_name: trace.act.data.collection_name,
                 collection_fee: trace.act.data.collection_fee,
@@ -111,7 +112,7 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
                 buyer: trace.act.data.bidder,
                 price: preventInt64Overflow(trace.act.data.bid.split(' ')[0].replace('.', '')),
                 token_symbol: trace.act.data.bid.split(' ')[1],
-                taker_marketplace: trace.act.data.taker_marketplace,
+                taker_marketplace: normalizeMarketplace(trace.act.data.taker_marketplace),
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
             }, {
