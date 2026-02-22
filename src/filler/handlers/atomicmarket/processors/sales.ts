@@ -39,7 +39,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['market_contract', 'sale_id']);
+            }, ['market_contract', 'sale_id'], true, true, 'update');
 
             notifier.sendActionTrace('sales', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_SALE.valueOf()
