@@ -66,7 +66,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 const chunks = arrayChunk(tableInserts.assets, 50);
 
                 for (const chunk of chunks) {
-                    await db.insert('atomicassets_assets', chunk, ['contract', 'asset_id'], true, true, 'update');
+                    await db.insert('atomicassets_assets', chunk, ['contract', 'asset_id']);
                 }
             }
 
@@ -177,14 +177,14 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                     txid: Buffer.from(tx.id, 'hex'),
                     created_at_block: block.block_num,
                     created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'transfer_id'], true, true, 'update');
+                }, ['contract', 'transfer_id']);
 
                 await db.insert('atomicassets_transfers_assets', trace.act.data.asset_ids.map((assetID, index) => ({
                     transfer_id: trace.global_sequence,
                     contract: contract,
                     index: index + 1,
                     asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+                })), ['contract', 'transfer_id', 'asset_id']);
             }
 
             notifier.sendActionTrace('transfers', block, tx, trace);

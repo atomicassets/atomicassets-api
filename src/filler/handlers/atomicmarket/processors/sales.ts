@@ -10,6 +10,7 @@ import {
 } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
 import ApiNotificationSender from '../../../notifier';
+import logger from '../../../../utils/winston';
 
 export function saleProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];
@@ -38,7 +39,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['market_contract', 'sale_id'], true, true, 'update');
+            }, ['market_contract', 'sale_id']);
 
             notifier.sendActionTrace('sales', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_SALE.valueOf()
@@ -89,7 +90,8 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 );
 
                 if (sale.rowCount === 0) {
-                    throw new Error('AtomicMarket: Sale was purchased but was not found');
+                    logger.warn('AtomicMarket: Sale was purchased but was not found (possible fork replay). sale_id=' + trace.act.data.sale_id);
+                    return;
                 }
 
                 finalPrice = sale.rows[0].listing_price;
@@ -104,7 +106,8 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 );
 
                 if (query.rowCount === 0) {
-                    throw new Error('AtomicMarket: Sale was purchased but could not find delphi pair');
+                    logger.warn('AtomicMarket: Sale was purchased but could not find delphi pair (possible fork replay). sale_id=' + trace.act.data.sale_id);
+                    return;
                 }
 
                 const row = query.rows[0];

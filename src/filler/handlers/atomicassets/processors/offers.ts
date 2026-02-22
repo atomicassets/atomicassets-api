@@ -31,7 +31,7 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['contract', 'offer_id'], true, true, 'update');
+            }, ['contract', 'offer_id']);
 
             await db.insert('atomicassets_offers_assets', [
                 ...trace.act.data.sender_asset_ids.map((assetID, index) => ({
@@ -48,7 +48,7 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                     index: index + 1,
                     asset_id: assetID
                 }))
-            ], ['contract', 'offer_id', 'asset_id'], true, true, 'update');
+            ], ['contract', 'offer_id', 'asset_id']);
 
             notifier.sendActionTrace('offers', block, tx, trace);
         }, AtomicAssetsUpdatePriority.ACTION_CREATE_OFFER.valueOf()
