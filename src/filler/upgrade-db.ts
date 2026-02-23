@@ -99,6 +99,21 @@ export async function runMigrations(database: PostgresConnection): Promise<void>
             logger.info('Successfully upgraded to ' + version);
 
             await client.query('COMMIT');
+
+            // Execute deferred SQL outside transaction (large DML that shouldn't hold DDL locks)
+            for (const handlerName of availableContracts) {
+                const deferredFilename = `${versionDir}${handlerName}-deferred.sql`;
+                if (fs.existsSync(deferredFilename)) {
+                    logger.info(`Running deferred SQL for ${handlerName} v${version}...`);
+                    const sql = fs.readFileSync(deferredFilename, { encoding: 'utf8' });
+                    const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+                    for (const stmt of statements) {
+                        logger.info(`Executing deferred: ${stmt.substring(0, 80)}...`);
+                        await database.query(stmt);
+                    }
+                    logger.info(`Deferred SQL for ${handlerName} v${version} complete`);
+                }
+            }
         }
     }
 
