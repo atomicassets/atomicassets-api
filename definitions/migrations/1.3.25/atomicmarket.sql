@@ -7,7 +7,6 @@ ALTER TABLE atomicmarket_sales_filters ALTER COLUMN maker_marketplace DROP NOT N
 ALTER TABLE atomicmarket_stats_markets ALTER COLUMN taker_marketplace DROP NOT NULL;
 
 UPDATE atomicmarket_auctions SET maker_marketplace = NULL WHERE maker_marketplace = '';
-UPDATE atomicmarket_sales SET maker_marketplace = NULL WHERE maker_marketplace = '';
 UPDATE atomicmarket_buyoffers SET maker_marketplace = NULL WHERE maker_marketplace = '';
 UPDATE atomicmarket_template_buyoffers SET maker_marketplace = NULL WHERE maker_marketplace = '';
 UPDATE atomicmarket_stats_markets SET maker_marketplace = NULL WHERE maker_marketplace = '';
