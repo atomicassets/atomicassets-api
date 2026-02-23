@@ -150,16 +150,11 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 standard: tokenconfigsTable.rows[0].standard
             };
 
-            if (tokenconfigsTable.rows.length > 0) {
-                await client.query(
-                    'INSERT INTO atomicassets_config (contract, version, collection_format) VALUES ($1, $2, $3)',
-                    [this.args.atomicassets_account, tokenconfigsTable.rows[0].version, []]
-                );
-            } else {
+            if (tokenconfigsTable.rows.length === 0) {
                 throw new Error('AtomicAssets: Tokenconfigs table empty');
             }
 
-            // Seed supported tokens from chain config
+            // Seed config and supported tokens from chain
             const configTable = await this.connection.chain.rpc.get_table_rows({
                 json: true, code: this.args.atomicassets_account,
                 scope: this.args.atomicassets_account, table: 'config'
@@ -168,6 +163,12 @@ export default class AtomicAssetsHandler extends ContractHandler {
             if (configTable.rows.length === 0) {
                 throw new Error('AtomicAssets: Config table empty — cannot seed supported tokens');
             }
+
+            await client.query(
+                'INSERT INTO atomicassets_config (contract, version, collection_format) VALUES ($1, $2, $3)',
+                [this.args.atomicassets_account, tokenconfigsTable.rows[0].version,
+                    configTable.rows[0].collection_format.map((element: any) => JSON.stringify(element))]
+            );
 
             for (const token of configTable.rows[0].supported_tokens) {
                 await client.query(
@@ -186,7 +187,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 supported_tokens: configTable.rows[0].supported_tokens,
                 asset_counter: 0,
                 offer_counter: 0,
-                collection_format: []
+                collection_format: configTable.rows[0].collection_format
             };
         } else {
             const tokensQuery = await this.connection.database.query(
