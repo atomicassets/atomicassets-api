@@ -46,4 +46,6 @@ CREATE INDEX IF NOT EXISTS atomictools_links_key_full ON atomictools_links USING
 CREATE INDEX IF NOT EXISTS atomictools_links_created_at_time ON atomictools_links USING btree (created_at_time);
 CREATE INDEX IF NOT EXISTS atomictools_links_updated_at_time ON atomictools_links USING btree (updated_at_time);
 
+CREATE INDEX IF NOT EXISTS atomictools_links_contract_state_linkid ON atomictools_links (tools_contract, state, link_id DESC);
+
 CREATE INDEX IF NOT EXISTS atomictools_links_assets_asset_id ON atomictools_links_assets USING btree (asset_id);

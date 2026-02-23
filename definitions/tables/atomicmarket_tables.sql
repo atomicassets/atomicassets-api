@@ -453,3 +453,17 @@ CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_time ON atomicmarket_stats
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_asset_id ON atomicmarket_stats_markets USING btree ("asset_id");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_schema_name ON atomicmarket_stats_markets USING btree ("schema_name");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_template_id_time ON atomicmarket_stats_markets (template_id, time);
+
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_time ON atomicmarket_stats_markets (market_contract, symbol, "time");
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_maker_mp ON atomicmarket_stats_markets (maker_marketplace) WHERE maker_marketplace IS NOT NULL;
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_taker_mp ON atomicmarket_stats_markets (taker_marketplace) WHERE taker_marketplace IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_mc_state_created ON atomicmarket_sales (market_contract, state, created_at_time DESC, sale_id) WHERE state IN (1, 3);
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_sold_stats ON atomicmarket_sales (market_contract, settlement_symbol, collection_name) INCLUDE (final_price) WHERE state = 3;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_mc_state_created ON atomicmarket_buyoffers (market_contract, state, created_at_time DESC, buyoffer_id);
+
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_created ON atomicmarket_auctions (market_contract, state, created_at_time DESC, auction_id);
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_endtime ON atomicmarket_auctions (market_contract, state, end_time DESC, auction_id) WHERE state = 1;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_mc_state_created ON atomicmarket_template_buyoffers (market_contract, state, created_at_time DESC, buyoffer_id);
