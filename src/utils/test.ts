@@ -24,7 +24,12 @@ function loadConnectionConfig(): IConnectionsConfig {
                 host: process.env.REDIS_TEST_HOST || 'localhost',
                 port: parseInt(process.env.REDIS_TEST_PORT || '6379', 10),
             },
-            chain: {} as any,
+            chain: {
+                name: 'test',
+                chain_id: '0000000000000000000000000000000000000000000000000000000000000000',
+                http: 'http://localhost:8888',
+                ship: 'ws://localhost:8080',
+            },
         } as IConnectionsConfig;
     }
 }
