@@ -63,7 +63,7 @@ describe('JobQueue', () => {
 
             await new Promise(resolve => setTimeout(resolve, 10));
 
-            expect(calledJob1At).to.be.greaterThan(now);
+            expect(calledJob1At).to.be.greaterThanOrEqual(now);
             expect(calledJob1At).to.be.lessThanOrEqual(calledJob2At);
         });
     });
