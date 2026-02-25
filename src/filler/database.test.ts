@@ -3,13 +3,12 @@ import ConnectionManager from '../connections/manager';
 import {ContractDB} from './database';
 import {connectionConfig} from '../utils/test';
 
-let hasFullConfig = false;
-try {
-    require('../../config/connections.config.json');
-    hasFullConfig = true;
-} catch { /* CI mode - no full config */ }
+const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
+    try { require('../../config/connections.config.json'); return true; }
+    catch { return false; }
+})();
 
-(hasFullConfig ? describe : describe.skip)('database tests', () => {
+(hasDatabase ? describe : describe.skip)('database tests', () => {
     let connection: ConnectionManager;
     let contract: ContractDB;
 
