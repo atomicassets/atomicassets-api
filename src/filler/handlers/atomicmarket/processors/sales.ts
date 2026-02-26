@@ -9,7 +9,9 @@ import {
     LogNewSaleActionData, LogSaleStartActionData, PurchaseSaleActionData
 } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
+import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
+import logger from '../../../../utils/winston';
 
 export function saleProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];
@@ -29,7 +31,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 settlement_symbol: trace.act.data.settlement_symbol.split(',')[1],
                 assets_contract: core.args.atomicassets_account,
                 offer_id: null,
-                maker_marketplace: trace.act.data.maker_marketplace,
+                maker_marketplace: normalizeMarketplace(trace.act.data.maker_marketplace),
                 taker_marketplace: null,
                 collection_name: trace.act.data.collection_name,
                 collection_fee: trace.act.data.collection_fee,
@@ -38,7 +40,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
                 created_at_block: block.block_num,
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-            }, ['market_contract', 'sale_id']);
+            }, ['market_contract', 'sale_id'], true, true, 'update');
 
             notifier.sendActionTrace('sales', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_SALE.valueOf()
@@ -89,7 +91,8 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 );
 
                 if (sale.rowCount === 0) {
-                    throw new Error('AtomicMarket: Sale was purchased but was not found');
+                    logger.warn('AtomicMarket: Sale was purchased but was not found (possible fork replay). sale_id=' + trace.act.data.sale_id);
+                    return;
                 }
 
                 finalPrice = sale.rows[0].listing_price;
@@ -104,7 +107,8 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 );
 
                 if (query.rowCount === 0) {
-                    throw new Error('AtomicMarket: Sale was purchased but could not find delphi pair');
+                    logger.warn('AtomicMarket: Sale was purchased but could not find delphi pair (possible fork replay). sale_id=' + trace.act.data.sale_id);
+                    return;
                 }
 
                 const row = query.rows[0];
@@ -122,7 +126,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 buyer: trace.act.data.buyer,
                 final_price: preventInt64Overflow(finalPrice),
                 state: SaleState.SOLD.valueOf(),
-                taker_marketplace: trace.act.data.taker_marketplace,
+                taker_marketplace: normalizeMarketplace(trace.act.data.taker_marketplace),
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
             }, {

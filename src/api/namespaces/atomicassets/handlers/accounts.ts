@@ -9,10 +9,6 @@ import {filterQueryArgs} from '../../validation';
 export {getAccountAction} from './accounts/getAccountAction';
 
 // TODO: Separate the logic of building query to reuse it on getAccountsCountAction
-/**
- * Retrieves the asset count of several account using several filters
- * like: collection_name, match(owner name), template_id
- */
 export async function getAccountsAction(
     params: RequestValues,
     ctx: AtomicAssetsContext,
@@ -67,15 +63,12 @@ export async function getAccountsCountAction(params: RequestValues, ctx: AtomicA
     return getAccountsAction({...params, count: 'true'}, ctx);
 }
 
-/**
- * Retrieves the template and schema count for the given account and collection name
- */
 export async function getAccountCollectionAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<IAccountCollectionStats> {
     const templateQuery = await ctx.db.query(oneLine`
         SELECT template_id, COUNT(*) as assets 
         FROM atomicassets_assets asset 
         WHERE contract = $1 AND owner = $2 AND collection_name = $3 
-        GROUP BY template_id ORDER BY assets DESC
+        GROUP BY template_id ORDER BY assets DESC, template_id ASC NULLS LAST
     `,
         [ctx.coreArgs.atomicassets_account, ctx.pathParams.account, ctx.pathParams.collection_name]
     );
@@ -84,7 +77,7 @@ export async function getAccountCollectionAction(params: RequestValues, ctx: Ato
         SELECT schema_name, COUNT(*) as assets
         FROM atomicassets_assets asset
         WHERE contract = $1 AND owner = $2 AND collection_name = $3
-        GROUP BY schema_name ORDER BY assets DESC
+        GROUP BY schema_name ORDER BY assets DESC, schema_name ASC
     `,
         [ctx.coreArgs.atomicassets_account, ctx.pathParams.account, ctx.pathParams.collection_name]
     );
@@ -94,7 +87,3 @@ export async function getAccountCollectionAction(params: RequestValues, ctx: Ato
         templates: templateQuery.rows
     };
 }
-
-
-
-

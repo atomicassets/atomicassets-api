@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.4
 # Turbo Prune Dockerfile - Optimized 3-stage build with BuildKit cache mounts
 # USAGE: Copy to apps/<service-name>/Dockerfile and replace:
 #   - @atomichub/eosio-contract-api with actual service package name (e.g., @atomichub/config-service)
@@ -18,7 +17,7 @@ RUN mkdir -p /home/node/app && chown node:node /home/node/app
 WORKDIR /app
 
 # Copy only files needed for turbo prune (minimal context)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY turbo.json ./
 
 # Copy package.json files for all workspaces (needed for dependency graph)
@@ -65,12 +64,15 @@ RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=10
 # Copy pruned source code
 COPY --from=prepare --chown=node:node /app/out/full/ .
 
+# Copy root SWC config (not included in turbo prune output)
+COPY --chown=node:node .swcrc .
+
 # Build the service with cache mount for turbo cache
 RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
   pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
 
 # Stage 3: Runtime - Production image
-FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS runtime
+FROM ${DHI_REGISTRY}/node:22-debian13 AS runtime
 
 USER node
 WORKDIR /home/node/app

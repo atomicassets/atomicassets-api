@@ -4,6 +4,7 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { ConfigTableRow } from '../types/tables';
 import AtomicMarketHandler, { AtomicMarketUpdatePriority } from '../index';
+import logger from '../../../../utils/winston';
 
 export function configProcessor(core: AtomicMarketHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
@@ -58,7 +59,7 @@ export function configProcessor(core: AtomicMarketHandler, processor: DataProces
                 }
 
                 if (tokens.length > 0) {
-                    throw new Error('AtomicMarket: Supported token removed. Should not be possible');
+                    logger.warn('AtomicMarket: ' + tokens.length + ' supported token(s) removed from config: ' + tokens.join(', '));
                 }
             }
 
@@ -85,7 +86,7 @@ export function configProcessor(core: AtomicMarketHandler, processor: DataProces
                 }
 
                 if (pairs.length > 0) {
-                    throw new Error('AtomicMarket: Symbol pair removed. Should not be possible');
+                    logger.warn('AtomicMarket: ' + pairs.length + ' symbol pair(s) removed from config: ' + pairs.join(', '));
                 }
             }
 

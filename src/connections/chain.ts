@@ -1,16 +1,30 @@
-import fetch from 'node-fetch';
-import { Api, JsonRpc } from 'eosjs/dist';
-import { JsSignatureProvider } from 'eosjs/dist/eosjs-jssig';
-import { Abi } from 'eosjs/dist/eosjs-rpc-interfaces';
+import { ABI, APIClient, FetchProvider, Serializer } from '@wharfkit/antelope';
+
+class RpcAdapter {
+    constructor(private readonly client: APIClient) {}
+
+    async get_info(): Promise<any> {
+        const info = await this.client.v1.chain.get_info();
+        return Serializer.objectify(info);
+    }
+
+    async get_abi(accountName: string): Promise<any> {
+        const result = await this.client.v1.chain.get_abi(accountName);
+        return Serializer.objectify(result as any);
+    }
+
+    async get_table_rows(params: any): Promise<any> {
+        return await this.client.v1.chain.get_table_rows(params);
+    }
+}
 
 export default class ChainApi {
-    readonly rpc: JsonRpc;
-    readonly api: Api;
+    readonly client: APIClient;
+    readonly rpc: RpcAdapter;
 
     constructor(readonly endpoint: string, readonly name: string, readonly chainId: string) {
-        // @ts-ignore
-        this.rpc = new JsonRpc(endpoint, { fetch });
-        this.api = new Api({ rpc: this.rpc, signatureProvider: new JsSignatureProvider([]) });
+        this.client = new APIClient(new FetchProvider(endpoint, { fetch }));
+        this.rpc = new RpcAdapter(this.client);
     }
 
     async post(path: string, body: any): Promise<any> {
@@ -27,12 +41,12 @@ export default class ChainApi {
     }
 
     async checkChainId(): Promise<boolean> {
-        const info = await this.rpc.get_info();
+        const info = await this.client.v1.chain.get_info();
 
-        return info.chain_id === this.chainId;
+        return String(info.chain_id) === this.chainId;
     }
 
-    deserializeAbi(data: Uint8Array): Abi {
-        return this.api.rawAbiToJson(data);
+    deserializeAbi(data: Uint8Array): ABI {
+        return Serializer.decode({ data, type: ABI }) as ABI;
     }
 }

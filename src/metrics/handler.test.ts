@@ -1,22 +1,25 @@
 import * as os from 'os';
 
-import {connectionConfig} from '../utils/test';
+import {connectionConfig, getTestPostgresConfig} from '../utils/test';
 import {MetricsCollectorHandler} from './handler';
 import {Registry} from 'prom-client';
 import ConnectionManager from '../connections/manager';
 import {expect} from 'chai';
 
-describe('FillerMetricCollector', () => {
-    const connections = new ConnectionManager({
-        ...connectionConfig,
-        postgres: {
-            ...connectionConfig.postgres,
-            database: `${connectionConfig.postgres.database}-test`,
-        }
-    });
+let hasFullConfig = false;
+try {
+    require('../../config/connections.config.json');
+    hasFullConfig = true;
+} catch { /* CI mode - no full config */ }
 
+(hasFullConfig ? describe : describe.skip)('FillerMetricCollector', () => {
+    let connections: ConnectionManager;
 
     before(async () => {
+        connections = new ConnectionManager({
+            ...connectionConfig,
+            postgres: getTestPostgresConfig(),
+        });
         await connections.connect();
     });
 

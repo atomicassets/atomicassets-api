@@ -1,39 +1,30 @@
-import { TextDecoder, TextEncoder } from 'text-encoding';
-import { SerialBuffer } from 'eosjs/dist/eosjs-serialize';
+import { ABI, Name, Serializer, UInt64 } from '@wharfkit/antelope';
 
 import { deserializeUInt, serializeUInt } from './binary';
-import { Serialize } from 'eosjs';
 import { ShipTableDelta, ShipTransactionTrace } from '../types/ship';
 import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../types/eosio';
-import { Abi } from 'eosjs/dist/eosjs-rpc-interfaces';
 
 export function serializeEosioName(name: string): string {
-    const buffer = new SerialBuffer({textEncoder: new TextEncoder(), textDecoder: new TextDecoder()});
+    // Wharfkit Name.from().value returns the canonical big-endian uint64.
+    // The database stores names in little-endian byte order (matching the
+    // original eosjs pushName encoding), so we byte-reverse before storage.
+    const beValue = BigInt(Name.from(name).value.toString());
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64BE(beValue);
+    const leValue = buf.readBigUInt64LE();
 
-    buffer.pushName(name);
-
-    const bytes = buffer.asUint8Array();
-    let n = BigInt(0);
-
-    for (const byte of bytes) {
-        n = (n << BigInt(8)) + BigInt(byte);
-    }
-
-    return serializeUInt(n).toString();
+    return serializeUInt(leValue).toString();
 }
 
 export function deserializeEosioName(data: string): string {
-    const bytes = new Uint8Array(8);
-    let n = deserializeUInt(data);
+    // Database stores little-endian uint64; convert back to big-endian
+    // for wharfkit Name reconstruction.
+    const leValue = deserializeUInt(data);
+    const buf = Buffer.alloc(8);
+    buf.writeBigUInt64LE(leValue);
+    const beValue = buf.readBigUInt64BE();
 
-    for (let i = 0; i < 8; i ++) {
-        bytes[7 - i] = Number(n & BigInt(0xFF));
-        n = n >> BigInt(8);
-    }
-
-    const buffer = new SerialBuffer({textEncoder: new TextEncoder(), textDecoder: new TextDecoder(), array: bytes});
-
-    return buffer.getName();
+    return Name.from(UInt64.from(beValue) as UInt64).toString();
 }
 
 export function eosioTimestampToDate(timestamp: string): Date {
@@ -52,7 +43,7 @@ export function splitEosioToken(asset: string, contract?: string): {amount: stri
     };
 }
 
-export function deserializeEosioType(type: string, data: Uint8Array | string, types: Map<string, Serialize.Type>, checkLength: boolean = true): any {
+export function deserializeEosioType(type: string, data: Uint8Array | string, abi: ABI, _checkLength: boolean = true): any {
     let dataArray;
     if (typeof data === 'string') {
         dataArray = Uint8Array.from(Buffer.from(data, 'hex'));
@@ -60,21 +51,15 @@ export function deserializeEosioType(type: string, data: Uint8Array | string, ty
         dataArray = new Uint8Array(data);
     }
 
-    const buffer = new Serialize.SerialBuffer({ textEncoder: new TextEncoder(), textDecoder: new TextDecoder(), array: dataArray });
-    const result = Serialize.getType(types, type).deserialize(buffer, new Serialize.SerializerState({ bytesAsUint8Array: true }));
+    const result = Serializer.decode({ data: dataArray, type, abi });
 
-    if (buffer.readPos !== data.length && checkLength) {
-        throw new Error('Deserialization error: ' + type);
-    }
-
-    return result;
+    return Serializer.objectify(result);
 }
 
-export function serializeEosioType(type: string, value: any, types: Map<string, Serialize.Type>): Uint8Array {
-    const buffer = new Serialize.SerialBuffer({ textEncoder: new TextEncoder(), textDecoder: new TextDecoder() });
-    Serialize.getType(types, type).serialize(buffer, value);
+export function serializeEosioType(type: string, value: any, abi: ABI): Uint8Array {
+    const encoded = Serializer.encode({ object: value, type, abi });
 
-    return buffer.asUint8Array();
+    return encoded.array;
 }
 
 export function extractShipTraces(data: ShipTransactionTrace[]): Array<{trace: EosioActionTrace<any>, tx: EosioTransaction<any>}> {
@@ -157,20 +142,20 @@ export function extractShipContractRows(deltas: ShipTableDelta[]): Array<EosioCo
     return result;
 }
 
-export function getTableAbiType(abi: Abi, contract: string, table: string): string {
+export function getTableAbiType(abi: ABI, contract: string, table: string): string {
     for (const row of abi.tables) {
-        if (row.name === table) {
-            return row.type;
+        if (row.name == table) {
+            return String(row.type);
         }
     }
 
     throw new Error('Type for table not found ' + contract + ':' + table);
 }
 
-export function getActionAbiType(abi: Abi, contract: string, action: string): string {
+export function getActionAbiType(abi: ABI, contract: string, action: string): string {
     for (const row of abi.actions) {
-        if (row.name === action) {
-            return row.type;
+        if (row.name == action) {
+            return String(row.type);
         }
     }
 

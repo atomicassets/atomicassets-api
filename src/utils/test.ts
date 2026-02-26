@@ -6,18 +6,59 @@ import { AtomicMarketContext } from '../api/namespaces/atomicmarket';
 import { IConnectionsConfig } from '../types/config';
 import { initListValidator } from '../api/namespaces/lists';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-export const connectionConfig: IConnectionsConfig = require('../../config/connections.config.json');
+function loadConnectionConfig(): IConnectionsConfig {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require('../../config/connections.config.json');
+    } catch {
+        // In CI, connections.config.json doesn't exist — use env vars
+        return {
+            postgres: {
+                host: process.env.POSTGRES_TEST_HOST || 'localhost',
+                port: parseInt(process.env.POSTGRES_TEST_PORT || '5432', 10),
+                user: process.env.POSTGRES_TEST_USER || 'root',
+                password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
+                database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
+            },
+            redis: {
+                host: process.env.REDIS_TEST_HOST || 'localhost',
+                port: parseInt(process.env.REDIS_TEST_PORT || '6379', 10),
+            },
+            chain: {
+                name: 'test',
+                chain_id: '0000000000000000000000000000000000000000000000000000000000000000',
+                http: 'http://localhost:8888',
+                ship: 'ws://localhost:8080',
+            },
+        } as IConnectionsConfig;
+    }
+}
+
+export const connectionConfig: IConnectionsConfig = loadConnectionConfig();
+
+export function getTestPostgresConfig(): { host: string; port: number; user: string; password: string; database: string } {
+    // Prefer POSTGRES_TEST_* env vars (CI pattern), fall back to config file
+    if (process.env.POSTGRES_TEST_HOST) {
+        return {
+            host: process.env.POSTGRES_TEST_HOST,
+            port: parseInt(process.env.POSTGRES_TEST_PORT || '5432', 10),
+            user: process.env.POSTGRES_TEST_USER || 'root',
+            password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
+            database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
+        };
+    }
+    return {
+        ...connectionConfig.postgres,
+        database: `${connectionConfig.postgres.database}-test`,
+    };
+}
 
 export class TestClient extends Client implements DB {
 
     private id: number = 1;
 
     constructor() {
-        super({
-            ...connectionConfig.postgres,
-            database: `${connectionConfig.postgres.database}-test`,
-        });
+        super(getTestPostgresConfig());
 
         // eslint-disable-next-line no-console
         this.connect().catch(console.error);

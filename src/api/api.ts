@@ -24,7 +24,7 @@ export default class Api {
 
         this.server.docs.render();
 
-        this.server.web.express.use('*', (_: express.Request, res: express.Response) => {
+        this.server.web.express.use((_: express.Request, res: express.Response) => {
             res.status(404).json({
                 success: false, message: 'Endpoint not found'
             });

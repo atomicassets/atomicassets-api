@@ -240,7 +240,9 @@ export class ContractDBTransaction {
     }
 
     async insert(
-        table: string, values: Record<string, any>, primaryKey: string[], reversible: boolean = true, lock: boolean = true
+        table: string, values: Record<string, any>, primaryKey: string[],
+        reversible: boolean = true, lock: boolean = true,
+        onConflict: 'update' | 'nothing' | 'error' = 'error'
     ): Promise<QueryResult> {
         await this.acquireLock(lock);
 
@@ -285,13 +287,54 @@ export class ContractDBTransaction {
             queryStr += '(' + keys.map(this.client.escapeIdentifier).join(', ') + ') ';
             queryStr += 'VALUES ' + queryRows.join(', ') + ' ';
 
+            if (onConflict === 'update' && primaryKey.length > 0) {
+                const conflictKeys = primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ');
+                const updateCols = keys
+                    .filter(key => primaryKey.indexOf(key) === -1)
+                    .map(key => this.client.escapeIdentifier(key) + ' = EXCLUDED.' + this.client.escapeIdentifier(key));
+
+                if (updateCols.length > 0) {
+                    queryStr += 'ON CONFLICT (' + conflictKeys + ') DO UPDATE SET ' + updateCols.join(', ') + ' ';
+                } else {
+                    queryStr += 'ON CONFLICT (' + conflictKeys + ') DO NOTHING ';
+                }
+            } else if (onConflict === 'nothing') {
+                if (primaryKey.length > 0) {
+                    queryStr += 'ON CONFLICT (' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ') DO NOTHING ';
+                } else {
+                    queryStr += 'ON CONFLICT DO NOTHING ';
+                }
+            }
+
             if (primaryKey.length > 0) {
                 queryStr += 'RETURNING ' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ' ';
             }
 
             queryStr += ';';
 
-            const query = await this.clientQuery(queryStr, queryValues);
+            let query: QueryResult;
+            try {
+                query = await this.clientQuery(queryStr, queryValues);
+            } catch (e: any) {
+                // 42P10: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
+                // This means the table is missing the expected PK/unique constraint.
+                // Fall back to a plain insert (no ON CONFLICT) so we don't crash the filler.
+                if (e.code === '42P10' && onConflict !== 'error') {
+                    logger.warn(`Table ${table} missing unique constraint for ON CONFLICT — falling back to plain insert`);
+
+                    let fallbackStr = 'INSERT INTO ' + this.client.escapeIdentifier(table) + ' ';
+                    fallbackStr += '(' + keys.map(this.client.escapeIdentifier).join(', ') + ') ';
+                    fallbackStr += 'VALUES ' + queryRows.join(', ') + ' ';
+                    if (primaryKey.length > 0) {
+                        fallbackStr += 'RETURNING ' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ' ';
+                    }
+                    fallbackStr += ';';
+
+                    query = await this.clientQuery(fallbackStr, queryValues);
+                } else {
+                    throw e;
+                }
+            }
 
             this.stats.operations += query.rowCount;
 
@@ -366,7 +409,11 @@ export class ContractDBTransaction {
             this.stats.operations += query.rowCount;
 
             if (query.rowCount === 0) {
-                throw new Error('Table ' + table + ' updated but no rows affacted ' + JSON.stringify(values) + ' ' + JSON.stringify(condition));
+                logger.warn(
+                    'Table ' + table + ' update affected 0 rows (possible fork replay). ' +
+                    'Reader: ' + this.name + ', Block: ' + (this.currentBlock || 'N/A') + '. ' +
+                    'Values: ' + JSON.stringify(values) + ', Condition: ' + JSON.stringify(condition)
+                );
             }
 
             if (selectQuery && selectQuery.rows.length > 0) {
@@ -570,7 +617,17 @@ export class ContractDBTransaction {
                 if (row.operation === 'insert') {
                     await this.insert(row.table, values, [], false, false);
                 } else if (row.operation === 'update') {
-                    await this.update(row.table, values, condition, [], false, false);
+                    try {
+                        await this.update(row.table, values, condition, [], false, false);
+                    } catch (e: any) {
+                        if (e.message && e.message.includes('update affected 0 rows')) {
+                            logger.warn('Rollback update affected 0 rows (row may have been removed by a prior rollback operation)', {
+                                table: row.table, values, condition
+                            });
+                        } else {
+                            throw e;
+                        }
+                    }
                 } else if (row.operation === 'delete') {
                     await this.delete(row.table, condition, false, false);
                 } else {

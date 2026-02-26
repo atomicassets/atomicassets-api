@@ -1,9 +1,9 @@
 import { initBaseTables } from '../filler/upgrade-db';
-import ConnectionManager from '../connections/manager';
+import PostgresConnection from '../connections/postgres';
 import logger from '../utils/winston';
 import { IConnectionsConfig } from '../types/config';
 
-let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;
+let connectionConfig: IConnectionsConfig | null = null;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -13,8 +13,16 @@ try {
 }
 
 async function main(): Promise<void> {
-    const connection = new ConnectionManager(connectionConfig);
-    await connection.connect();
+    // For schema-init, we only need database connection (not chain or redis)
+    // Use PG* env vars (standard PostgreSQL) with fallback to config file
+    const database = new PostgresConnection(
+        process.env.PGHOST || connectionConfig?.postgres?.host || 'localhost',
+        parseInt(process.env.PGPORT || String(connectionConfig?.postgres?.port) || '5432', 10),
+        process.env.PGUSER || connectionConfig?.postgres?.user || 'postgres',
+        process.env.PGPASSWORD || connectionConfig?.postgres?.password || '',
+        process.env.PGDATABASE || connectionConfig?.postgres?.database || 'postgres'
+    );
+    await database.connect();
 
     // Use PostgreSQL advisory lock to prevent concurrent schema initialization
     // Lock ID: 1234567890 (arbitrary unique number for schema init)
@@ -22,14 +30,14 @@ async function main(): Promise<void> {
 
     try {
         logger.info('Acquiring advisory lock for schema initialization...');
-        await connection.database.query('SELECT pg_advisory_lock($1)', [SCHEMA_INIT_LOCK_ID]);
+        await database.query('SELECT pg_advisory_lock($1)', [SCHEMA_INIT_LOCK_ID]);
         logger.info('Advisory lock acquired');
 
         try {
-            await initBaseTables(connection.database);
+            await initBaseTables(database);
             logger.info('Schema initialization completed successfully');
         } finally {
-            await connection.database.query('SELECT pg_advisory_unlock($1)', [SCHEMA_INIT_LOCK_ID]);
+            await database.query('SELECT pg_advisory_unlock($1)', [SCHEMA_INIT_LOCK_ID]);
             logger.info('Advisory lock released');
         }
     } catch (error) {

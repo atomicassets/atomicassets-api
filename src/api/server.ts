@@ -5,7 +5,7 @@ import compression from 'compression';
 import {Server} from 'socket.io';
 import * as http from 'http';
 
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 
 import bodyParser from 'body-parser';
@@ -24,7 +24,7 @@ import {ActionHandler, ActionHandlerContext} from './actionhandler';
 import {ApiNamespace} from './namespaces/interfaces';
 import {mergeRequestData} from './namespaces/utils';
 import {Send} from 'express-serve-static-core';
-import {GetInfoResult} from 'eosjs/dist/eosjs-rpc-interfaces';
+type GetInfoResult = any;
 import { initListValidator } from './namespaces/lists';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -47,13 +47,15 @@ export class HTTPServer implements DB {
 
     constructor(readonly config: IServerConfig, readonly connection: ConnectionManager) {
         this.database = connection.database.createPool({
-            statement_timeout: config.max_query_time_ms || 10000,
+            query_timeout: config.max_query_time_ms || 10000,
             max: config.max_db_connections || 50,
             idleTimeoutMillis: 1000 * 60 * 10,
         });
         this.web = new WebServer(this);
 
         this.httpServer = http.createServer(this.web.express);
+        this.httpServer.keepAliveTimeout = 65_000;
+        this.httpServer.headersTimeout = 66_000;
 
         this.httpServer.on('error', (error: NodeJS.ErrnoException) => {
             logger.error(error);
@@ -138,18 +140,19 @@ export class WebServer {
         this.express.use(compression());
 
         if (this.server.config.rate_limit) {
-            const client = this.server.connection.redis.nodeRedis;
+            const client = this.server.connection.redis.ioRedis;
 
             const store = new RedisStore({
-                sendCommand: (...args: string[]): any => client.sendCommand(args),
+                sendCommand: (command: string, ...args: string[]): Promise<any> =>
+                    client.call(command, ...args) as Promise<any>,
                 prefix: 'eosio-contract-api:' + server.connection.chain.name + ':rate-limit:'
             });
 
-            const keyGenerator = (req: express.Request): string => req.ip;
+            const keyGenerator = (req: express.Request): string => ipKeyGenerator(req.ip);
 
             this.limiter = rateLimit({
                 windowMs: this.server.config.rate_limit.interval * 1000,
-                max: this.server.config.rate_limit.requests,
+                limit: this.server.config.rate_limit.requests,
 
                 keyGenerator, store,
 
@@ -180,7 +183,7 @@ export class WebServer {
                             }
                         })();
 
-                        return sendFn(data);
+                        return sendFn(data) as unknown as express.Response;
                     };
 
                     limiter(req, res, next);
@@ -189,7 +192,7 @@ export class WebServer {
         }
 
         this.caching = expressRedisCache(
-            this.server.connection.redis.nodeRedis,
+            this.server.connection.redis.ioRedis,
             'eosio-contract-api:' + this.server.connection.chain.name + ':express-cache:',
             this.server.config.cache_life || 0,
             this.server.config.ip_whitelist || []
@@ -227,7 +230,17 @@ export class WebServer {
     private middleware(): void {
         this.express.use(bodyParser.json({limit: '10MB'}));
         this.express.use(bodyParser.urlencoded({extended: false, limit: '10MB'}));
-        this.express.use(cors({allowedHeaders: '*'}));
+        const publicCors = cors({origin: true, allowedHeaders: '*'});
+        const restrictedCors = this.server.config.cors?.length
+            ? cors({origin: this.server.config.cors.map(d => new RegExp(d, 'i')), allowedHeaders: '*'})
+            : publicCors;
+
+        this.express.use((req, res, next) => {
+            if (req.hostname?.endsWith('.atomicassets.io')) {
+                return publicCors(req, res, next);
+            }
+            return restrictedCors(req, res, next);
+        });
 
         this.express.use((req, res, next) => {
             res.setHeader('Access-Control-Allow-Headers', '*');

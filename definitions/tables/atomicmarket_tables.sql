@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS atomicmarket_auctions
     price bigint NOT NULL,
     token_symbol character varying(12) NOT NULL,
     assets_contract character varying(12) NOT NULL,
-    maker_marketplace character varying(12) NOT NULL,
+    maker_marketplace character varying(12),
     taker_marketplace character varying(12),
     template_mint int4range,
     collection_name character varying(12),
@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS atomicmarket_sales
     settlement_symbol character varying(12),
     assets_contract character varying(12) NOT NULL,
     offer_id bigint,
-    maker_marketplace character varying(12) NOT NULL,
+    maker_marketplace character varying(12),
     taker_marketplace character varying(12),
     template_mint int4range,
     collection_name character varying(12),
@@ -150,7 +150,7 @@ CREATE TABLE IF NOT EXISTS atomicmarket_buyoffers
     price bigint NOT NULL,
     token_symbol character varying(12) NOT NULL,
     assets_contract character varying(12) NOT NULL,
-    maker_marketplace character varying(12) NOT NULL,
+    maker_marketplace character varying(12),
     taker_marketplace character varying(12),
     template_mint int4range,
     collection_name character varying(12) NOT NULL,
@@ -184,7 +184,7 @@ CREATE TABLE IF NOT EXISTS atomicmarket_template_buyoffers
     price bigint NOT NULL,
     token_symbol character varying(12) NOT NULL,
     assets_contract character varying(12) NOT NULL,
-    maker_marketplace character varying(12) NOT NULL,
+    maker_marketplace character varying(12),
     taker_marketplace character varying(12),
     template_mint int4range,
     collection_name character varying(12) NOT NULL,
@@ -218,8 +218,8 @@ CREATE TABLE IF NOT EXISTS atomicmarket_stats_markets (
     listing_type text not null,
     buyer varchar(12) not null,
     seller varchar(12) not null,
-    maker_marketplace varchar(12) not null,
-    taker_marketplace varchar(12) not null,
+    maker_marketplace varchar(12),
+    taker_marketplace varchar(12),
     assets_contract varchar(12) not null,
     collection_name varchar(12),
     schema_name varchar(12),
@@ -453,3 +453,17 @@ CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_time ON atomicmarket_stats
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_asset_id ON atomicmarket_stats_markets USING btree ("asset_id");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_schema_name ON atomicmarket_stats_markets USING btree ("schema_name");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_template_id_time ON atomicmarket_stats_markets (template_id, time);
+
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_time ON atomicmarket_stats_markets (market_contract, symbol, "time");
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_maker_mp ON atomicmarket_stats_markets (maker_marketplace) WHERE maker_marketplace IS NOT NULL;
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_taker_mp ON atomicmarket_stats_markets (taker_marketplace) WHERE taker_marketplace IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_mc_state_created ON atomicmarket_sales (market_contract, state, created_at_time DESC, sale_id) WHERE state IN (1, 3);
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_sold_stats ON atomicmarket_sales (market_contract, settlement_symbol, collection_name) INCLUDE (final_price) WHERE state = 3;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_mc_state_created ON atomicmarket_buyoffers (market_contract, state, created_at_time DESC, buyoffer_id);
+
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_created ON atomicmarket_auctions (market_contract, state, created_at_time DESC, auction_id);
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_endtime ON atomicmarket_auctions (market_contract, state, end_time DESC, auction_id) WHERE state = 1;
+
+CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_mc_state_created ON atomicmarket_template_buyoffers (market_contract, state, created_at_time DESC, buyoffer_id);

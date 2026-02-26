@@ -1,5 +1,5 @@
 import { parentPort, workerData } from 'worker_threads';
-import { Serialize } from 'eosjs';
+import { ABI } from '@wharfkit/antelope';
 
 import logger from '../utils/winston';
 import { deserializeEosioType } from '../utils/eosio';
@@ -8,7 +8,7 @@ const args: {abi: string} = workerData;
 
 logger.info('Launching deserialization worker...');
 
-const eosjsTypes: any = Serialize.getTypesFromAbi(Serialize.createInitialTypes(), JSON.parse(args.abi));
+const shipAbi: ABI = ABI.from(JSON.parse(args.abi));
 
 parentPort.on('message', (param: Array<{type: string, data: Uint8Array | string, abi?: any}>) => {
     try {
@@ -20,11 +20,11 @@ parentPort.on('message', (param: Array<{type: string, data: Uint8Array | string,
             }
 
             if (row.abi) {
-                const abiTypes = Serialize.getTypesFromAbi(Serialize.createInitialTypes(), row.abi);
+                const rowAbi = ABI.from(row.abi);
 
-                result.push(deserializeEosioType(row.type, row.data, abiTypes));
+                result.push(deserializeEosioType(row.type, row.data, rowAbi));
             } else {
-                result.push(deserializeEosioType(row.type, row.data, eosjsTypes));
+                result.push(deserializeEosioType(row.type, row.data, shipAbi));
             }
         }
 

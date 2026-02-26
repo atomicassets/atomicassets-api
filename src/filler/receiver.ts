@@ -1,5 +1,4 @@
-import { Serialize } from 'eosjs';
-import { Abi } from 'eosjs/dist/eosjs-rpc-interfaces';
+import { ABI } from '@wharfkit/antelope';
 import PQueue from 'p-queue';
 
 import logger from '../utils/winston';
@@ -25,9 +24,9 @@ import Semaphore from '../utils/semaphore';
 import { ModuleLoader } from './modules';
 
 type AbiCache = {
-    types: Map<string, Serialize.Type>,
+    abi: ABI,
     block_num: number,
-    json: Abi
+    json: any
 };
 
 type ContractDataEstimation = {
@@ -149,6 +148,17 @@ export default class StateReceiver {
         logger.info('Reader stopped at block #' + this.currentBlock);
     }
 
+    private static readonly TRANSIENT_PG_CODES = new Set([
+        '23505', // duplicate key (fork replay)
+        '40001', // serialization failure
+        '40P01', // deadlock detected
+        '57P01', // admin shutdown
+        '08006', // connection failure
+    ]);
+
+    private static readonly MAX_BLOCK_RETRIES = 3;
+    private static readonly RETRY_DELAY_MS = 1000;
+
     private async consumer(resp: ShipBlockResponse): Promise<void> {
         await this.dsLock.acquire();
 
@@ -156,18 +166,33 @@ export default class StateReceiver {
         const contractRows = await this.prepareContractRows(resp.this_block.block_num, resp.deltas);
 
         this.dsQueue.add(async () => {
-            try {
-                await this.process(resp, actionTraces, contractRows);
-            } catch (error) {
-                this.dsQueue.clear();
-                this.dsQueue.pause();
+            for (let attempt = 1; attempt <= StateReceiver.MAX_BLOCK_RETRIES; attempt++) {
+                try {
+                    await this.process(resp, actionTraces, contractRows);
+                    this.dsLock.release();
+                    return;
+                } catch (error) {
+                    const pgCode = (error as any)?.code;
+                    const isTransient = typeof pgCode === 'string'
+                        && StateReceiver.TRANSIENT_PG_CODES.has(pgCode);
 
-                logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
+                    if (isTransient && attempt < StateReceiver.MAX_BLOCK_RETRIES) {
+                        logger.warn(
+                            `Transient DB error (${pgCode}) at block #${resp.this_block.block_num}, ` +
+                            `retry ${attempt}/${StateReceiver.MAX_BLOCK_RETRIES}`
+                        );
+                        await new Promise(resolve => setTimeout(resolve, StateReceiver.RETRY_DELAY_MS * attempt));
+                        continue;
+                    }
 
-                return;
+                    this.dsQueue.clear();
+                    this.dsQueue.pause();
+
+                    logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
+
+                    return;
+                }
             }
-
-            this.dsLock.release();
         }).then();
     }
 
@@ -299,12 +324,12 @@ export default class StateReceiver {
                     account: trace.act.account, name: trace.act.name
                 });
 
-                const types = await this.fetchContractAbiTypes(trace.act.account, block.block_num);
+                const contractAbi = await this.fetchContractAbiObj(trace.act.account, block.block_num);
                 const type = await this.getActionAbiType(trace.act.account, trace.act.name, block.block_num);
 
-                if (types && type) {
+                if (contractAbi && type) {
                     try {
-                        trace.act.data = deserializeEosioType(type, trace.act.data.binary, types, false);
+                        trace.act.data = deserializeEosioType(type, trace.act.data.binary, contractAbi, false);
                     } catch (e) {
                         logger.error(
                             'Failed to deserialize trace in sync mode ' +
@@ -356,12 +381,12 @@ export default class StateReceiver {
                     contract: delta.code, table: delta.table, scope: delta.scope
                 });
 
-                const types = await this.fetchContractAbiTypes(delta.code, block.block_num);
+                const contractAbi = await this.fetchContractAbiObj(delta.code, block.block_num);
                 const type = await this.getTableAbiType(delta.code, delta.table, block.block_num);
 
-                if (types && type) {
+                if (contractAbi && type) {
                     try {
-                        delta.value = deserializeEosioType(type, delta.value.binary, types);
+                        delta.value = deserializeEosioType(type, delta.value.binary, contractAbi);
                     } catch (e) {
                         logger.error(
                             'Failed to deserialize contract row in sync mode ' +
@@ -392,18 +417,17 @@ export default class StateReceiver {
 
     private async handleAbiUpdate(block: ShipBlock, action: EosioAction): Promise<void> {
         if (typeof action.data !== 'string') {
-            let abiJson, types;
+            let abiObj: ABI;
 
             try {
-                abiJson = this.connection.chain.deserializeAbi(action.data.abi);
-                types = Serialize.getTypesFromAbi(Serialize.createInitialTypes(), abiJson);
+                abiObj = this.connection.chain.deserializeAbi(action.data.abi);
             } catch (e) {
                 logger.warn('Could not deserialize ABI of ' + action.data.account, e);
 
                 return;
             }
 
-            this.abis[action.data.account] = { json: abiJson, types, block_num: block.block_num };
+            this.abis[action.data.account] = { json: abiObj, abi: abiObj, block_num: block.block_num };
 
             try {
                 await this.connection.database.query(
@@ -467,7 +491,7 @@ export default class StateReceiver {
                         // @ts-ignore
                         binary: act.data.binary,
                         // @ts-ignore
-                        json: deserializeEosioType(type, act.data.binary, abi.types, false),
+                        json: deserializeEosioType(type, act.data.binary, abi.abi, false),
                         block_num: abi.block_num
                     };
                 } catch (e) {
@@ -500,7 +524,7 @@ export default class StateReceiver {
                         // @ts-ignore
                         binary: delta.value.binary,
                         // @ts-ignore
-                        json: deserializeEosioType(type, delta.value.binary, abi.types),
+                        json: deserializeEosioType(type, delta.value.binary, abi.abi),
                         block_num: abi.block_num
                     };
                 } catch (e) {
@@ -517,7 +541,7 @@ export default class StateReceiver {
             return this.abis[contract];
         }
 
-        let abiJson: Abi, abiBlock: number;
+        let abiJson: any, abiBlock: number;
 
         let rawAbi = await this.database.fetchAbi(contract, blockNum);
 
@@ -552,13 +576,13 @@ export default class StateReceiver {
             }
         }
 
-        const cache = {
+        const cache: AbiCache = {
             json: abiJson ? abiJson : null,
-            types: abiJson ? Serialize.getTypesFromAbi(Serialize.createInitialTypes(), abiJson) : null,
+            abi: abiJson ? (abiJson instanceof ABI ? abiJson : ABI.from(abiJson)) : null,
             block_num: abiBlock
         };
 
-        if (cache.types === null) {
+        if (cache.abi === null) {
             logger.warn('ABI for contract ' + contract + ' not found');
         }
 
@@ -569,14 +593,14 @@ export default class StateReceiver {
         return cache;
     }
 
-    private async fetchContractAbiTypes(contract: string, blockNum: number): Promise<Map<string, Serialize.Type>> {
+    private async fetchContractAbiObj(contract: string, blockNum: number): Promise<ABI> {
         const cache = await this.fetchContractAbi(contract, blockNum);
 
-        if (!cache.types) {
-            throw new Error('ABI Types not found');
+        if (!cache.abi) {
+            throw new Error('ABI not found');
         }
 
-        return cache.types;
+        return cache.abi;
     }
 
     private async getTableAbiType(contract: string, table: string, blockNum: number): Promise<string | null> {

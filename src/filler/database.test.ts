@@ -1,13 +1,21 @@
 import 'mocha';
 import ConnectionManager from '../connections/manager';
 import {ContractDB} from './database';
+import {connectionConfig} from '../utils/test';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const config = require('../../config/connections.config.json');
+const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
+    try { require('../../config/connections.config.json'); return true; }
+    catch { return false; }
+})();
 
-describe('database tests', () => {
-    const connection = new ConnectionManager(config);
-    const contract = new ContractDB('test', connection);
+(hasDatabase ? describe : describe.skip)('database tests', () => {
+    let connection: ConnectionManager;
+    let contract: ContractDB;
+
+    before(() => {
+        connection = new ConnectionManager(connectionConfig);
+        contract = new ContractDB('test', connection);
+    });
 
     it('Contract DB Transaction Insert', async () => {
         const transaction = await contract.startTransaction(1);
