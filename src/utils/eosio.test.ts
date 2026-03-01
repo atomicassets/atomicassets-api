@@ -130,6 +130,25 @@ describe('eosio utils', () => {
             const deserialized = deserializeEosioType('transfer', hex, testAbi);
             expect(deserialized.from).to.equal('alice');
         });
+
+        it('should handle invalid UTF-8 in string fields without throwing', () => {
+            // Serialize a valid transfer, then corrupt the memo bytes with invalid UTF-8
+            const original = { from: 'alice', to: 'bob', quantity: '1.0000 EOS', memo: 'ok' };
+            const serialized = serializeEosioType('transfer', original, testAbi);
+            const buf = Buffer.from(serialized);
+
+            // The memo is at the end: 1 byte varint length + N bytes content.
+            // Replace the last content byte with 0xFF (invalid UTF-8 continuation byte)
+            buf[buf.length - 1] = 0xff;
+
+            const deserialized = deserializeEosioType('transfer', new Uint8Array(buf), testAbi);
+            // Other fields decode normally
+            expect(deserialized.from).to.equal('alice');
+            expect(deserialized.to).to.equal('bob');
+            expect(deserialized.quantity).to.equal('1.0000 EOS');
+            // Invalid byte replaced with U+FFFD replacement character
+            expect(deserialized.memo).to.include('\ufffd');
+        });
     });
 
     describe('getTableAbiType / getActionAbiType', () => {
