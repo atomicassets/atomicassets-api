@@ -223,6 +223,8 @@ export class ContractDBTransaction {
         this.inTransaction = true;
 
         await this.clientQuery('BEGIN');
+        await this.clientQuery('SET LOCAL synchronous_commit = off');
+        await this.clientQuery('SET CONSTRAINTS ALL DEFERRED');
 
         ContractDB.transactions.push(this);
     }
