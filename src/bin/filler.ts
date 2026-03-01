@@ -15,6 +15,12 @@ import { setAutoVacSettings } from '../filler/set-autovac-settings';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
 
+// In-memory block history for computing sync rate per reader.
+// Each /status call appends a {block, time} snapshot; entries older than
+// RATE_WINDOW_MS are pruned so we derive blocksPerSecond from a sliding window.
+const blockHistory: Map<string, Array<{ block: number; time: number }>> = new Map();
+const RATE_WINDOW_MS = 60_000;
+
 let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;
 
 try {
@@ -92,6 +98,28 @@ if (cluster.isPrimary || cluster.isMaster) {
                 const headBlock = info.head_block_num;
                 const blocksBehind = headBlock - currentBlock;
 
+                // Track block history for rate computation
+                const now = Date.now();
+                const history = blockHistory.get(reader.name) ?? [];
+                history.push({ block: currentBlock, time: now });
+                const cutoff = now - RATE_WINDOW_MS;
+                const trimmed = history.filter(h => h.time >= cutoff);
+                blockHistory.set(reader.name, trimmed);
+
+                let blocksPerSecond: number | undefined;
+                if (trimmed.length >= 2) {
+                    const oldest = trimmed[0];
+                    const elapsed = (now - oldest.time) / 1000;
+                    if (elapsed > 0) {
+                        blocksPerSecond = Math.max(0, (currentBlock - oldest.block) / elapsed);
+                    }
+                }
+
+                let estimatedSecondsRemaining: number | undefined;
+                if (blocksPerSecond && blocksPerSecond > 0 && blocksBehind > 0) {
+                    estimatedSecondsRemaining = blocksBehind / blocksPerSecond;
+                }
+
                 return {
                     identifier: reader.name,
                     blockchain: connectionConfig.chain.name,
@@ -100,6 +128,8 @@ if (cluster.isPrimary || cluster.isMaster) {
                     headBlock,
                     blocksBehind,
                     syncPercentage: headBlock > 0 ? Math.min(100, (currentBlock / headBlock) * 100) : null,
+                    blocksPerSecond,
+                    estimatedSecondsRemaining,
                     isSynced: blocksBehind <= 10,
                     lastUpdated: parseInt(reader.block_time),
                 };
