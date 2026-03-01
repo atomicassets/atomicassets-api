@@ -51,7 +51,7 @@ export function deserializeEosioType(type: string, data: Uint8Array | string, ab
         dataArray = new Uint8Array(data);
     }
 
-    const result = Serializer.decode({ data: dataArray, type, abi });
+    const result = Serializer.decode({ data: dataArray, type, abi, ignoreInvalidUTF8: true });
 
     return Serializer.objectify(result);
 }
