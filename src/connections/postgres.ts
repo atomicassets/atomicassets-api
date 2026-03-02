@@ -33,6 +33,8 @@ export default class PostgresConnection {
             host, port, user, password, database,
             application_name: 'eosio-contract-api',
             ssl: buildSslConfig(),
+            keepAlive: true,
+            keepAliveInitialDelayMillis: 30_000,
             // Fail after some seconds if a connection can't be acquired. An error like this can
             // help us understand if we have deadlocks due to non-released connections
             connectionTimeoutMillis: 5_000
