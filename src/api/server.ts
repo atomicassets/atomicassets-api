@@ -49,7 +49,7 @@ export class HTTPServer implements DB {
         this.database = connection.database.createPool({
             query_timeout: config.max_query_time_ms || 10000,
             max: config.max_db_connections || 50,
-            idleTimeoutMillis: 1000 * 60 * 10,
+            idleTimeoutMillis: 1000 * 60 * 4,
         });
         this.web = new WebServer(this);
 
