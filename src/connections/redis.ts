@@ -1,3 +1,4 @@
+import type { PeerCertificate } from 'tls';
 import { Redis, Cluster, RedisOptions, ClusterOptions, RedisClientInstance } from '@atomichub/backend-common/redis';
 
 export interface RedisConnectionOptions {
@@ -7,6 +8,7 @@ export interface RedisConnectionOptions {
     password?: string;
     tls?: {
         rejectUnauthorized?: boolean;
+        checkServerIdentity?: (hostname: string, cert: PeerCertificate) => Error | undefined;
     };
     connectionType?: string;
 }
