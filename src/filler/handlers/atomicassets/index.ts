@@ -291,8 +291,13 @@ export default class AtomicAssetsHandler extends ContractHandler {
                         SELECT contract, collection_name, schema_name, template_id,
                             COALESCE(SUM(assets)::INT, 0), COALESCE(SUM(burned)::INT, 0), COALESCE(SUM(owned)::INT, 0), NULL
                         FROM del
-                        GROUP BY contract, collection_name, schema_name, template_id 
+                        GROUP BY contract, collection_name, schema_name, template_id
                         HAVING COALESCE(SUM(assets)::INT, 0) != 0
+                    ON CONFLICT (contract, collection_name, schema_name, template_id) WHERE dirty IS NULL
+                    DO UPDATE SET
+                        assets = EXCLUDED.assets,
+                        burned = EXCLUDED.burned,
+                        owned = EXCLUDED.owned
                 `,
                 [this.args.atomicassets_account]
             );
