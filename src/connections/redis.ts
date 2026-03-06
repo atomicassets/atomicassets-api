@@ -7,6 +7,7 @@ export interface RedisConnectionOptions {
     password?: string;
     tls?: {
         rejectUnauthorized?: boolean;
+        checkServerIdentity?: () => undefined;
     };
     connectionType?: string;
 }

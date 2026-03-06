@@ -19,7 +19,12 @@ export default class ConnectionManager {
 
         // Build TLS config from environment variable or config file
         const redisTls = process.env.REDIS_TLS === 'true'
-            ? { rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== 'false' }
+            ? {
+                rejectUnauthorized: process.env.REDIS_TLS_REJECT_UNAUTHORIZED !== 'false',
+                // verify-ca: validate CA chain but skip hostname check
+                // (iovalkey cluster mode connects to node IPs from CLUSTER SLOTS, not hostnames)
+                ...(process.env.REDIS_TLS_MODE === 'verify-ca' && { checkServerIdentity: (): undefined => undefined }),
+            }
             : config.redis.tls;
 
         this.redis = new RedisConnection({
