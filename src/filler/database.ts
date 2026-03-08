@@ -314,29 +314,7 @@ export class ContractDBTransaction {
 
             queryStr += ';';
 
-            let query: QueryResult;
-            try {
-                query = await this.clientQuery(queryStr, queryValues);
-            } catch (e: any) {
-                // 42P10: "there is no unique or exclusion constraint matching the ON CONFLICT specification"
-                // This means the table is missing the expected PK/unique constraint.
-                // Fall back to a plain insert (no ON CONFLICT) so we don't crash the filler.
-                if (e.code === '42P10' && onConflict !== 'error') {
-                    logger.warn(`Table ${table} missing unique constraint for ON CONFLICT — falling back to plain insert`);
-
-                    let fallbackStr = 'INSERT INTO ' + this.client.escapeIdentifier(table) + ' ';
-                    fallbackStr += '(' + keys.map(this.client.escapeIdentifier).join(', ') + ') ';
-                    fallbackStr += 'VALUES ' + queryRows.join(', ') + ' ';
-                    if (primaryKey.length > 0) {
-                        fallbackStr += 'RETURNING ' + primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ') + ' ';
-                    }
-                    fallbackStr += ';';
-
-                    query = await this.clientQuery(fallbackStr, queryValues);
-                } else {
-                    throw e;
-                }
-            }
+            const query = await this.clientQuery(queryStr, queryValues);
 
             this.stats.operations += query.rowCount;
 
