@@ -191,24 +191,35 @@ async function buildSaleFilterV2(search: SalesSearchOptions): Promise<void> {
     }
 
     if (args.symbol) {
-        query.equal('listing.settlement_symbol', args.symbol);
-
-        const token = await ctx.db.query('SELECT token_precision FROM atomicmarket_tokens WHERE market_contract = $1 AND token_symbol = $2', [ctx.coreArgs.atomicmarket_account, args.symbol]);
-
-        if (token.rows.length === 0) {
-            throw new ApiError('Symbol not found');
+        const symbols = args.symbol.split(',');
+        if (symbols.length === 1) {
+            query.equal('listing.settlement_symbol', args.symbol);
+        } else {
+            query.equalMany('listing.settlement_symbol', symbols);
         }
 
-        const {token_precision} = token.rows[0];
+        if (args.min_price || args.max_price) {
+            if (symbols.length > 1) {
+                throw new ApiError('Price range filters require a single symbol, got multiple');
+            }
 
-        if (args.min_price) {
-            query.addCondition(`listing.price >= 1.0 * ${query.addVariable(args.min_price)} * POWER(10, ${query.addVariable(token_precision)})`);
-            search.strongFilters.push('price');
-        }
+            const token = await ctx.db.query('SELECT token_precision FROM atomicmarket_tokens WHERE market_contract = $1 AND token_symbol = $2', [ctx.coreArgs.atomicmarket_account, args.symbol]);
 
-        if (args.max_price) {
-            query.addCondition(`listing.price <= 1.0 * ${query.addVariable(args.max_price)} * POWER(10, ${query.addVariable(token_precision)})`);
-            search.strongFilters.push('price');
+            if (token.rows.length === 0) {
+                throw new ApiError('Symbol not found');
+            }
+
+            const {token_precision} = token.rows[0];
+
+            if (args.min_price) {
+                query.addCondition(`listing.price >= 1.0 * ${query.addVariable(args.min_price)} * POWER(10, ${query.addVariable(token_precision)})`);
+                search.strongFilters.push('price');
+            }
+
+            if (args.max_price) {
+                query.addCondition(`listing.price <= 1.0 * ${query.addVariable(args.max_price)} * POWER(10, ${query.addVariable(token_precision)})`);
+                search.strongFilters.push('price');
+            }
         }
     } else if (args.min_price || args.max_price) {
         throw new ApiError('Price range filters require the "symbol" filter');

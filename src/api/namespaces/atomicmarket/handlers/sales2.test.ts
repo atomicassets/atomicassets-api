@@ -156,6 +156,36 @@ describe('AtomicMarket Sales API', () => {
                 .to.deep.equal([sale_id]);
         });
 
+        txit('filters by multiple settlement symbols (comma-separated)', async () => {
+            await client.createToken({ token_symbol: 'XUSDC' });
+            await client.createToken({ token_symbol: 'OTHER' });
+
+            const { sale_id: sale_id1 } = await client.createFullSale();
+            const { sale_id: sale_id2 } = await client.createFullSale({
+                settlement_symbol: 'XUSDC',
+            });
+            await client.createFullSale({
+                settlement_symbol: 'OTHER',
+            });
+
+            expect(await getSalesIds({ symbol: 'TEST,XUSDC' }))
+                .to.deep.equal([sale_id2, sale_id1]);
+        });
+
+        txit('throws error when price filter is used with multiple symbols', async () => {
+            await client.createToken({ token_symbol: 'XUSDC' });
+
+            let err;
+            try {
+                await getSalesIds({ symbol: 'TEST,XUSDC', min_price: '1' });
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err as any).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Price range filters require a single symbol, got multiple');
+        });
+
         txit('throws error when minimum price filter is set without settlement symbol', async () => {
 
             let err;

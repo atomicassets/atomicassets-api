@@ -177,6 +177,18 @@ describe('AtomicMarket Sales API', () => {
                 .to.deep.equal([sale_id]);
         });
 
+        txit('filters by multiple settlement symbols (comma-separated)', async () => {
+            await client.createToken({token_symbol: 'XUSDC'});
+            await client.createToken({token_symbol: 'OTHER'});
+
+            const {sale_id: sale_id1} = await client.createSale();
+            const {sale_id: sale_id2} = await client.createSale({settlement_symbol: 'XUSDC'});
+            await client.createSale({settlement_symbol: 'OTHER'});
+
+            expect(await getSalesIds({symbol: 'TEST,XUSDC'}))
+                .to.deep.equal([sale_id2, sale_id1]);
+        });
+
         txit('filters by minimum price', async () => {
             let err;
             try {
