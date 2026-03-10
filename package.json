@@ -32,6 +32,7 @@
     },
     "dependencies": {
         "@atomichub/backend-common": "workspace:*",
+        "@wharfkit/antelope": "^1.1.1",
         "async-exit-hook": "^2.0.1",
         "atomicassets": "^1.4.2",
         "await-lock": "^2.2.1",
@@ -40,9 +41,8 @@
         "compression": "^1.8.0",
         "cookie-parser": "^1.4.6",
         "cors": "^2.8.6",
-        "@wharfkit/antelope": "^1.1.1",
         "express": "^5.2.1",
-        "express-rate-limit": "^8.2.1",
+        "express-rate-limit": "^8.3.1",
         "int64-buffer": "^1.0.1",
         "moize": "^6.1.1",
         "node-worker-threads-pool": "^1.5.1",
