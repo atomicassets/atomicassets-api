@@ -184,7 +184,12 @@ export async function buildSaleFilter(values: FilterValues, query: QueryBuilder)
     }
 
     if (args.symbol) {
-        query.equal('listing.settlement_symbol', args.symbol);
+        const symbols = args.symbol.split(',');
+        if (symbols.length === 1) {
+            query.equal('listing.settlement_symbol', args.symbol);
+        } else {
+            query.equalMany('listing.settlement_symbol', symbols);
+        }
     }
 
     if (args.state) {
@@ -314,14 +319,25 @@ export async function buildAuctionFilter(values: FilterValues, query: QueryBuild
     }
 
     if (args.symbol) {
-        query.equal('listing.token_symbol', args.symbol);
-
-        if (args.min_price) {
-            query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+        const symbols = args.symbol.split(',');
+        if (symbols.length === 1) {
+            query.equal('listing.token_symbol', args.symbol);
+        } else {
+            query.equalMany('listing.token_symbol', symbols);
         }
 
-        if (args.max_price) {
-            query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+        if (args.min_price || args.max_price) {
+            if (symbols.length > 1) {
+                throw new ApiError('Price range filters require a single symbol, got multiple');
+            }
+
+            if (args.min_price) {
+                query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+            }
+
+            if (args.max_price) {
+                query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+            }
         }
     } else if (args.min_price || args.max_price) {
         throw new ApiError('Price range filters require the "symbol" filter');
@@ -407,14 +423,25 @@ export async function buildBuyofferFilter(values: FilterValues, query: QueryBuil
     }
 
     if (args.symbol) {
-        query.equal('listing.token_symbol', args.symbol);
-
-        if (args.min_price) {
-            query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+        const symbols = args.symbol.split(',');
+        if (symbols.length === 1) {
+            query.equal('listing.token_symbol', args.symbol);
+        } else {
+            query.equalMany('listing.token_symbol', symbols);
         }
 
-        if (args.max_price) {
-            query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+        if (args.min_price || args.max_price) {
+            if (symbols.length > 1) {
+                throw new ApiError('Price range filters require a single symbol, got multiple');
+            }
+
+            if (args.min_price) {
+                query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+            }
+
+            if (args.max_price) {
+                query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+            }
         }
     } else if (args.min_price || args.max_price) {
         throw new ApiError('Price range filters require the "symbol" filter');
@@ -500,14 +527,25 @@ export async function buildTemplateBuyofferFilter(values: FilterValues, query: Q
     }
 
     if (args.symbol) {
-        query.equal('listing.token_symbol', args.symbol);
-
-        if (args.min_price) {
-            query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+        const symbols = args.symbol.split(',');
+        if (symbols.length === 1) {
+            query.equal('listing.token_symbol', args.symbol);
+        } else {
+            query.equalMany('listing.token_symbol', symbols);
         }
 
-        if (args.max_price) {
-            query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+        if (args.min_price || args.max_price) {
+            if (symbols.length > 1) {
+                throw new ApiError('Price range filters require a single symbol, got multiple');
+            }
+
+            if (args.min_price) {
+                query.addCondition('listing.price >= 1.0 * ' + query.addVariable(args.min_price) + ' * POWER(10, "token".token_precision)');
+            }
+
+            if (args.max_price) {
+                query.addCondition('listing.price <= 1.0 * ' + query.addVariable(args.max_price) + ' * POWER(10, "token".token_precision)');
+            }
         }
     } else if (args.min_price || args.max_price) {
         throw new ApiError('Price range filters require the "symbol" filter');
