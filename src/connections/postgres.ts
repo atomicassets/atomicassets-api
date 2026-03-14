@@ -37,7 +37,10 @@ export default class PostgresConnection {
             keepAliveInitialDelayMillis: 30_000,
             // Fail after some seconds if a connection can't be acquired. An error like this can
             // help us understand if we have deadlocks due to non-released connections
-            connectionTimeoutMillis: 5_000
+            connectionTimeoutMillis: 5_000,
+            // Cancel queries on the DB side after 30s to prevent zombie queries from accumulating
+            // when pg-pool disconnects but the PostgreSQL query keeps running
+            statement_timeout: 30_000,
         };
         this.pool = new Pool({
             ...this.args,
