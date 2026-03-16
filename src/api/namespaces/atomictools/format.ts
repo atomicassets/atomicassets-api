@@ -6,7 +6,7 @@ export function formatLink(row: any): any {
     const data = {...row};
 
     const typeName = keyTypeMap[data['key_type']] || 'K1';
-    data['public_key'] = PublicKey.from({ type: typeName, compressed: data['key_data'] }).toLegacyString();
+    data['public_key'] = PublicKey.from({ type: typeName, compressed: data['key_data'] }).toString();
 
     delete data['key_type'];
     delete data['key_data'];
