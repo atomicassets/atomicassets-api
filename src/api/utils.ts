@@ -65,7 +65,8 @@ export function respondApiError(res: express.Response, error: Error): express.Re
         return res.status((error as ApiError).code).json({success: false, message: error.message});
     }
 
-    if (error.message && String(error.message).search('canceling statement due to statement timeout') >= 0) {
+    const errorMessage = error.message ? String(error.message) : '';
+    if (errorMessage.includes('canceling statement due to statement timeout') || errorMessage.includes('Query read timeout')) {
         return res.status(408).json({
             success: false,
             message: 'Max database query time exceeded. Please try to add more filters to your query.'
