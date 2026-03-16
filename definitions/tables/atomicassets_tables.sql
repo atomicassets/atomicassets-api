@@ -251,6 +251,7 @@ CREATE INDEX IF NOT EXISTS atomicassets_assets_updated_at_time ON atomicassets_a
 CREATE INDEX IF NOT EXISTS atomicassets_assets_transferred_at_time ON atomicassets_assets USING btree (transferred_at_time);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_minted_at_time ON atomicassets_assets USING btree (minted_at_time);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_missing_mint ON atomicassets_assets USING btree (template_id, asset_id) WHERE template_id IS NOT NULL AND template_mint IS NULL;
+CREATE INDEX IF NOT EXISTS atomicassets_assets_coll_schema_owner ON atomicassets_assets (contract, collection_name, schema_name, owner) WHERE owner IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS atomicassets_assets_backed_tokens_asset_id ON atomicassets_assets_backed_tokens USING btree (asset_id);
 

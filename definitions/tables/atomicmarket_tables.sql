@@ -455,6 +455,7 @@ CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_schema_name ON atomicmarke
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_template_id_time ON atomicmarket_stats_markets (template_id, time);
 
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_time ON atomicmarket_stats_markets (market_contract, symbol, "time");
+CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_collection_time ON atomicmarket_stats_markets (market_contract, symbol, collection_name, "time");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_maker_mp ON atomicmarket_stats_markets (maker_marketplace) WHERE maker_marketplace IS NOT NULL;
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_taker_mp ON atomicmarket_stats_markets (taker_marketplace) WHERE taker_marketplace IS NOT NULL;
 
