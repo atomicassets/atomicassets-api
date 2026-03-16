@@ -362,7 +362,7 @@ export default class AtomicMarketHandler extends ContractHandler {
             await longRunningPool.query('SELECT update_atomicmarket_template_prices()');
         });
 
-        this.filler.jobs.add('reconcile_atomicmarket_listings', 60 * 5, JobQueuePriority.LOW, async () => {
+        this.filler.jobs.add('reconcile_atomicmarket_listings', 60 * 30, JobQueuePriority.LOW, async () => {
             await this.reconcileListings(longRunningPool);
         });
 
