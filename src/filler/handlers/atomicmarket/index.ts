@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { PoolClient } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
 import logger from '../../../utils/winston';
@@ -301,6 +301,15 @@ export default class AtomicMarketHandler extends ContractHandler {
     async register(processor: DataProcessor, notifier: ApiNotificationSender): Promise<() => any> {
         const destructors: Array<() => any> = [];
 
+        // Dedicated pool for long-running maintenance jobs (sales_filters, template_prices).
+        // The main pool's 30s statement_timeout is too short and SET LOCAL is ineffective
+        // through PgBouncer transaction pooling, so these jobs need their own pool.
+        const longRunningPool: Pool = this.connection.database.createPool({
+            statement_timeout: 300_000, // 5 min
+            max: 1,
+        });
+        destructors.push(() => longRunningPool.end());
+
         destructors.push(auctionProcessor(this, processor, notifier));
         destructors.push(balanceProcessor(this, processor));
         destructors.push(bonusfeeProcessor(this, processor));
@@ -336,19 +345,11 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_sales_filters', 20, JobQueuePriority.HIGH, async () => {
-            await this.connection.database.query(
-                'SELECT update_atomicmarket_sales_filters()'
-            );
-
-            await this.connection.database.query(
-                'VACUUM atomicmarket_sales_filters_listed'
-            );
+            await longRunningPool.query('SELECT update_atomicmarket_sales_filters()');
         });
 
         this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
-            await this.connection.database.query(
-                'SELECT refresh_atomicmarket_sales_filters_price()'
-            );
+            await longRunningPool.query('SELECT refresh_atomicmarket_sales_filters_price()');
         });
 
         this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {
@@ -358,9 +359,7 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_template_prices', 60 * 60, JobQueuePriority.LOW, async () => {
-            await this.connection.database.query(
-                'SELECT update_atomicmarket_template_prices()'
-            );
+            await longRunningPool.query('SELECT update_atomicmarket_template_prices()');
         });
 
         return (): any => destructors.map(fn => fn());
