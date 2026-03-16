@@ -308,7 +308,7 @@ export default class AtomicMarketHandler extends ContractHandler {
             statement_timeout: 300_000, // 5 min
             max: 1,
         });
-        destructors.push(() => longRunningPool.end());
+        destructors.push(() => { void longRunningPool.end().catch(() => {}); });
 
         destructors.push(auctionProcessor(this, processor, notifier));
         destructors.push(balanceProcessor(this, processor));
