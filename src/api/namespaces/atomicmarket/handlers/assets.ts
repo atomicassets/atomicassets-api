@@ -5,8 +5,13 @@ import { buildAssetFillerHook, formatListingAsset } from '../format';
 import { getRawAssetsAction } from '../../atomicassets/handlers/assets';
 
 export async function getMarketAssetsAction(params: RequestValues, ctx: AtomicMarketContext): Promise<any> {
+    const priceSortColumns = ['suggested_median_price', 'suggested_average_price', 'average_price', 'median_price'];
+    const needsPriceJoin = priceSortColumns.includes(params.sort as string);
+
     const result = await getRawAssetsAction(params, ctx, {
-        extraTables: 'LEFT JOIN atomicmarket_template_prices "price" ON (asset.contract = price.assets_contract AND asset.template_id = price.template_id)',
+        extraTables: needsPriceJoin
+            ? 'LEFT JOIN atomicmarket_template_prices "price" ON (asset.contract = price.assets_contract AND asset.template_id = price.template_id)'
+            : '',
         extraSort: {
             suggested_median_price: {column: '"price".suggested_median', nullable: true, numericIndex: false},
             suggested_average_price: {column: '"price".suggested_average', nullable: true, numericIndex: false},
