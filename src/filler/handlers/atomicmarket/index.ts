@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { PoolClient } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
 import logger from '../../../utils/winston';
@@ -301,6 +301,15 @@ export default class AtomicMarketHandler extends ContractHandler {
     async register(processor: DataProcessor, notifier: ApiNotificationSender): Promise<() => any> {
         const destructors: Array<() => any> = [];
 
+        // Dedicated pool for long-running maintenance jobs (sales_filters, template_prices).
+        // The main pool's 30s statement_timeout is too short and SET LOCAL is ineffective
+        // through PgBouncer transaction pooling, so these jobs need their own pool.
+        const longRunningPool: Pool = this.connection.database.createPool({
+            statement_timeout: 300_000, // 5 min
+            max: 1,
+        });
+        destructors.push(() => { void longRunningPool.end().catch(() => {}); });
+
         destructors.push(auctionProcessor(this, processor, notifier));
         destructors.push(balanceProcessor(this, processor));
         destructors.push(bonusfeeProcessor(this, processor));
@@ -336,19 +345,11 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_sales_filters', 20, JobQueuePriority.HIGH, async () => {
-            await this.connection.database.query(
-                'SELECT update_atomicmarket_sales_filters()'
-            );
-
-            await this.connection.database.query(
-                'VACUUM atomicmarket_sales_filters_listed'
-            );
+            await longRunningPool.query('SELECT update_atomicmarket_sales_filters()');
         });
 
         this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
-            await this.connection.database.query(
-                'SELECT refresh_atomicmarket_sales_filters_price()'
-            );
+            await longRunningPool.query('SELECT refresh_atomicmarket_sales_filters_price()');
         });
 
         this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {
@@ -358,11 +359,145 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_template_prices', 60 * 60, JobQueuePriority.LOW, async () => {
-            await this.connection.database.query(
-                'SELECT update_atomicmarket_template_prices()'
-            );
+            await longRunningPool.query('SELECT update_atomicmarket_template_prices()');
+        });
+
+        this.filler.jobs.add('reconcile_atomicmarket_listings', 60 * 30, JobQueuePriority.LOW, async () => {
+            await this.reconcileListings(longRunningPool);
         });
 
         return (): any => destructors.map(fn => fn());
+    }
+
+    private async reconcileListings(pool: Pool): Promise<void> {
+        const lastIrreversibleBlock = this.filler.reader.lastIrreversibleBlock;
+
+        if (!lastIrreversibleBlock) {
+            return;
+        }
+
+        const configs: Array<{
+            dbTable: string;
+            idColumn: string;
+            onChainTable: string;
+            activeStates: number[];
+            cancelState: number;
+        }> = [
+            {
+                dbTable: 'atomicmarket_template_buyoffers',
+                idColumn: 'buyoffer_id',
+                onChainTable: 'tbuyo',
+                activeStates: [TemplateBuyofferState.LISTED.valueOf()],
+                cancelState: TemplateBuyofferState.CANCELED.valueOf(),
+            },
+            {
+                dbTable: 'atomicmarket_buyoffers',
+                idColumn: 'buyoffer_id',
+                onChainTable: 'buyoffers',
+                activeStates: [BuyofferState.PENDING.valueOf()],
+                cancelState: BuyofferState.CANCELED.valueOf(),
+            },
+            {
+                dbTable: 'atomicmarket_sales',
+                idColumn: 'sale_id',
+                onChainTable: 'sales',
+                activeStates: [SaleState.WAITING.valueOf(), SaleState.LISTED.valueOf()],
+                cancelState: SaleState.CANCELED.valueOf(),
+            },
+            {
+                dbTable: 'atomicmarket_auctions',
+                idColumn: 'auction_id',
+                onChainTable: 'auctions',
+                activeStates: [AuctionState.WAITING.valueOf(), AuctionState.LISTED.valueOf()],
+                cancelState: AuctionState.CANCELED.valueOf(),
+            },
+        ];
+
+        for (const config of configs) {
+            try {
+                const count = await this.reconcileListingType(config, lastIrreversibleBlock, pool);
+
+                if (count > 0) {
+                    logger.warn(`Reconciliation: marked ${count} stale entries as canceled in ${config.dbTable}`);
+                }
+            } catch (e) {
+                logger.error(`Reconciliation failed for ${config.dbTable}: ${e.message}`);
+            }
+        }
+    }
+
+    private async reconcileListingType(
+        config: {
+            dbTable: string;
+            idColumn: string;
+            onChainTable: string;
+            activeStates: number[];
+            cancelState: number;
+        },
+        lastIrreversibleBlock: number,
+        pool: Pool
+    ): Promise<number> {
+        const batchSize = 100;
+        let totalReconciled = 0;
+        let lastId = '0';
+
+        while (true) {
+            const dbResult = await pool.query(
+                'SELECT ' + config.idColumn + ' FROM ' + config.dbTable +
+                ' WHERE market_contract = $1 AND state = ANY($2) AND created_at_block <= $3 AND ' +
+                config.idColumn + ' > $4 ORDER BY ' + config.idColumn + ' LIMIT $5',
+                [this.args.atomicmarket_account, config.activeStates, lastIrreversibleBlock, lastId, batchSize]
+            );
+
+            if (dbResult.rows.length === 0) {
+                break;
+            }
+
+            const dbIds: string[] = dbResult.rows.map((row: {[key: string]: string}) => row[config.idColumn]);
+            lastId = dbIds[dbIds.length - 1];
+
+            const onChainIds = new Set<string>();
+            const minId = dbIds[0];
+            const maxId = String(BigInt(dbIds[dbIds.length - 1]) + 1n);
+            let lowerBound: string = minId;
+
+            while (true) {
+                const result = await this.connection.chain.rpc.get_table_rows({
+                    json: true,
+                    code: this.args.atomicmarket_account,
+                    scope: this.args.atomicmarket_account,
+                    table: config.onChainTable,
+                    lower_bound: lowerBound,
+                    upper_bound: maxId,
+                    limit: 100,
+                });
+
+                for (const row of result.rows) {
+                    onChainIds.add(String(row[config.idColumn]));
+                }
+
+                if (!result.more || result.rows.length === 0) {
+                    break;
+                }
+
+                lowerBound = String(BigInt(result.rows[result.rows.length - 1][config.idColumn]) + 1n);
+            }
+
+            const staleIds = dbIds.filter(id => !onChainIds.has(id));
+
+            if (staleIds.length > 0) {
+                const now = Date.now();
+
+                await pool.query(
+                    'UPDATE ' + config.dbTable + ' SET state = $1, updated_at_time = $2 ' +
+                    'WHERE market_contract = $3 AND ' + config.idColumn + ' = ANY($4) AND state = ANY($5)',
+                    [config.cancelState, now, this.args.atomicmarket_account, staleIds, config.activeStates]
+                );
+
+                totalReconciled += staleIds.length;
+            }
+        }
+
+        return totalReconciled;
     }
 }

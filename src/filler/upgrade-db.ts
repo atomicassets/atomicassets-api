@@ -100,19 +100,26 @@ export async function runMigrations(database: PostgresConnection): Promise<void>
 
             await client.query('COMMIT');
 
-            // Execute deferred SQL outside transaction (large DML that shouldn't hold DDL locks)
-            for (const handlerName of availableContracts) {
-                const deferredFilename = `${versionDir}${handlerName}-deferred.sql`;
-                if (fs.existsSync(deferredFilename)) {
-                    logger.info(`Running deferred SQL for ${handlerName} v${version}...`);
-                    const sql = fs.readFileSync(deferredFilename, { encoding: 'utf8' });
-                    const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
-                    for (const stmt of statements) {
-                        logger.info(`Executing deferred: ${stmt.substring(0, 80)}...`);
-                        await database.query(stmt);
+            // Execute deferred SQL outside transaction with extended timeout.
+            // CREATE INDEX CONCURRENTLY can take minutes/hours on large tables
+            // and cannot run inside a transaction, so we use a dedicated pool.
+            const deferredPool = database.createPool({ statement_timeout: 3_600_000, max: 1 });
+            try {
+                for (const handlerName of availableContracts) {
+                    const deferredFilename = `${versionDir}${handlerName}-deferred.sql`;
+                    if (fs.existsSync(deferredFilename)) {
+                        logger.info(`Running deferred SQL for ${handlerName} v${version}...`);
+                        const sql = fs.readFileSync(deferredFilename, { encoding: 'utf8' });
+                        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+                        for (const stmt of statements) {
+                            logger.info(`Executing deferred: ${stmt.substring(0, 80)}...`);
+                            await deferredPool.query(stmt);
+                        }
+                        logger.info(`Deferred SQL for ${handlerName} v${version} complete`);
                     }
-                    logger.info(`Deferred SQL for ${handlerName} v${version} complete`);
                 }
+            } finally {
+                await deferredPool.end();
             }
         }
     }
