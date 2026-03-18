@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import { PoolClient } from 'pg';
+import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
 import logger from '../../../utils/winston';
@@ -265,6 +265,15 @@ export default class AtomicAssetsHandler extends ContractHandler {
     async register(processor: DataProcessor, notifier: ApiNotificationSender): Promise<() => any> {
         const destructors: Array<() => any> = [];
 
+        // Dedicated pool for long-running maintenance jobs (mints, template counts).
+        // The main pool's 30s statement_timeout is too short and SET LOCAL is ineffective
+        // through PgBouncer transaction pooling, so these jobs need their own pool.
+        const longRunningPool: Pool = this.connection.database.createPool({
+            statement_timeout: 300_000, // 5 min
+            max: 1,
+        });
+        destructors.push(() => { void longRunningPool.end().catch(() => {}); });
+
         destructors.push(assetProcessor(this, processor, notifier));
         destructors.push(balanceProcessor(this, processor));
         destructors.push(collectionProcessor(this, processor));
@@ -278,7 +287,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         }
 
         this.filler.jobs.add('aggregate atomicassets_asset_counts', 60 * 10, JobQueuePriority.LOW, async () => {
-            await this.connection.database.query(
+            await longRunningPool.query(
                 `
                 WITH del AS (
                     DELETE FROM atomicassets_asset_counts
@@ -304,7 +313,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicassets_mints', 30, JobQueuePriority.MEDIUM, async () => {
-            await this.connection.database.query(
+            await longRunningPool.query(
                 'CALL update_atomicassets_mints($1, $2)',
                 [this.args.atomicassets_account, this.filler.reader.lastIrreversibleBlock]
             );
