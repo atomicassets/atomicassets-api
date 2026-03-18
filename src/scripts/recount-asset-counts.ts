@@ -53,15 +53,18 @@ async function main(): Promise<void> {
         try {
             await client.query('BEGIN');
 
+            // The trigger normalizes NULL template_id to 0 via COALESCE(template_id, 0),
+            // so the actual CTE must do the same to match recorded rows.
             const result = await client.query<CorrectionRow>(`
                 WITH actual AS (
-                    SELECT contract, collection_name, schema_name, template_id,
+                    SELECT contract, collection_name, schema_name,
+                        COALESCE(template_id, 0) AS template_id,
                         COUNT(*) AS actual_assets,
                         COUNT(*) FILTER (WHERE owner IS NULL) AS actual_burned,
                         COUNT(*) FILTER (WHERE owner IS NOT NULL) AS actual_owned
                     FROM atomicassets_assets
                     WHERE contract = $1
-                    GROUP BY contract, collection_name, schema_name, template_id
+                    GROUP BY contract, collection_name, schema_name, COALESCE(template_id, 0)
                 ),
                 recorded AS (
                     SELECT contract, collection_name, schema_name, template_id,
@@ -117,6 +120,9 @@ async function main(): Promise<void> {
                 logger.info(`[RECOUNT]: Committed ${result.rowCount} correction deltas`);
                 logger.info('[RECOUNT]: The aggregation job runs every 10 min and will absorb these');
             }
+        } catch (err) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw err;
         } finally {
             client.release();
         }
