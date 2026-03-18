@@ -174,8 +174,16 @@ export default class StateReceiver {
     private async consumer(resp: ShipBlockResponse): Promise<void> {
         await this.dsLock.acquire();
 
-        const actionTraces = await this.prepareActionTraces(resp.this_block.block_num, resp.traces);
-        const contractRows = await this.prepareContractRows(resp.this_block.block_num, resp.deltas);
+        let actionTraces: Awaited<ReturnType<StateReceiver['prepareActionTraces']>>;
+        let contractRows: Awaited<ReturnType<StateReceiver['prepareContractRows']>>;
+
+        try {
+            actionTraces = await this.prepareActionTraces(resp.this_block.block_num, resp.traces);
+            contractRows = await this.prepareContractRows(resp.this_block.block_num, resp.deltas);
+        } catch (error) {
+            this.dsLock.release();
+            throw error;
+        }
 
         this.dsQueue.add(async () => {
             for (let attempt = 1; attempt <= StateReceiver.MAX_BLOCK_RETRIES; attempt++) {
@@ -198,6 +206,7 @@ export default class StateReceiver {
                     }
 
                     this.dsLock.release();
+                    this.dsLock.purge();
                     this.dsQueue.clear();
                     this.dsQueue.pause();
 

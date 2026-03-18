@@ -52,7 +52,9 @@ describe('Semaphore', () => {
 
         // Third acquire should block indefinitely (semaphore leaked)
         let resolved = false;
-        sem.acquire().then(() => { resolved = true; });
+        const p = sem.acquire().then(() => { resolved = true; });
+        // Attach catch so purge() cleanup doesn't cause unhandled rejection
+        p.catch(() => {});
 
         await new Promise(resolve => setTimeout(resolve, 50));
         expect(resolved).to.equal(false);

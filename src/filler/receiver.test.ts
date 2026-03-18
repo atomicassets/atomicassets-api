@@ -14,6 +14,7 @@ import { ShipBlockResponse } from '../types/ship';
 function createReceiverStub(opts: {
     queueSize?: number;
     processResult?: () => Promise<void>;
+    prepareThrows?: boolean;
 } = {}): {
     receiver: StateReceiver;
     dsLock: Semaphore;
@@ -34,9 +35,14 @@ function createReceiverStub(opts: {
         ship_ds_queue_size: queueSize,
     };
 
-    // Stub the prepareActionTraces and prepareContractRows to return empty arrays
-    (receiver as any).prepareActionTraces = sinon.stub().resolves([]);
-    (receiver as any).prepareContractRows = sinon.stub().resolves([]);
+    // Stub the prepareActionTraces and prepareContractRows
+    if (opts.prepareThrows) {
+        (receiver as any).prepareActionTraces = sinon.stub().rejects(new Error('Unsupported SHiP variant'));
+        (receiver as any).prepareContractRows = sinon.stub().resolves([]);
+    } else {
+        (receiver as any).prepareActionTraces = sinon.stub().resolves([]);
+        (receiver as any).prepareContractRows = sinon.stub().resolves([]);
+    }
 
     // Stub process() — can be overridden per test
     (receiver as any).process = opts.processResult ?? sinon.stub().resolves();
@@ -131,6 +137,50 @@ describe('StateReceiver', () => {
             const timeout = new Promise(resolve => setTimeout(resolve, 200));
 
             await Promise.race([Promise.all([p1, p2]), timeout]);
+            expect(acquired).to.equal(queueSize);
+        });
+
+        it('releases dsLock when preprocessing throws before queue entry', async () => {
+            const { receiver, dsLock } = createReceiverStub({ prepareThrows: true });
+            const resp = makeBlockResponse(4000);
+
+            // consumer should throw (preprocessing failure), but dsLock must be released
+            try {
+                await (receiver as any).consumer(resp);
+            } catch (_e) {
+                // expected
+            }
+
+            // dsLock should be fully released despite the preprocessing throw
+            const allAcquired = Promise.all(
+                Array.from({length: 3}, () => dsLock.acquire())
+            );
+            const timeout = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('dsLock leaked on preprocessing throw')), 200)
+            );
+            await Promise.race([allAcquired, timeout]);
+        });
+
+        it('purges semaphore on fatal error to release queued permits', async () => {
+            const queueSize = 3;
+            const { receiver, dsLock, dsQueue } = createReceiverStub({
+                queueSize,
+                processResult: () => Promise.reject(new Error('Fatal DB error')),
+            });
+
+            // Queue up multiple blocks — each acquires a dsLock permit
+            await (receiver as any).consumer(makeBlockResponse(5000));
+            // The first block will fail in the queue, triggering clear+purge.
+            // After dsQueue drains, all permits should be recoverable.
+            await dsQueue.onIdle();
+
+            // Purge should have reset the semaphore — all permits available
+            let acquired = 0;
+            for (let i = 0; i < queueSize; i++) {
+                const p = dsLock.acquire().then(() => { acquired++; });
+                const timeout = new Promise(resolve => setTimeout(resolve, 50));
+                await Promise.race([p, timeout]);
+            }
             expect(acquired).to.equal(queueSize);
         });
     });
