@@ -127,10 +127,22 @@ export default class StateReceiver {
         this.currentBlock = startBlock - 1;
         this.lastBlockUpdate = startBlock - 1;
 
+        const prefetch = this.config.ship_prefetch_blocks || 10;
+        const minConfirm = this.config.ship_min_block_confirmation || 1;
+
+        if (prefetch < minConfirm) {
+            const override = Math.max(1, Math.floor(prefetch / 2));
+            logger.warn(
+                `ship_prefetch_blocks (${prefetch}) < ship_min_block_confirmation (${minConfirm}) — ` +
+                `this will deadlock! Overriding min_block_confirmation to ${override}`
+            );
+            this.ship.setOptions({ min_block_confirmation: override });
+        }
+
         this.ship.startProcessing({
             start_block_num: startBlock,
             end_block_num: this.config.stop_block || 0xffffffff,
-            max_messages_in_flight: this.config.ship_prefetch_blocks || 10,
+            max_messages_in_flight: prefetch,
             irreversible_only: this.config.irreversible_only || false,
             have_positions: await this.database.getLastReaderBlocks(),
             fetch_block: true,
@@ -185,6 +197,7 @@ export default class StateReceiver {
                         continue;
                     }
 
+                    this.dsLock.release();
                     this.dsQueue.clear();
                     this.dsQueue.pause();
 
@@ -193,7 +206,9 @@ export default class StateReceiver {
                     return;
                 }
             }
-        }).then();
+        }).catch((error: any) => {
+            logger.error('Block processing error in ds queue at #' + resp.this_block.block_num, error);
+        });
     }
 
     private async process(
