@@ -120,13 +120,33 @@ function buildPrimaryCondition(values: {[key: string]: any}, primaryKey: string[
     return { str: conditionStr, values: conditionValues };
 }
 
+export function inferPgType(values: any[]): string {
+    for (const val of values) {
+        if (val === null || val === undefined) continue;
+        if (val instanceof Buffer || val instanceof Uint8Array || ArrayBuffer.isView(val)) return 'bytea';
+        if (typeof val === 'boolean') return 'boolean';
+        if (typeof val === 'number') return Number.isInteger(val) ? 'bigint' : 'double precision';
+        if (typeof val === 'object') return 'jsonb';
+        if (typeof val === 'string') return 'text';
+    }
+    return 'text';
+}
+
+export function isPkCondition(condition: Condition, primaryKey: string[]): boolean {
+    const normalized = condition.str.replace(/"/g, '').trim();
+    const expected = primaryKey.map((key, i) => key + ' = $' + (i + 1)).join(' AND ');
+    return normalized === expected && condition.values.length === primaryKey.length;
+}
+
 export class WriteBuffer {
     private pending: Map<string, {
         table: string;
         rows: Record<string, any>[];
+        pkIndex: Map<string, number>;
         primaryKey: string[];
-        onConflict: 'update' | 'nothing';
+        onConflict: 'update' | 'nothing' | 'error';
         reversible: boolean;
+        updateBlacklist: string[];
     }> = new Map();
 
     get totalRows(): number {
@@ -136,16 +156,16 @@ export class WriteBuffer {
     }
 
     add(table: string, values: Record<string, any> | Record<string, any>[], primaryKey: string[],
-        onConflict: 'update' | 'nothing', reversible: boolean): void {
+        onConflict: 'update' | 'nothing' | 'error', reversible: boolean, updateBlacklist: string[] = []): void {
         const rows = Array.isArray(values) ? values : [values];
         if (rows.length === 0) return;
 
         const sortedKeys = Object.keys(rows[0]).sort();
         const columnKey = sortedKeys.join(',');
-        const key = `${table}:${onConflict}:${primaryKey.join(',')}:${columnKey}`;
+        const key = `${table}:${onConflict}:${primaryKey.join(',')}:${columnKey}:${updateBlacklist.join(',')}`;
         let batch = this.pending.get(key);
         if (!batch) {
-            batch = { table, rows: [], primaryKey, onConflict, reversible };
+            batch = { table, rows: [], pkIndex: new Map(), primaryKey, onConflict, reversible, updateBlacklist };
             this.pending.set(key, batch);
         }
         // Normalize key order so insertDirect's arraysEqual check passes
@@ -156,7 +176,24 @@ export class WriteBuffer {
             }
             return normalized;
         });
-        batch.rows.push(...normalizedRows);
+        // Deduplicate by PK within batch (last-write-wins) for upsert modes.
+        // PG errors if the same PK appears twice in a single INSERT ... ON CONFLICT.
+        // Skip dedup for onConflict='error' — duplicates should be impossible in catchup,
+        // and if they occur the error is expected behavior.
+        if (primaryKey.length > 0 && onConflict !== 'error') {
+            for (const row of normalizedRows) {
+                const pkHash = primaryKey.map(k => String(row[k])).join('\0');
+                const existing = batch.pkIndex.get(pkHash);
+                if (existing !== undefined) {
+                    batch.rows[existing] = row;
+                } else {
+                    batch.pkIndex.set(pkHash, batch.rows.length);
+                    batch.rows.push(row);
+                }
+            }
+        } else {
+            batch.rows.push(...normalizedRows);
+        }
     }
 
     async flush(tx: ContractDBTransaction, lock: boolean = true): Promise<void> {
@@ -166,9 +203,87 @@ export class WriteBuffer {
             const chunks = arrayChunk(batch.rows, chunkSize);
             for (const chunk of chunks) {
                 await tx.insertDirect(batch.table, chunk, batch.primaryKey,
-                    batch.reversible, lock, batch.onConflict);
+                    batch.reversible, lock, batch.onConflict, batch.updateBlacklist);
             }
         }
+        this.pending.clear();
+    }
+
+    clear(): void {
+        this.pending.clear();
+    }
+}
+
+export class UpdateBuffer {
+    private pending: Map<string, {
+        table: string;
+        pkColumns: string[];
+        pkValues: Record<string, any>;
+        setValues: Record<string, any>;
+    }> = new Map();
+
+    get totalRows(): number {
+        return this.pending.size;
+    }
+
+    add(table: string, values: Record<string, any>, condition: Condition, primaryKey: string[]): void {
+        const pkValues: Record<string, any> = {};
+        for (let i = 0; i < primaryKey.length; i++) {
+            pkValues[primaryKey[i]] = condition.values[i];
+        }
+
+        const pkHash = primaryKey.map(k => String(pkValues[k])).join('\0');
+        const key = `${table}:${pkHash}`;
+
+        const existing = this.pending.get(key);
+        if (existing) {
+            // Merge set values (last-write-wins), filtering out PK columns
+            for (const [k, v] of Object.entries(values)) {
+                if (primaryKey.indexOf(k) === -1) {
+                    existing.setValues[k] = v;
+                }
+            }
+        } else {
+            const setValues: Record<string, any> = {};
+            for (const [k, v] of Object.entries(values)) {
+                if (primaryKey.indexOf(k) === -1) {
+                    setValues[k] = v;
+                }
+            }
+            this.pending.set(key, { table, pkColumns: primaryKey, pkValues, setValues });
+        }
+    }
+
+    async flush(tx: ContractDBTransaction, lock: boolean = true): Promise<void> {
+        if (this.pending.size === 0) return;
+
+        // Group by (table, pkColumns, setColumns) for batch UPDATE FROM unnest()
+        const groups: Map<string, {
+            table: string;
+            pkColumns: string[];
+            setColumns: string[];
+            rows: { pkValues: Record<string, any>; setValues: Record<string, any> }[];
+        }> = new Map();
+
+        for (const entry of this.pending.values()) {
+            const setColumns = Object.keys(entry.setValues).sort();
+            const groupKey = `${entry.table}:${entry.pkColumns.join(',')}:${setColumns.join(',')}`;
+
+            let group = groups.get(groupKey);
+            if (!group) {
+                group = { table: entry.table, pkColumns: entry.pkColumns, setColumns, rows: [] };
+                groups.set(groupKey, group);
+            }
+            group.rows.push({ pkValues: entry.pkValues, setValues: entry.setValues });
+        }
+
+        for (const group of groups.values()) {
+            const chunks = arrayChunk(group.rows, 500);
+            for (const chunk of chunks) {
+                await tx.updateBatch(group.table, group.pkColumns, group.setColumns, chunk, lock);
+            }
+        }
+
         this.pending.clear();
     }
 
@@ -268,6 +383,7 @@ export class ContractDBTransaction {
 
     actionLogs: any[];
     writeBuffer: WriteBuffer | null;
+    updateBuffer: UpdateBuffer | null;
 
     constructor(
         readonly client: PoolClient, readonly name: string, readonly stats: {operations: number}, readonly currentBlock?: number
@@ -278,10 +394,12 @@ export class ContractDBTransaction {
 
         this.actionLogs = [];
         this.writeBuffer = null;
+        this.updateBuffer = null;
     }
 
     enableWriteBuffer(): void {
         this.writeBuffer = new WriteBuffer();
+        this.updateBuffer = new UpdateBuffer();
     }
 
     async begin(): Promise<void> {
@@ -298,13 +416,20 @@ export class ContractDBTransaction {
         ContractDB.transactions.push(this);
     }
 
+    private async flushBuffers(lock: boolean): Promise<void> {
+        if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+            await this.writeBuffer.flush(this, lock);
+        }
+        if (this.updateBuffer && this.updateBuffer.totalRows > 0) {
+            await this.updateBuffer.flush(this, lock);
+        }
+    }
+
     async query(queryStr: string, values: any[] = [], lock: boolean = true): Promise<QueryResult> {
         await this.acquireLock(lock);
 
         try {
-            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
-                await this.writeBuffer.flush(this, false);
-            }
+            await this.flushBuffers(false);
 
             await this.begin();
 
@@ -317,21 +442,23 @@ export class ContractDBTransaction {
     async insert(
         table: string, values: Record<string, any>, primaryKey: string[],
         reversible: boolean = true, lock: boolean = true,
-        onConflict: 'update' | 'nothing' | 'error' = 'error'
+        onConflict: 'update' | 'nothing' | 'error' = 'error',
+        updateBlacklist: string[] = []
     ): Promise<QueryResult> {
-        if (this.writeBuffer && (onConflict === 'update' || onConflict === 'nothing')) {
-            this.writeBuffer.add(table, values, primaryKey, onConflict, reversible);
+        if (this.writeBuffer) {
+            this.writeBuffer.add(table, values, primaryKey, onConflict, reversible, updateBlacklist);
             const rowCount = Array.isArray(values) ? values.length : 1;
             return { rowCount, rows: [], command: 'INSERT', oid: 0, fields: [] } as QueryResult;
         }
 
-        return this.insertDirect(table, values, primaryKey, reversible, lock, onConflict);
+        return this.insertDirect(table, values, primaryKey, reversible, lock, onConflict, updateBlacklist);
     }
 
     async insertDirect(
         table: string, values: Record<string, any>, primaryKey: string[],
         reversible: boolean = true, lock: boolean = true,
-        onConflict: 'update' | 'nothing' | 'error' = 'error'
+        onConflict: 'update' | 'nothing' | 'error' = 'error',
+        updateBlacklist: string[] = []
     ): Promise<QueryResult> {
         await this.acquireLock(lock);
 
@@ -380,6 +507,7 @@ export class ContractDBTransaction {
                 const conflictKeys = primaryKey.map(key => this.client.escapeIdentifier(key)).join(', ');
                 const updateCols = keys
                     .filter(key => primaryKey.indexOf(key) === -1)
+                    .filter(key => updateBlacklist.indexOf(key) === -1)
                     .map(key => this.client.escapeIdentifier(key) + ' = EXCLUDED.' + this.client.escapeIdentifier(key));
 
                 if (updateCols.length > 0) {
@@ -421,16 +549,81 @@ export class ContractDBTransaction {
         }
     }
 
-    async update(
-        table: string, values: {[key: string]: any}, condition: Condition,
-        primaryKey: string[], reversible: boolean = true, lock: boolean = true
+    async updateBatch(
+        table: string, pkColumns: string[], setColumns: string[],
+        rows: { pkValues: Record<string, any>; setValues: Record<string, any> }[],
+        lock: boolean = true
     ): Promise<QueryResult> {
         await this.acquireLock(lock);
 
         try {
-            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
-                await this.writeBuffer.flush(this, false);
+            await this.begin();
+
+            const allColumns = [...pkColumns, ...setColumns];
+            const columnArrays: any[][] = allColumns.map(() => []);
+
+            for (const row of rows) {
+                for (let i = 0; i < pkColumns.length; i++) {
+                    columnArrays[i].push(row.pkValues[pkColumns[i]]);
+                }
+                for (let i = 0; i < setColumns.length; i++) {
+                    columnArrays[pkColumns.length + i].push(row.setValues[setColumns[i]]);
+                }
             }
+
+            // Infer PG types. For PK columns, detect numeric strings (EOSIO uint64 IDs
+            // passed as JS strings) and use bigint so the WHERE comparison works.
+            const pgTypes: string[] = allColumns.map((_, i) => {
+                const arr = columnArrays[i];
+                const baseType = inferPgType(arr);
+                if (i < pkColumns.length && baseType === 'text') {
+                    const nonNullVals = arr.filter((v: any) => v !== null && v !== undefined);
+                    if (nonNullVals.length > 0 && nonNullVals.every((v: any) => typeof v === 'string' && /^-?\d+$/.test(v))) {
+                        return 'bigint';
+                    }
+                }
+                return baseType;
+            });
+
+            const esc = this.client.escapeIdentifier.bind(this.client);
+            const setClause = setColumns.map(c => esc(c) + ' = u.' + esc(c)).join(', ');
+            const whereClause = pkColumns.map(c => 't.' + esc(c) + ' = u.' + esc(c)).join(' AND ');
+            const unnestParams = columnArrays.map((_, i) => '$' + (i + 1) + '::' + pgTypes[i] + '[]').join(', ');
+            const colAliases = allColumns.map(c => esc(c)).join(', ');
+
+            const sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +
+                ' FROM unnest(' + unnestParams + ') AS u(' + colAliases + ')' +
+                ' WHERE ' + whereClause + ';';
+
+            const result = await this.clientQuery(sql, columnArrays);
+            this.stats.operations += result.rowCount;
+
+            if (result.rowCount < rows.length) {
+                logger.warn(
+                    'Batch UPDATE on ' + table + ' affected ' + result.rowCount + ' rows, expected ' + rows.length +
+                    '. Reader: ' + this.name + ', Block: ' + (this.currentBlock || 'N/A')
+                );
+            }
+
+            return result;
+        } finally {
+            this.releaseLock(lock);
+        }
+    }
+
+    async update(
+        table: string, values: {[key: string]: any}, condition: Condition,
+        primaryKey: string[], reversible: boolean = true, lock: boolean = true
+    ): Promise<QueryResult> {
+        if (this.updateBuffer && primaryKey.length > 0 && isPkCondition(condition, primaryKey)) {
+            this.updateBuffer.add(table, values, condition, primaryKey);
+            return { rowCount: 1, rows: [], command: 'UPDATE', oid: 0, fields: [] } as QueryResult;
+        }
+
+        await this.acquireLock(lock);
+
+        try {
+            await this.flushBuffers(false);
 
             await this.begin();
 
@@ -515,9 +708,7 @@ export class ContractDBTransaction {
         await this.acquireLock(lock);
 
         try {
-            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
-                await this.writeBuffer.flush(this, false);
-            }
+            await this.flushBuffers(false);
 
             await this.begin();
 
@@ -549,12 +740,14 @@ export class ContractDBTransaction {
         table: string, values: Record<string, any>, primaryKey: string[], updateBlacklist: string[] = [],
         reversible: boolean = true, lock: boolean = true
     ): Promise<QueryResult> {
+        if (this.writeBuffer) {
+            return this.insert(table, values, primaryKey, false, lock, 'update', updateBlacklist);
+        }
+
         await this.acquireLock(lock);
 
         try {
-            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
-                await this.writeBuffer.flush(this, false);
-            }
+            await this.flushBuffers(false);
 
             await this.begin();
 
@@ -789,9 +982,7 @@ export class ContractDBTransaction {
     }
 
     async commit(): Promise<void> {
-        if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
-            await this.writeBuffer.flush(this, true);
-        }
+        await this.flushBuffers(true);
 
         if (this.actionLogs.length > 0) {
             const chunks = arrayChunk(this.actionLogs, 100);
@@ -825,6 +1016,9 @@ export class ContractDBTransaction {
     async abort(): Promise<void> {
         if (this.writeBuffer) {
             this.writeBuffer.clear();
+        }
+        if (this.updateBuffer) {
+            this.updateBuffer.clear();
         }
 
         await this.acquireLock();
