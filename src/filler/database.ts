@@ -120,6 +120,54 @@ function buildPrimaryCondition(values: {[key: string]: any}, primaryKey: string[
     return { str: conditionStr, values: conditionValues };
 }
 
+export class WriteBuffer {
+    private pending: Map<string, {
+        table: string;
+        rows: Record<string, any>[];
+        primaryKey: string[];
+        onConflict: 'update' | 'nothing';
+        reversible: boolean;
+    }> = new Map();
+
+    get totalRows(): number {
+        let n = 0;
+        for (const batch of this.pending.values()) n += batch.rows.length;
+        return n;
+    }
+
+    add(table: string, values: Record<string, any> | Record<string, any>[], primaryKey: string[],
+        onConflict: 'update' | 'nothing', reversible: boolean): void {
+        const rows = Array.isArray(values) ? values : [values];
+        if (rows.length === 0) return;
+
+        const columnKey = Object.keys(rows[0]).sort().join(',');
+        const key = `${table}:${onConflict}:${primaryKey.join(',')}:${columnKey}`;
+        let batch = this.pending.get(key);
+        if (!batch) {
+            batch = { table, rows: [], primaryKey, onConflict, reversible };
+            this.pending.set(key, batch);
+        }
+        batch.rows.push(...rows);
+    }
+
+    async flush(tx: ContractDBTransaction, lock: boolean = true): Promise<void> {
+        for (const [, batch] of this.pending) {
+            const numColumns = Object.keys(batch.rows[0]).length;
+            const chunkSize = Math.min(Math.floor(65535 / numColumns), 500);
+            const chunks = arrayChunk(batch.rows, chunkSize);
+            for (const chunk of chunks) {
+                await tx.insertDirect(batch.table, chunk, batch.primaryKey,
+                    batch.reversible, lock, batch.onConflict);
+            }
+        }
+        this.pending.clear();
+    }
+
+    clear(): void {
+        this.pending.clear();
+    }
+}
+
 export class ContractDB {
     static transactions: ContractDBTransaction[] = [];
 
@@ -134,7 +182,13 @@ export class ContractDB {
 
         this.stats.operations = this.stats.operations % Math.pow(2, 32);
 
-        return new ContractDBTransaction(client, this.name, this.stats, currentBlock);
+        const tx = new ContractDBTransaction(client, this.name, this.stats, currentBlock);
+
+        if (!currentBlock) {
+            tx.enableWriteBuffer();
+        }
+
+        return tx;
     }
 
     async fetchAbi(contract: string, blockNum: number): Promise<{data: Uint8Array, block_num: number} | null> {
@@ -204,6 +258,7 @@ export class ContractDBTransaction {
     committed: boolean;
 
     actionLogs: any[];
+    writeBuffer: WriteBuffer | null;
 
     constructor(
         readonly client: PoolClient, readonly name: string, readonly stats: {operations: number}, readonly currentBlock?: number
@@ -213,6 +268,11 @@ export class ContractDBTransaction {
         this.inTransaction = false;
 
         this.actionLogs = [];
+        this.writeBuffer = null;
+    }
+
+    enableWriteBuffer(): void {
+        this.writeBuffer = new WriteBuffer();
     }
 
     async begin(): Promise<void> {
@@ -233,6 +293,10 @@ export class ContractDBTransaction {
         await this.acquireLock(lock);
 
         try {
+            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+                await this.writeBuffer.flush(this, false);
+            }
+
             await this.begin();
 
             return await this.clientQuery(queryStr, values);
@@ -242,6 +306,20 @@ export class ContractDBTransaction {
     }
 
     async insert(
+        table: string, values: Record<string, any>, primaryKey: string[],
+        reversible: boolean = true, lock: boolean = true,
+        onConflict: 'update' | 'nothing' | 'error' = 'error'
+    ): Promise<QueryResult> {
+        if (this.writeBuffer && (onConflict === 'update' || onConflict === 'nothing')) {
+            this.writeBuffer.add(table, values, primaryKey, onConflict, reversible);
+            const rowCount = Array.isArray(values) ? values.length : 1;
+            return { rowCount, rows: [], command: 'INSERT', oid: 0, fields: [] } as QueryResult;
+        }
+
+        return this.insertDirect(table, values, primaryKey, reversible, lock, onConflict);
+    }
+
+    async insertDirect(
         table: string, values: Record<string, any>, primaryKey: string[],
         reversible: boolean = true, lock: boolean = true,
         onConflict: 'update' | 'nothing' | 'error' = 'error'
@@ -341,6 +419,10 @@ export class ContractDBTransaction {
         await this.acquireLock(lock);
 
         try {
+            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+                await this.writeBuffer.flush(this, false);
+            }
+
             await this.begin();
 
             let selectQuery = null;
@@ -424,6 +506,10 @@ export class ContractDBTransaction {
         await this.acquireLock(lock);
 
         try {
+            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+                await this.writeBuffer.flush(this, false);
+            }
+
             await this.begin();
 
             let selectQuery;
@@ -457,6 +543,10 @@ export class ContractDBTransaction {
         await this.acquireLock(lock);
 
         try {
+            if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+                await this.writeBuffer.flush(this, false);
+            }
+
             await this.begin();
 
             const condition = buildPrimaryCondition(values, primaryKey);
@@ -690,6 +780,10 @@ export class ContractDBTransaction {
     }
 
     async commit(): Promise<void> {
+        if (this.writeBuffer && this.writeBuffer.totalRows > 0) {
+            await this.writeBuffer.flush(this, true);
+        }
+
         if (this.actionLogs.length > 0) {
             const chunks = arrayChunk(this.actionLogs, 100);
 
@@ -720,6 +814,10 @@ export class ContractDBTransaction {
     }
 
     async abort(): Promise<void> {
+        if (this.writeBuffer) {
+            this.writeBuffer.clear();
+        }
+
         await this.acquireLock();
 
         try {
