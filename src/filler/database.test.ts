@@ -1436,10 +1436,17 @@ describe('inferPgType', () => {
         expect(inferPgType(['{'])).to.equal('text');   // incomplete
     });
 
-    it('returns text for regular strings that do not resemble JSON', () => {
+    it('returns text for non-numeric strings', () => {
         expect(inferPgType(['hello world'])).to.equal('text');
         expect(inferPgType(['pink.gg'])).to.equal('text');
-        expect(inferPgType(['12345'])).to.equal('text');
+        expect(inferPgType(['abc123'])).to.equal('text');
+    });
+
+    it('returns bigint for numeric string values (EOSIO uint64)', () => {
+        expect(inferPgType(['76682324'])).to.equal('bigint');
+        expect(inferPgType(['12345'])).to.equal('bigint');
+        expect(inferPgType(['-999'])).to.equal('bigint');
+        expect(inferPgType([null, '100000000000'])).to.equal('bigint');
     });
 
     it('returns jsonb for null-prefixed JSON string arrays', () => {
