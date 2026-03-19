@@ -53,7 +53,7 @@ export default class StateHistoryBlockReader {
         this.deltaWhitelist = [];
     }
 
-    setOptions(options?: IBlockReaderOptions, deltas?: string[]): void {
+    setOptions(options?: Partial<IBlockReaderOptions>, deltas?: string[]): void {
         if (options) {
             this.options = {...this.options, ...options};
         }
@@ -267,7 +267,9 @@ export default class StateHistoryBlockReader {
                             this.send(['get_blocks_ack_request_v0', { num_messages: this.unconfirmed }]);
                             this.unconfirmed = 0;
                         }
-                    }).then();
+                    }).catch((error: any) => {
+                        logger.error('Block processing error in ship queue', error);
+                    });
                 } else {
                     logger.warn('Not supported message received', {type, response});
                 }
