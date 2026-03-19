@@ -137,6 +137,9 @@ export function inferPgType(values: any[]): string {
                     return 'jsonb';
                 }
             }
+            if (/^-?\d+$/.test(trimmed)) {
+                return 'bigint';
+            }
             return 'text';
         }
     }
@@ -582,19 +585,7 @@ export class ContractDBTransaction {
                 }
             }
 
-            // Infer PG types. For PK columns, detect numeric strings (EOSIO uint64 IDs
-            // passed as JS strings) and use bigint so the WHERE comparison works.
-            const pgTypes: string[] = allColumns.map((_, i) => {
-                const arr = columnArrays[i];
-                const baseType = inferPgType(arr);
-                if (i < pkColumns.length && baseType === 'text') {
-                    const nonNullVals = arr.filter((v: any) => v !== null && v !== undefined);
-                    if (nonNullVals.length > 0 && nonNullVals.every((v: any) => typeof v === 'string' && /^-?\d+$/.test(v))) {
-                        return 'bigint';
-                    }
-                }
-                return baseType;
-            });
+            const pgTypes: string[] = allColumns.map((_, i) => inferPgType(columnArrays[i]));
 
             const esc = this.client.escapeIdentifier.bind(this.client);
             const setClause = setColumns.map(c => esc(c) + ' = u.' + esc(c)).join(', ');
