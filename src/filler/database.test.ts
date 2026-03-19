@@ -1,7 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 import ConnectionManager from '../connections/manager';
-import {ContractDB, WriteBuffer} from './database';
+import {ContractDB, WriteBuffer, UpdateBuffer, isPkCondition, inferPgType} from './database';
 import {connectionConfig} from '../utils/test';
 
 const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
@@ -165,6 +165,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             const transaction = await contract.startTransaction();
 
             expect(transaction.writeBuffer).to.not.be.null;
+            expect(transaction.updateBuffer).to.not.be.null;
 
             await transaction.abort();
         });
@@ -173,6 +174,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             const transaction = await contract.startTransaction(500);
 
             expect(transaction.writeBuffer).to.be.null;
+            expect(transaction.updateBuffer).to.be.null;
 
             await transaction.abort();
         });
@@ -201,18 +203,24 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        it('does not buffer inserts with ON CONFLICT error (default)', async () => {
+        it('buffers inserts with ON CONFLICT error in catchup mode', async () => {
             const transaction = await contract.startTransaction();
 
             await transaction.insert('contract_abis', {
-                account: 'wb_test_2',
+                account: 'wb_test_err_1',
                 abi: new Uint8Array([2]),
                 block_num: 10001,
                 block_time: 0
             }, ['account', 'block_num']);
 
-            // Buffer should still be empty — direct insert with default onConflict
-            expect(transaction.writeBuffer!.totalRows).to.equal(0);
+            // Buffer should contain the row — all inserts are buffered in catchup
+            expect(transaction.writeBuffer!.totalRows).to.equal(1);
+
+            // Flush via query and verify
+            const check = await transaction.query(
+                'SELECT count(*) FROM contract_abis WHERE account = \'wb_test_err_1\''
+            );
+            expect(parseInt(check.rows[0].count, 10)).to.equal(1);
 
             await transaction.abort();
         });
@@ -386,9 +394,10 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        it('flushes buffer before replace', async () => {
+        it('replace uses upsert in catchup mode (writeBuffer active)', async () => {
             const transaction = await contract.startTransaction();
 
+            // First insert
             await transaction.insert('contract_abis', {
                 account: 'wb_repl_1',
                 abi: new Uint8Array([1]),
@@ -396,7 +405,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
                 block_time: 0
             }, ['account', 'block_num'], true, true, 'update');
 
-            // Replace should flush first, then find the existing row and update it
+            // Replace should buffer as upsert (no SELECT needed)
             await transaction.replace('contract_abis', {
                 account: 'wb_repl_1',
                 abi: new Uint8Array([99]),
@@ -404,12 +413,240 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
                 block_time: 555
             }, ['account', 'block_num'], [], false);
 
+            // Both should be in the buffer
+            expect(transaction.writeBuffer!.totalRows).to.be.greaterThan(0);
+
             const result = await transaction.query(
                 'SELECT block_time FROM contract_abis WHERE account = \'wb_repl_1\' AND block_num = 10070'
             );
             expect(parseInt(result.rows[0].block_time, 10)).to.equal(555);
 
             await transaction.abort();
+        });
+
+        it('replace with updateBlacklist preserves blacklisted columns', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert initial row
+            await transaction.insert('contract_abis', {
+                account: 'wb_bl_1',
+                abi: new Uint8Array([1]),
+                block_num: 10080,
+                block_time: 100
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush the initial insert
+            await transaction.query('SELECT 1');
+
+            // Replace with block_time in updateBlacklist
+            await transaction.replace('contract_abis', {
+                account: 'wb_bl_1',
+                abi: new Uint8Array([99]),
+                block_num: 10080,
+                block_time: 999
+            }, ['account', 'block_num'], ['block_time'], false);
+
+            // Flush and check — block_time should be preserved (100, not 999)
+            const result = await transaction.query(
+                'SELECT block_time FROM contract_abis WHERE account = \'wb_bl_1\' AND block_num = 10080'
+            );
+            expect(parseInt(result.rows[0].block_time, 10)).to.equal(100);
+
+            await transaction.abort();
+        });
+    });
+
+    describe('update buffer', () => {
+        it('buffers PK-matched updates in catchup mode', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert a row first
+            await transaction.insert('contract_abis', {
+                account: 'ub_test_1',
+                abi: new Uint8Array([1]),
+                block_num: 20000,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush the insert
+            await transaction.query('SELECT 1');
+
+            // PK-matched update should be buffered
+            const result = await transaction.update('contract_abis', {
+                block_time: 42
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_test_1', 20000]
+            }, ['account', 'block_num'], false);
+
+            expect(result.rowCount).to.equal(1);
+            expect(result.rows).to.deep.equal([]);
+            expect(transaction.updateBuffer!.totalRows).to.equal(1);
+
+            // Flush via query and verify
+            const check = await transaction.query(
+                'SELECT block_time FROM contract_abis WHERE account = \'ub_test_1\' AND block_num = 20000'
+            );
+            expect(parseInt(check.rows[0].block_time, 10)).to.equal(42);
+
+            await transaction.abort();
+        });
+
+        it('does not buffer non-PK condition updates', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert a row first
+            await transaction.insert('contract_abis', {
+                account: 'ub_nonpk_1',
+                abi: new Uint8Array([1]),
+                block_num: 20010,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush the insert
+            await transaction.query('SELECT 1');
+
+            // Non-PK condition — should NOT be buffered
+            await transaction.update('contract_abis', {
+                block_time: 99
+            }, {
+                str: 'account = $1',
+                values: ['ub_nonpk_1']
+            }, ['account', 'block_num'], false);
+
+            // updateBuffer should still be empty
+            expect(transaction.updateBuffer!.totalRows).to.equal(0);
+
+            await transaction.abort();
+        });
+
+        it('merges multiple updates to the same row', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert a row
+            await transaction.insert('contract_abis', {
+                account: 'ub_merge_1',
+                abi: new Uint8Array([1]),
+                block_num: 20020,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush the insert
+            await transaction.query('SELECT 1');
+
+            // Two updates to the same row
+            await transaction.update('contract_abis', {
+                block_time: 10
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_merge_1', 20020]
+            }, ['account', 'block_num'], false);
+
+            await transaction.update('contract_abis', {
+                block_time: 20
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_merge_1', 20020]
+            }, ['account', 'block_num'], false);
+
+            // Should be 1 row (merged), not 2
+            expect(transaction.updateBuffer!.totalRows).to.equal(1);
+
+            // Flush and verify — last write wins
+            const check = await transaction.query(
+                'SELECT block_time FROM contract_abis WHERE account = \'ub_merge_1\' AND block_num = 20020'
+            );
+            expect(parseInt(check.rows[0].block_time, 10)).to.equal(20);
+
+            await transaction.abort();
+        });
+
+        it('batches updates to different rows of the same table', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert two rows
+            await transaction.insert('contract_abis', {
+                account: 'ub_batch_1',
+                abi: new Uint8Array([1]),
+                block_num: 20030,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            await transaction.insert('contract_abis', {
+                account: 'ub_batch_2',
+                abi: new Uint8Array([2]),
+                block_num: 20031,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush inserts
+            await transaction.query('SELECT 1');
+
+            // Update both rows with same columns
+            await transaction.update('contract_abis', {
+                block_time: 111
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_batch_1', 20030]
+            }, ['account', 'block_num'], false);
+
+            await transaction.update('contract_abis', {
+                block_time: 222
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_batch_2', 20031]
+            }, ['account', 'block_num'], false);
+
+            expect(transaction.updateBuffer!.totalRows).to.equal(2);
+
+            // Flush and verify both were updated in a single batch
+            const check = await transaction.query(
+                'SELECT account, block_time FROM contract_abis WHERE account LIKE \'ub_batch_%\' ORDER BY account'
+            );
+            expect(check.rows.length).to.equal(2);
+            expect(parseInt(check.rows[0].block_time, 10)).to.equal(111);
+            expect(parseInt(check.rows[1].block_time, 10)).to.equal(222);
+
+            await transaction.abort();
+        });
+
+        it('clears update buffer on abort', async () => {
+            const transaction = await contract.startTransaction();
+
+            // Insert a row
+            await transaction.insert('contract_abis', {
+                account: 'ub_abort_1',
+                abi: new Uint8Array([1]),
+                block_num: 20040,
+                block_time: 0
+            }, ['account', 'block_num'], true, true, 'update');
+
+            // Flush insert
+            await transaction.query('SELECT 1');
+
+            // Buffer an update
+            await transaction.update('contract_abis', {
+                block_time: 999
+            }, {
+                str: 'account = $1 AND block_num = $2',
+                values: ['ub_abort_1', 20040]
+            }, ['account', 'block_num'], false);
+
+            expect(transaction.updateBuffer!.totalRows).to.equal(1);
+
+            await transaction.abort();
+
+            // Verify the update was NOT applied
+            const client = await connection.database.pool.connect();
+            try {
+                const {rows} = await client.query(
+                    'SELECT block_time FROM contract_abis WHERE account = \'ub_abort_1\' AND block_num = 20040'
+                );
+                // Row itself was also aborted (never committed), so should not exist
+                expect(rows.length).to.equal(0);
+            } finally {
+                client.release();
+            }
         });
     });
 
@@ -471,8 +708,8 @@ describe('WriteBuffer unit tests', () => {
     it('normalizes key order so same columns batch together', () => {
         const buffer = new WriteBuffer();
 
-        buffer.add('t', {b: 2, a: 1}, ['id'], 'update', false);
-        buffer.add('t', {a: 3, b: 4}, ['id'], 'update', false);
+        buffer.add('t', {id: 1, b: 2, a: 1}, ['id'], 'update', false);
+        buffer.add('t', {id: 2, a: 3, b: 4}, ['id'], 'update', false);
 
         // Same columns, different order → single batch with normalized keys
         expect(buffer.totalRows).to.equal(2);
@@ -486,5 +723,213 @@ describe('WriteBuffer unit tests', () => {
 
         // Different columns → separate batches, total is still 2
         expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('accepts onConflict error', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {id: 1, val: 'a'}, ['id'], 'error', false);
+        expect(buffer.totalRows).to.equal(1);
+    });
+
+    it('separates batches by updateBlacklist', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {id: 1, a: 1, b: 2}, ['id'], 'update', false, ['a']);
+        buffer.add('t', {id: 2, a: 3, b: 4}, ['id'], 'update', false, ['b']);
+
+        // Different blacklists → separate batches
+        expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('deduplicates by PK within upsert batch (last-write-wins)', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {id: 1, val: 'first'}, ['id'], 'update', false);
+        buffer.add('t', {id: 1, val: 'second'}, ['id'], 'update', false);
+
+        // Same PK → deduped to 1 row
+        expect(buffer.totalRows).to.equal(1);
+    });
+
+    it('deduplicates with composite PK', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {a: 1, b: 2, val: 'first'}, ['a', 'b'], 'update', false);
+        buffer.add('t', {a: 1, b: 2, val: 'second'}, ['a', 'b'], 'update', false);
+        buffer.add('t', {a: 1, b: 3, val: 'third'}, ['a', 'b'], 'update', false);
+
+        // (1,2) deduped → 2 rows total
+        expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('does not deduplicate for onConflict error', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {id: 1, val: 'first'}, ['id'], 'error', false);
+        buffer.add('t', {id: 1, val: 'second'}, ['id'], 'error', false);
+
+        // No dedup for error mode — both rows kept
+        expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('deduplicates within array input', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', [
+            {id: 1, val: 'first'},
+            {id: 1, val: 'second'},
+            {id: 2, val: 'third'},
+        ], ['id'], 'update', false);
+
+        // id=1 deduped → 2 rows
+        expect(buffer.totalRows).to.equal(2);
+    });
+});
+
+describe('UpdateBuffer unit tests', () => {
+    it('tracks totalRows', () => {
+        const buffer = new UpdateBuffer();
+
+        buffer.add('t', {val: 'a'}, {str: 'id = $1', values: [1]}, ['id']);
+        buffer.add('t', {val: 'b'}, {str: 'id = $1', values: [2]}, ['id']);
+
+        expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('merges updates to the same row (last-write-wins)', () => {
+        const buffer = new UpdateBuffer();
+
+        buffer.add('t', {val: 'first', extra: 1}, {str: 'id = $1', values: [1]}, ['id']);
+        buffer.add('t', {val: 'second'}, {str: 'id = $1', values: [1]}, ['id']);
+
+        // Same row → merged, still 1
+        expect(buffer.totalRows).to.equal(1);
+    });
+
+    it('filters PK columns from set values', () => {
+        const buffer = new UpdateBuffer();
+
+        // values include PK column 'id' — should be filtered out
+        buffer.add('t', {id: 1, val: 'a'}, {str: 'id = $1', values: [1]}, ['id']);
+
+        expect(buffer.totalRows).to.equal(1);
+    });
+
+    it('handles composite PKs', () => {
+        const buffer = new UpdateBuffer();
+
+        buffer.add('t', {val: 'a'}, {str: 'a = $1 AND b = $2', values: [1, 2]}, ['a', 'b']);
+        buffer.add('t', {val: 'b'}, {str: 'a = $1 AND b = $2', values: [1, 3]}, ['a', 'b']);
+
+        // Different PKs → 2 rows
+        expect(buffer.totalRows).to.equal(2);
+    });
+
+    it('clear() empties all pending', () => {
+        const buffer = new UpdateBuffer();
+
+        buffer.add('t', {val: 'a'}, {str: 'id = $1', values: [1]}, ['id']);
+        buffer.add('t', {val: 'b'}, {str: 'id = $1', values: [2]}, ['id']);
+        expect(buffer.totalRows).to.equal(2);
+
+        buffer.clear();
+        expect(buffer.totalRows).to.equal(0);
+    });
+
+    it('separates rows by table', () => {
+        const buffer = new UpdateBuffer();
+
+        buffer.add('table_a', {val: 'a'}, {str: 'id = $1', values: [1]}, ['id']);
+        buffer.add('table_b', {val: 'b'}, {str: 'id = $1', values: [1]}, ['id']);
+
+        // Different tables, same PK value → 2 separate entries
+        expect(buffer.totalRows).to.equal(2);
+    });
+});
+
+describe('isPkCondition', () => {
+    it('matches simple unquoted PK condition', () => {
+        expect(isPkCondition(
+            {str: 'contract = $1 AND asset_id = $2', values: ['atomicassets', '123']},
+            ['contract', 'asset_id']
+        )).to.be.true;
+    });
+
+    it('matches quoted PK condition', () => {
+        expect(isPkCondition(
+            {str: '"contract" = $1 AND "asset_id" = $2', values: ['atomicassets', '123']},
+            ['contract', 'asset_id']
+        )).to.be.true;
+    });
+
+    it('rejects condition with ANY operator', () => {
+        expect(isPkCondition(
+            {str: 'contract = $1 AND asset_id = ANY ($2) AND owner = $3', values: ['a', [1,2], 'b']},
+            ['contract', 'asset_id']
+        )).to.be.false;
+    });
+
+    it('rejects condition with extra clauses', () => {
+        expect(isPkCondition(
+            {str: 'contract = $1 AND asset_id = $2 AND state = $3', values: ['a', 1, 2]},
+            ['contract', 'asset_id']
+        )).to.be.false;
+    });
+
+    it('rejects condition with mismatched value count', () => {
+        expect(isPkCondition(
+            {str: 'contract = $1 AND asset_id = $2', values: ['atomicassets']},
+            ['contract', 'asset_id']
+        )).to.be.false;
+    });
+
+    it('matches single-column PK', () => {
+        expect(isPkCondition(
+            {str: 'id = $1', values: [42]},
+            ['id']
+        )).to.be.true;
+    });
+});
+
+describe('inferPgType', () => {
+    it('returns text for string arrays', () => {
+        expect(inferPgType(['hello', 'world'])).to.equal('text');
+    });
+
+    it('returns bigint for integer arrays', () => {
+        expect(inferPgType([1, 2, 3])).to.equal('bigint');
+    });
+
+    it('returns double precision for float arrays', () => {
+        expect(inferPgType([1.5, 2.7])).to.equal('double precision');
+    });
+
+    it('returns boolean for boolean arrays', () => {
+        expect(inferPgType([true, false])).to.equal('boolean');
+    });
+
+    it('returns bytea for Buffer arrays', () => {
+        expect(inferPgType([Buffer.from([1]), Buffer.from([2])])).to.equal('bytea');
+    });
+
+    it('returns bytea for Uint8Array arrays', () => {
+        expect(inferPgType([new Uint8Array([1]), new Uint8Array([2])])).to.equal('bytea');
+    });
+
+    it('returns jsonb for object arrays', () => {
+        expect(inferPgType([{a: 1}, {b: 2}])).to.equal('jsonb');
+    });
+
+    it('returns text for all-null arrays', () => {
+        expect(inferPgType([null, null, undefined])).to.equal('text');
+    });
+
+    it('skips nulls and infers from first non-null', () => {
+        expect(inferPgType([null, 42, null])).to.equal('bigint');
+    });
+
+    it('returns text for empty array', () => {
+        expect(inferPgType([])).to.equal('text');
     });
 });
