@@ -32,7 +32,7 @@ export default class Semaphore {
         const unresolved = this.waiting.length;
 
         for (let i = 0; i < unresolved; i++) {
-            this.waiting[i].reject('Task has been purged.');
+            this.waiting[i].reject(new Error('Task has been purged.'));
         }
 
         this.counter = 0;
