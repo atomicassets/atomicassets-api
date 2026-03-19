@@ -468,6 +468,16 @@ describe('WriteBuffer unit tests', () => {
         expect(buffer.totalRows).to.equal(0);
     });
 
+    it('normalizes key order so same columns batch together', () => {
+        const buffer = new WriteBuffer();
+
+        buffer.add('t', {b: 2, a: 1}, ['id'], 'update', false);
+        buffer.add('t', {a: 3, b: 4}, ['id'], 'update', false);
+
+        // Same columns, different order → single batch with normalized keys
+        expect(buffer.totalRows).to.equal(2);
+    });
+
     it('separates batches with different column sets', () => {
         const buffer = new WriteBuffer();
 

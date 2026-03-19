@@ -140,14 +140,23 @@ export class WriteBuffer {
         const rows = Array.isArray(values) ? values : [values];
         if (rows.length === 0) return;
 
-        const columnKey = Object.keys(rows[0]).sort().join(',');
+        const sortedKeys = Object.keys(rows[0]).sort();
+        const columnKey = sortedKeys.join(',');
         const key = `${table}:${onConflict}:${primaryKey.join(',')}:${columnKey}`;
         let batch = this.pending.get(key);
         if (!batch) {
             batch = { table, rows: [], primaryKey, onConflict, reversible };
             this.pending.set(key, batch);
         }
-        batch.rows.push(...rows);
+        // Normalize key order so insertDirect's arraysEqual check passes
+        const normalizedRows = rows.map(row => {
+            const normalized: Record<string, any> = {};
+            for (const k of sortedKeys) {
+                normalized[k] = row[k];
+            }
+            return normalized;
+        });
+        batch.rows.push(...normalizedRows);
     }
 
     async flush(tx: ContractDBTransaction, lock: boolean = true): Promise<void> {
