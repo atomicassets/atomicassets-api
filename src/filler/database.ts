@@ -126,8 +126,19 @@ export function inferPgType(values: any[]): string {
         if (val instanceof Buffer || val instanceof Uint8Array || ArrayBuffer.isView(val)) return 'bytea';
         if (typeof val === 'boolean') return 'boolean';
         if (typeof val === 'number') return Number.isInteger(val) ? 'bigint' : 'double precision';
+        if (Array.isArray(val)) return 'jsonb';
         if (typeof val === 'object') return 'jsonb';
-        if (typeof val === 'string') return 'text';
+        if (typeof val === 'string') {
+            const trimmed = val.trim();
+            if (trimmed.length >= 2) {
+                const first = trimmed[0];
+                const last = trimmed[trimmed.length - 1];
+                if ((first === '{' && last === '}') || (first === '[' && last === ']')) {
+                    return 'jsonb';
+                }
+            }
+            return 'text';
+        }
     }
     return 'text';
 }
@@ -588,7 +599,12 @@ export class ContractDBTransaction {
             const esc = this.client.escapeIdentifier.bind(this.client);
             const setClause = setColumns.map(c => esc(c) + ' = u.' + esc(c)).join(', ');
             const whereClause = pkColumns.map(c => 't.' + esc(c) + ' = u.' + esc(c)).join(' AND ');
-            const unnestParams = columnArrays.map((_, i) => '$' + (i + 1) + '::' + pgTypes[i] + '[]').join(', ');
+            // Use [][] for columns that contain per-row array values (e.g. jsonb[], varchar[])
+            const unnestParams = columnArrays.map((arr, i) => {
+                const hasArrayValues = arr.some((v: any) => Array.isArray(v));
+                const suffix = hasArrayValues ? '[][]' : '[]';
+                return '$' + (i + 1) + '::' + pgTypes[i] + suffix;
+            }).join(', ');
             const colAliases = allColumns.map(c => esc(c)).join(', ');
 
             const sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +

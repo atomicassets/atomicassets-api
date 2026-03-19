@@ -207,7 +207,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             const transaction = await contract.startTransaction();
 
             await transaction.insert('contract_abis', {
-                account: 'wb_test_err_1',
+                account: 'wb_err_1',
                 abi: new Uint8Array([2]),
                 block_num: 10001,
                 block_time: 0
@@ -218,7 +218,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
 
             // Flush via query and verify
             const check = await transaction.query(
-                'SELECT count(*) FROM contract_abis WHERE account = \'wb_test_err_1\''
+                'SELECT count(*) FROM contract_abis WHERE account = \'wb_err_1\''
             );
             expect(parseInt(check.rows[0].count, 10)).to.equal(1);
 
@@ -1418,5 +1418,36 @@ describe('inferPgType', () => {
     it('infers type from first non-null even when subsequent values differ', () => {
         // inferPgType stops at the first non-null value
         expect(inferPgType([null, 42, 'hello'])).to.equal('bigint');
+    });
+
+    it('returns jsonb for JSON object strings (encodeDatabaseJson output)', () => {
+        expect(inferPgType(['{"key":"value"}'])).to.equal('jsonb');
+        expect(inferPgType(['{"a":1,"b":2}'])).to.equal('jsonb');
+    });
+
+    it('returns jsonb for JSON array strings', () => {
+        expect(inferPgType(['[1,2,3]'])).to.equal('jsonb');
+        expect(inferPgType(['[{"a":1}]'])).to.equal('jsonb');
+    });
+
+    it('returns text for strings that look like JSON but are too short', () => {
+        expect(inferPgType(['{}'])).to.equal('jsonb'); // valid minimal JSON object
+        expect(inferPgType(['[]'])).to.equal('jsonb'); // valid minimal JSON array
+        expect(inferPgType(['{'])).to.equal('text');   // incomplete
+    });
+
+    it('returns text for regular strings that do not resemble JSON', () => {
+        expect(inferPgType(['hello world'])).to.equal('text');
+        expect(inferPgType(['pink.gg'])).to.equal('text');
+        expect(inferPgType(['12345'])).to.equal('text');
+    });
+
+    it('returns jsonb for null-prefixed JSON string arrays', () => {
+        expect(inferPgType([null, '{"x":1}'])).to.equal('jsonb');
+    });
+
+    it('returns jsonb for JS arrays (Array.isArray)', () => {
+        // JS arrays are detected before typeof object check
+        expect(inferPgType([['a', 'b']])).to.equal('jsonb');
     });
 });
