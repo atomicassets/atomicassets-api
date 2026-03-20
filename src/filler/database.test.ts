@@ -1449,6 +1449,16 @@ describe('inferPgType', () => {
         expect(inferPgType([null, '100000000000'])).to.equal('bigint');
     });
 
+    it('falls back to text when numeric and non-numeric strings are mixed', () => {
+        expect(inferPgType(['123', 'abc', '456'])).to.equal('text');
+        expect(inferPgType([null, '99', 'not_a_number'])).to.equal('text');
+        expect(inferPgType(['0', '1', 'hello'])).to.equal('text');
+    });
+
+    it('returns bigint only when all non-null string values are numeric', () => {
+        expect(inferPgType([null, '123', null, '456', null])).to.equal('bigint');
+    });
+
     it('returns jsonb for null-prefixed JSON string arrays', () => {
         expect(inferPgType([null, '{"x":1}'])).to.equal('jsonb');
     });
