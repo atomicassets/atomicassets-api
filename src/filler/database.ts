@@ -138,7 +138,13 @@ export function inferPgType(values: any[]): string {
                 }
             }
             if (/^-?\d+$/.test(trimmed)) {
-                return 'bigint';
+                // Verify ALL non-null string values are numeric before inferring bigint;
+                // mixed values would cause unnest($n::bigint[]) cast failures at runtime
+                const allNumeric = values.every(v =>
+                    v === null || v === undefined ||
+                    (typeof v === 'string' && /^-?\d+$/.test(v.trim()))
+                );
+                return allNumeric ? 'bigint' : 'text';
             }
             return 'text';
         }
