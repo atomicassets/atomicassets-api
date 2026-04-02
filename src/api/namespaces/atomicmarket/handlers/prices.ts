@@ -144,7 +144,9 @@ export async function getPricesSalesDaysAction(params: RequestValues, ctx: Atomi
         template_id: {type: 'list[id]'},
         schema_name: {type: 'list[name]'},
         asset_id: {type: 'list[id]'},
-        symbol: {type: 'string', min: 1}
+        symbol: {type: 'string', min: 1},
+        after: {type: 'int', min: 1},
+        before: {type: 'int', min: 1}
     });
 
     const query = new QueryBuilder(`
@@ -182,6 +184,14 @@ export async function getPricesSalesDaysAction(params: RequestValues, ctx: Atomi
 
     if (args.symbol) {
         query.equalMany('price.symbol', args.symbol.split(','));
+    }
+
+    if (args.after) {
+        query.addCondition('price.time >= ' + query.addVariable(args.after));
+    }
+
+    if (args.before) {
+        query.addCondition('price.time <= ' + query.addVariable(args.before));
     }
 
     query.group(['token.market_contract', 'token.token_symbol', 'daytime']);
