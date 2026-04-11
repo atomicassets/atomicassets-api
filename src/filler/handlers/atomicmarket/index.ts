@@ -304,7 +304,14 @@ export default class AtomicMarketHandler extends ContractHandler {
         // Dedicated pool for long-running maintenance jobs (sales_filters, template_prices).
         // The main pool's 30s statement_timeout is too short and SET LOCAL is ineffective
         // through PgBouncer transaction pooling, so these jobs need their own pool.
+        //
+        // connectionTimeoutMillis must be ≥ statement_timeout: with max:1 and multi-minute
+        // work units, queued calls would otherwise hit the parent pool's 5s acquire timeout
+        // (postgres.ts:40) while the single client is still running the previous invocation.
+        // Observed on WAX mainnet where update_atomicmarket_sales_filters() can run >5s and
+        // every subsequent job call failed with "timeout exceeded when trying to connect".
         const longRunningPool: Pool = this.connection.database.createPool({
+            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min — headroom over statement_timeout
             statement_timeout: 300_000, // 5 min
             max: 1,
         });

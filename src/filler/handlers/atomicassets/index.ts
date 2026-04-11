@@ -268,7 +268,13 @@ export default class AtomicAssetsHandler extends ContractHandler {
         // Dedicated pool for long-running maintenance jobs (mints, template counts).
         // The main pool's 30s statement_timeout is too short and SET LOCAL is ineffective
         // through PgBouncer transaction pooling, so these jobs need their own pool.
+        //
+        // connectionTimeoutMillis must be ≥ statement_timeout: with max:1 and multi-minute
+        // work units, queued calls would otherwise hit the parent pool's 5s acquire timeout
+        // (postgres.ts:40) while the single client is still running the previous invocation.
+        // Preemptive fix — atomicmarket's sibling pool had this exact failure on WAX.
         const longRunningPool: Pool = this.connection.database.createPool({
+            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min — headroom over statement_timeout
             statement_timeout: 300_000, // 5 min
             max: 1,
         });
