@@ -281,11 +281,16 @@ describe('offerProcessor', () => {
         }
 
         function countRelatedOfferQueries(calls: Array<{ text: string; values: any[] }>): number {
-            // Identify the "find related offers by asset_id" queries from the
-            // onCommit handler. Trim whitespace for robustness across minor
-            // formatting tweaks.
+            // Identify the chunked "find related offers by asset_id" queries
+            // from the onCommit handler. Match by the unique projection
+            // `SELECT offer.offer_id, offer.state` which doesn't appear in
+            // any other query in the processor, and verify the parameter
+            // shape is (contract, asset_id_array).
             return calls.filter(call =>
-                /FROM\s+atomicassets_offers\s+offer[\s\S]*asset\.asset_id\s*=\s*ANY/i.test(call.text)
+                call.text.includes('SELECT offer.offer_id, offer.state')
+                && Array.isArray(call.values)
+                && call.values.length === 2
+                && Array.isArray(call.values[1])
             ).length;
         }
 
