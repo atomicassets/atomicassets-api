@@ -370,7 +370,13 @@ async function buildMainFilterV2(search: SalesSearchOptions): Promise<void> {
 
     const schemaNames = [...args.schema_name];
 
-    if (args.search?.length || templateIds.length) {
+    if (args.search?.length && !templateIds.length) {
+        // Fast path: direct trigram search on asset_names (128ms vs timeout).
+        // The GIN trgm index on each sales_filters partition handles this efficiently.
+        // Collection/schema filters remain on the main query via their own addIncArrayFilter calls.
+        query.addCondition(`listing.asset_names %> ${query.addVariable(args.search)}`);
+    } else if (args.search?.length || templateIds.length) {
+        // Template lookup path: for explicit template_id params or combined search+template
         await addIncArrayFilter('template_id', true, await getTemplateIDs(args.search, search, collectionNames, schemaNames, templateIds));
         // we don't need to filter by collection or schema since template ids are unique
         collectionNames.length = 0;
