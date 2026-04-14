@@ -374,9 +374,10 @@ describe('offerProcessor', () => {
         it('skips the query entirely when no assets were transferred', async () => {
             const spy = spyOnQuery(db);
             try {
-                // Fire a block with no logtransfer/logburnasset traces.
-                // executeHeadQueue still runs the commit listeners, which
-                // should early-return when transferredAssets is empty.
+                // Fire a logtransfer trace with an empty asset_ids array.
+                // The logtransfer listener pushes nothing to transferredAssets,
+                // so onCommit hits the length === 0 early-return and never
+                // issues the chunked related-offers lookup.
                 const block = createBlock();
                 const tx = createTx();
                 const data: LogTransferActionData = {
