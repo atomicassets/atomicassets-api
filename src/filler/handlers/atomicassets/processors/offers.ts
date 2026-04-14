@@ -118,45 +118,70 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                     return;
                 }
 
-                const relatedOffersQuery = await db.query(
-                    `SELECT offer.offer_id, offer.state 
-                    FROM atomicassets_offers offer
-                    WHERE offer.contract = $1
-                        AND offer.state IN (${[OfferState.PENDING.valueOf(), OfferState.INVALID.valueOf()].join(',')})
-                        AND (offer.contract, offer.offer_id) IN (
-                            SELECT asset.contract, asset.offer_id
-                            FROM atomicassets_offers_assets asset
-                            WHERE asset.asset_id = ANY ($2)
-                        )
-                `,
-                    [core.args.atomicassets_account, transferredAssets]
-                );
+                // Chunk asset_id / offer_id arrays to bound planner variance on the
+                // atomicassets_offers_assets table. An unbounded ANY($arr) lookup can
+                // time out (30s filler statement_timeout) after ANALYZE stats shift
+                // the plan, stalling the filler. 500 keeps each query well within
+                // the timeout regardless of stats.
+                const CHUNK_SIZE = 500;
+                const uniqueAssets = [...new Set(transferredAssets)];
 
-                if (relatedOffersQuery.rowCount === 0) {
+                const relatedOffers = new Map<string, number>();
+                const offerStates = [OfferState.PENDING.valueOf(), OfferState.INVALID.valueOf()].join(',');
+
+                for (let i = 0; i < uniqueAssets.length; i += CHUNK_SIZE) {
+                    const chunk = uniqueAssets.slice(i, i + CHUNK_SIZE);
+                    const chunkResult = await db.query(
+                        `SELECT offer.offer_id, offer.state
+                        FROM atomicassets_offers offer
+                        WHERE offer.contract = $1
+                            AND offer.state IN (${offerStates})
+                            AND (offer.contract, offer.offer_id) IN (
+                                SELECT asset.contract, asset.offer_id
+                                FROM atomicassets_offers_assets asset
+                                WHERE asset.asset_id = ANY ($2)
+                            )
+                    `,
+                        [core.args.atomicassets_account, chunk]
+                    );
+                    for (const row of chunkResult.rows) {
+                        relatedOffers.set(row.offer_id, row.state);
+                    }
+                }
+
+                if (relatedOffers.size === 0) {
                     return;
                 }
 
-                const invalidOffersQuery = await db.query(
-                    'SELECT DISTINCT ON (offer_asset.offer_id) offer_asset.offer_id ' +
-                    'FROM atomicassets_offers_assets offer_asset, atomicassets_assets asset ' +
-                    'WHERE offer_asset.contract = asset.contract AND offer_asset.asset_id = asset.asset_id AND ' +
-                    'offer_asset.offer_id = ANY ($2) AND ' +
-                    '(offer_asset.owner != asset.owner OR asset.owner IS NULL) AND offer_asset.contract = $1',
-                    [core.args.atomicassets_account, relatedOffersQuery.rows.map(row => row.offer_id)]
-                );
+                const relatedOfferIds = [...relatedOffers.keys()];
 
-                const currentInvalidOffers = relatedOffersQuery.rows
-                    .filter(row => row.state === OfferState.INVALID.valueOf())
-                    .map(row => row.offer_id);
-                const currentValidOffers = relatedOffersQuery.rows
-                    .filter(row => row.state === OfferState.PENDING.valueOf())
-                    .map(row => row.offer_id);
+                const newInvalidOffers = new Set<string>();
+                for (let i = 0; i < relatedOfferIds.length; i += CHUNK_SIZE) {
+                    const chunk = relatedOfferIds.slice(i, i + CHUNK_SIZE);
+                    const chunkResult = await db.query(
+                        'SELECT DISTINCT ON (offer_asset.offer_id) offer_asset.offer_id ' +
+                        'FROM atomicassets_offers_assets offer_asset, atomicassets_assets asset ' +
+                        'WHERE offer_asset.contract = asset.contract AND offer_asset.asset_id = asset.asset_id AND ' +
+                        'offer_asset.offer_id = ANY ($2) AND ' +
+                        '(offer_asset.owner != asset.owner OR asset.owner IS NULL) AND offer_asset.contract = $1',
+                        [core.args.atomicassets_account, chunk]
+                    );
+                    for (const row of chunkResult.rows) {
+                        newInvalidOffers.add(row.offer_id);
+                    }
+                }
 
-                const newInvalidOffers = invalidOffersQuery.rows.map(row => row.offer_id);
-                const invalidOffers = newInvalidOffers.filter(row => currentInvalidOffers.indexOf(row) === -1);
-                const validOffers = relatedOffersQuery.rows.map(row => row.offer_id)
-                    .filter(row => newInvalidOffers.indexOf(row) === -1)
-                    .filter(row => currentValidOffers.indexOf(row) === -1);
+                const invalidOffers: string[] = [];
+                const validOffers: string[] = [];
+                for (const [offerId, state] of relatedOffers) {
+                    if (newInvalidOffers.has(offerId)) {
+                        if (state === OfferState.PENDING.valueOf()) {
+                            invalidOffers.push(offerId);
+                        }
+                    } else if (state === OfferState.INVALID.valueOf()) {
+                        validOffers.push(offerId);
+                    }
+                }
 
                 if (invalidOffers.length > 0) {
                     await db.update('atomicassets_offers', {
