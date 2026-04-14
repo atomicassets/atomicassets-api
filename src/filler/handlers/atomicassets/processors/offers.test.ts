@@ -267,15 +267,17 @@ describe('offerProcessor', () => {
         // The onCommit handler in offers.ts chunks `transferredAssets` at
         // CHUNK_SIZE=500 to bound planner variance on the offers_assets lookup.
         // These tests verify the chunking boundaries and deduplication logic
-        // without relying on realistic DB fixtures (no matching offers → the
-        // commit handler runs only the first chunked query).
+        // without relying on realistic DB fixtures (with no matching offers,
+        // each chunked related-offers lookup still runs, but no follow-up
+        // invalid-offer lookup or state update occurs).
 
         function spyOnQuery(target: ContractDBTransaction): { calls: Array<{ text: string; values: any[] }>; restore: () => void } {
             const calls: Array<{ text: string; values: any[] }> = [];
             const originalQuery = target.query.bind(target);
-            (target as any).query = async (text: string, values: any[] = []) => {
+            (target as any).query = async (...args: any[]) => {
+                const [text, values = []] = args;
                 calls.push({ text, values });
-                return originalQuery(text, values);
+                return originalQuery(...args);
             };
             return { calls, restore: () => { (target as any).query = originalQuery; } };
         }
@@ -339,8 +341,10 @@ describe('offerProcessor', () => {
             const spy = spyOnQuery(db);
             try {
                 // Three logtransfer traces in the same block referencing
-                // overlapping asset_ids. Union has 5 unique ids (< CHUNK_SIZE),
-                // so we expect exactly 1 chunked query.
+                // overlapping asset_ids. Enqueue all three without flushing
+                // between them, then executeHeadQueue once so they share a
+                // single commit round and the Set-dedup path applies.
+                // Union has 5 unique ids (< CHUNK_SIZE) → 1 chunked query.
                 const block = createBlock();
                 const tx = createTx();
                 const traces: Array<string[]> = [
@@ -357,8 +361,9 @@ describe('offerProcessor', () => {
                         memo: 'dup transfer',
                     };
                     const trace = createActionTrace(CONTRACT, 'logtransfer', data);
-                    await processActionTrace(processor, db, block, tx, trace);
+                    processor.processActionTrace(block, tx, trace);
                 }
+                await processor.executeHeadQueue(db);
 
                 expect(countRelatedOfferQueries(spy.calls)).to.equal(1);
             } finally {
