@@ -369,9 +369,14 @@ export default class AtomicMarketHandler extends ContractHandler {
             await longRunningPool.query('SELECT update_atomicmarket_template_prices()');
         });
 
-        this.filler.jobs.add('reconcile_atomicmarket_listings', 60 * 30, JobQueuePriority.LOW, async () => {
-            await this.reconcileListings(longRunningPool);
-        });
+        // reconcile_atomicmarket_listings disabled 2026-04-15. This job called
+        // get_table_rows on atomicmarket.{tbuyo,buyoffers,sales,auctions} every
+        // 30 min as a drift canary; the upstream RPC node stopped accepting
+        // the queries ("Invalid name at /v1/chain/get_table_rows") and the job
+        // had been logging repeated errors ever since. Event-based filler ingest
+        // is authoritative; reconcile method bodies (reconcileListings +
+        // reconcileListingType) retained below for easy re-enable if we ever
+        // want to reintroduce a drift check.
 
         return (): any => destructors.map(fn => fn());
     }
