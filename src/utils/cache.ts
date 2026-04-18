@@ -10,10 +10,15 @@ export type ExpressRedisCacheOptions = {
     expire?: number,
     factor?: number,
     ignoreQueryString?: boolean,
-    urlHandler?: express.RequestHandler
+    urlHandler?: express.RequestHandler,
+    maxValueBytes?: number,
 };
 
 export type ExpressRedisCacheHandler = (options?: ExpressRedisCacheOptions) => express.RequestHandler;
+
+// Valkey is single-threaded; a SET on a 20+ MB value blocks every other client for 40-60 ms.
+// Skip caching responses larger than this; serves them uncached instead of poisoning the shard.
+const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
 
 export function expressRedisCache(
     redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[]
@@ -62,11 +67,24 @@ export function expressRedisCache(
 
                 if (expire < Date.now()) {
                     const sendFn = res.send.bind(res);
+                    const maxValueBytes = options.maxValueBytes ?? DEFAULT_MAX_CACHE_VALUE_BYTES;
 
                     res.send = (data: Buffer | string): express.Response => {
                         const result = sendFn(data);
 
                         if (res.statusCode !== 200) {
+                            return result;
+                        }
+
+                        const rawBytes = typeof data === 'string'
+                            ? Buffer.byteLength(data, 'utf8')
+                            : data.length;
+
+                        if (rawBytes > maxValueBytes) {
+                            logger.warn(
+                                `Skipping cache SET for ${key}: ${rawBytes} bytes exceeds maxValueBytes ${maxValueBytes}`,
+                                mergeRequestData(req),
+                            );
                             return result;
                         }
 
