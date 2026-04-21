@@ -119,11 +119,15 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 }
 
                 // Chunk asset_id / offer_id arrays to bound planner variance on the
-                // atomicassets_offers_assets table. An unbounded ANY($arr) lookup can
-                // time out (30s filler statement_timeout) after ANALYZE stats shift
-                // the plan, stalling the filler. 500 keeps each query well within
-                // the timeout regardless of stats.
-                const CHUNK_SIZE = 500;
+                // atomicassets_offers_assets table (~315M rows on WAX mainnet). Each
+                // asset can match 1,000+ historical offers, so even moderately sized
+                // input arrays can produce enough heap fetches to bust the 30s filler
+                // statement_timeout, especially during catchup when batches run
+                // hotter than live mode. 2026-04-21: observed the prior 500-cap still
+                // time out on a 220-asset catchup batch after the WAX ship snapshot
+                // refresh, so dropping the cap to 100 to stay well within budget
+                // regardless of stats or catchup pressure.
+                const CHUNK_SIZE = 100;
                 const uniqueAssets = [...new Set(transferredAssets)];
 
                 const relatedOffers = new Map<string, number>();

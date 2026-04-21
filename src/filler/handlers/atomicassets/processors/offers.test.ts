@@ -265,7 +265,7 @@ describe('offerProcessor', () => {
 
     describe('logtransfer chunking', () => {
         // The onCommit handler in offers.ts chunks `transferredAssets` at
-        // CHUNK_SIZE=500 to bound planner variance on the offers_assets lookup.
+        // CHUNK_SIZE=100 to bound planner variance on the offers_assets lookup.
         // These tests verify the chunking boundaries and deduplication logic
         // without relying on realistic DB fixtures (with no matching offers,
         // each chunked related-offers lookup still runs, but no follow-up
@@ -299,7 +299,7 @@ describe('offerProcessor', () => {
         it('issues one chunked query for asset counts at or below CHUNK_SIZE', async () => {
             const spy = spyOnQuery(db);
             try {
-                const assetIds = Array.from({ length: 500 }, (_, i) => String(1_000_000 + i));
+                const assetIds = Array.from({ length: 100 }, (_, i) => String(1_000_000 + i));
                 const data: LogTransferActionData = {
                     collection_name: 'testcol11111',
                     from: 'sender111111',
@@ -319,8 +319,8 @@ describe('offerProcessor', () => {
         it('issues multiple chunked queries when assets exceed CHUNK_SIZE', async () => {
             const spy = spyOnQuery(db);
             try {
-                // 1001 unique assets → ceil(1001/500) = 3 chunks.
-                const assetIds = Array.from({ length: 1001 }, (_, i) => String(2_000_000 + i));
+                // 201 unique assets -> ceil(201/100) = 3 chunks.
+                const assetIds = Array.from({ length: 201 }, (_, i) => String(2_000_000 + i));
                 const data: LogTransferActionData = {
                     collection_name: 'testcol11111',
                     from: 'sender111111',
