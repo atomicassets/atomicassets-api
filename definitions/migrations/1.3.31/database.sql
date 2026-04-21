@@ -5,7 +5,7 @@
 
     SET statement_timeout = 0;
 
-    CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS
+    CREATE INDEX CONCURRENTLY IF NOT EXISTS
       contract_traces_global_sequence_account_idx
       ON contract_traces (global_sequence, account);
 
@@ -25,10 +25,18 @@
   becomes hundreds to thousands of slow point-lookups in one transaction and
   busts statement_timeout, wedging the filler.
 
-  The new unique B-tree (global_sequence, account) gives sub-millisecond point
+  The new B-tree (global_sequence, account) gives sub-millisecond point
   lookups for both DELETE and SELECT from this path. Cost: roughly 20–50 GB
   added per chain; acceptable given the operational impact of stuck fillers
   during ship snapshots and fork events.
+
+  Non-unique intentionally: the 1.3.9 migration dropped the original PK
+  (which enforced uniqueness on the same columns) without adding a
+  replacement, and the filler's ON CONFLICT ... DO NOTHING path skips the
+  conflict clause when no unique constraint exists, so we cannot assume the
+  data is still strictly unique today. We can promote to UNIQUE in a
+  follow-up once a dedup audit confirms safety; for the rollback use case
+  a non-unique B-tree is equally fast.
 
   atomicassets_offers_assets currently has single-column btrees on asset_id,
   offer_id, owner. A recurring slow-query pattern is:
@@ -47,7 +55,7 @@
   manual step.
 */
 
-CREATE UNIQUE INDEX IF NOT EXISTS
+CREATE INDEX IF NOT EXISTS
   contract_traces_global_sequence_account_idx
   ON contract_traces (global_sequence, account);
 
