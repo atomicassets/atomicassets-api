@@ -855,84 +855,121 @@ export class ContractDBTransaction {
         try {
             await this.begin();
 
-            const query = await this.clientQuery(
-                'SELECT operation, "table", "values", condition ' +
-                'FROM reversible_queries WHERE block_num >= $1 AND reader = $2 ' +
-                'ORDER BY block_num DESC, id DESC;',
+            const countResult = await this.clientQuery(
+                'SELECT COUNT(*)::int AS total FROM reversible_queries WHERE block_num >= $1 AND reader = $2',
                 [blockNum, this.name]
             );
+            const total = countResult.rows[0].total;
 
-            logger.info('Rollback ' + query.rowCount + ' operations until block #' + blockNum);
+            logger.info('Rollback ' + total + ' operations until block #' + blockNum + ' (chunked)');
 
             const startTime = Date.now();
-
+            // CHUNK_SIZE bounds each inner transaction — keeps any single
+            // COMMIT-to-COMMIT window small enough that a slow per-row query
+            // (e.g. contract_traces DELETE without a B-tree point-lookup index)
+            // cannot exceed statement_timeout on a genuine fork rollback.
+            // 100 matches the arrayChunk(data, 100) pattern used in commit().
+            const CHUNK_SIZE = 100;
             let counter = 0;
             let lastProgressMessage = Date.now();
 
-            for (const row of query.rows) {
-                const values = row.values;
-                const condition: Condition | null = row.condition;
+            while (counter < total) {
+                // Fetch next chunk by id. Previous chunks are DELETEd below,
+                // so no OFFSET is needed — each LIMIT reads fresh rows.
+                const chunk = await this.clientQuery(
+                    'SELECT id, operation, "table", "values", condition ' +
+                    'FROM reversible_queries WHERE block_num >= $1 AND reader = $2 ' +
+                    'ORDER BY block_num DESC, id DESC LIMIT $3',
+                    [blockNum, this.name, CHUNK_SIZE]
+                );
 
-                if (condition) {
-                    condition.values = condition.values.map((value) => deserializeValue(value));
+                if (chunk.rowCount === 0) {
+                    break;
                 }
 
-                if (values !== null) {
-                    if (Array.isArray(values)) {
-                        for (const value of values) {
-                            for (const key of Object.keys(value)) {
-                                value[key] = deserializeValue(value[key]);
+                const chunkIds: number[] = [];
+
+                for (const row of chunk.rows) {
+                    const values = row.values;
+                    const condition: Condition | null = row.condition;
+
+                    if (condition) {
+                        condition.values = condition.values.map((value) => deserializeValue(value));
+                    }
+
+                    if (values !== null) {
+                        if (Array.isArray(values)) {
+                            for (const value of values) {
+                                for (const key of Object.keys(value)) {
+                                    value[key] = deserializeValue(value[key]);
+                                }
+                            }
+                        } else {
+                            for (const key of Object.keys(values)) {
+                                values[key] = deserializeValue(values[key]);
                             }
                         }
+                    }
+
+                    if (Date.now() - startTime >= 30000) {
+                        logger.warn('Fork rollback taking longer than expected. Executing query...', {
+                            operation: row.operation,
+                            table: row.table,
+                            values, condition
+                        });
+                    }
+
+                    if (row.operation === 'insert') {
+                        await this.insert(row.table, values, [], false, false);
+                    } else if (row.operation === 'update') {
+                        try {
+                            await this.update(row.table, values, condition, [], false, false);
+                        } catch (e: any) {
+                            if (e.message && e.message.includes('update affected 0 rows')) {
+                                logger.warn('Rollback update affected 0 rows (row may have been removed by a prior rollback operation)', {
+                                    table: row.table, values, condition
+                                });
+                            } else {
+                                throw e;
+                            }
+                        }
+                    } else if (row.operation === 'delete') {
+                        await this.delete(row.table, condition, false, false);
                     } else {
-                        for (const key of Object.keys(values)) {
-                            values[key] = deserializeValue(values[key]);
-                        }
+                        throw Error('Invalid rollback operation in database');
+                    }
+
+                    chunkIds.push(row.id);
+                    counter += 1;
+
+                    if (Date.now() - lastProgressMessage >= 5000) {
+                        logger.info('Executed rollback query ' + counter + ' / ' + total);
+
+                        lastProgressMessage = Date.now();
                     }
                 }
 
-                if (Date.now() - startTime >= 30000) {
-                    logger.warn('Fork rollback taking longer than expected. Executing query...', {
-                        operation: row.operation,
-                        table: row.table,
-                        values, condition
-                    });
-                }
+                // Delete just the rows we processed this chunk, then commit so
+                // the per-chunk transaction stays inside statement_timeout even
+                // if one of the ops is slow. Fork rollback is already the
+                // primary source of inconsistency visibility between fork
+                // detection and checkpoint advance — chunking doesn't add a
+                // new window, it just makes each internal commit smaller.
+                await this.clientQuery(
+                    'DELETE FROM reversible_queries WHERE id = ANY($1::bigint[])',
+                    [chunkIds]
+                );
+                await this.clientQuery('COMMIT');
+                this.inTransaction = false;
 
-                if (row.operation === 'insert') {
-                    await this.insert(row.table, values, [], false, false);
-                } else if (row.operation === 'update') {
-                    try {
-                        await this.update(row.table, values, condition, [], false, false);
-                    } catch (e: any) {
-                        if (e.message && e.message.includes('update affected 0 rows')) {
-                            logger.warn('Rollback update affected 0 rows (row may have been removed by a prior rollback operation)', {
-                                table: row.table, values, condition
-                            });
-                        } else {
-                            throw e;
-                        }
-                    }
-                } else if (row.operation === 'delete') {
-                    await this.delete(row.table, condition, false, false);
-                } else {
-                    throw Error('Invalid rollback operation in database');
-                }
-
-                counter += 1;
-
-                if (Date.now() - lastProgressMessage >= 5000) {
-                    logger.info('Executed rollback query ' + counter + ' / ' + query.rowCount);
-
-                    lastProgressMessage = Date.now();
-                }
+                // Reopen a transaction for the next chunk — begin() is
+                // idempotent, so the insert/update/delete helpers above
+                // would otherwise reopen it lazily on the next op.
+                await this.begin();
             }
 
-            await this.clientQuery(
-                'DELETE FROM reversible_queries WHERE block_num >= $1 AND reader = $2;',
-                [blockNum, this.name]
-            );
-
+            // Final cleanup runs inside the transaction the caller will
+            // commit alongside processing of the post-fork block.
             await this.clientQuery(
                 'DELETE FROM reversible_blocks WHERE block_num >= $1 AND reader = $2;',
                 [blockNum, this.name]
