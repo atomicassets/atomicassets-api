@@ -272,6 +272,13 @@ CREATE INDEX IF NOT EXISTS atomicassets_offers_recipient ON atomicassets_offers 
 CREATE INDEX IF NOT EXISTS atomicassets_offers_state ON atomicassets_offers USING btree (state);
 CREATE INDEX IF NOT EXISTS atomicassets_offers_updated_at_time ON atomicassets_offers USING btree (updated_at_time);
 CREATE INDEX IF NOT EXISTS atomicassets_offers_created_at_time ON atomicassets_offers USING btree (created_at_time);
+-- Partial index for the filler's active-offer lookup (offers.ts onCommit). See
+-- migrations/1.3.32/database.sql for rationale. Only ~1.6% of offers are in
+-- active states (PENDING/INVALID); full predicate match keeps this ~100 MB and
+-- turns the outer lookup into an Index-Only Scan.
+CREATE INDEX IF NOT EXISTS atomicassets_offers_active_contract_offer_idx
+    ON atomicassets_offers USING btree (contract, offer_id)
+    WHERE state IN (0, 1);
 
 CREATE INDEX IF NOT EXISTS atomicassets_offers_assets_offer_id ON atomicassets_offers_assets USING btree (offer_id);
 CREATE INDEX IF NOT EXISTS atomicassets_offers_assets_asset_id ON atomicassets_offers_assets USING btree (asset_id);
