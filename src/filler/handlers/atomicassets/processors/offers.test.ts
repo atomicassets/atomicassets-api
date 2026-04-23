@@ -395,5 +395,64 @@ describe('offerProcessor', () => {
                 spy.restore();
             }
         });
+
+        it('issues SET LOCAL statement_timeout before the chunked lookup', async () => {
+            // Hot assets (e.g. WAX 1099538624457 with 36k historical offers)
+            // can push the chunked lookup past the 30s cluster default, which
+            // caused a crash-loop on 2026-04-23 at block #430970869. The onCommit
+            // handler opts into a 180s budget scoped to the current transaction
+            // via SET LOCAL; verify it's emitted before the first related-offer
+            // query so the filler actually gets the extra budget.
+            const spy = spyOnQuery(db);
+            try {
+                const assetIds = ['4000001', '4000002', '4000003'];
+                const data: LogTransferActionData = {
+                    collection_name: 'testcol11111',
+                    from: 'sender111111',
+                    to: 'receiver1111',
+                    asset_ids: assetIds,
+                    memo: 'hot asset guard',
+                };
+                const trace = createActionTrace(CONTRACT, 'logtransfer', data);
+                await processActionTrace(processor, db, createBlock(), createTx(), trace);
+
+                const setLocalIdx = spy.calls.findIndex(c =>
+                    typeof c.text === 'string' && c.text.includes("SET LOCAL statement_timeout = '180s'")
+                );
+                const relatedIdx = spy.calls.findIndex(c =>
+                    typeof c.text === 'string' && c.text.includes('SELECT offer.offer_id, offer.state')
+                );
+                expect(setLocalIdx).to.be.greaterThan(-1);
+                expect(relatedIdx).to.be.greaterThan(-1);
+                expect(setLocalIdx).to.be.lessThan(relatedIdx);
+            } finally {
+                spy.restore();
+            }
+        });
+
+        it('does NOT issue SET LOCAL when no assets were transferred', async () => {
+            // Symmetric with the skip-the-query-entirely test: the onCommit
+            // early-return short-circuits before any DB work, including the
+            // timeout bump. Pays nothing when there's nothing to look up.
+            const spy = spyOnQuery(db);
+            try {
+                const data: LogTransferActionData = {
+                    collection_name: 'testcol11111',
+                    from: 'sender111111',
+                    to: 'receiver1111',
+                    asset_ids: [],
+                    memo: 'no assets',
+                };
+                const trace = createActionTrace(CONTRACT, 'logtransfer', data);
+                await processActionTrace(processor, db, createBlock(), createTx(), trace);
+
+                const setLocalIdx = spy.calls.findIndex(c =>
+                    typeof c.text === 'string' && c.text.includes('SET LOCAL statement_timeout')
+                );
+                expect(setLocalIdx).to.equal(-1);
+            } finally {
+                spy.restore();
+            }
+        });
     });
 });

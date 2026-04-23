@@ -130,6 +130,14 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 const CHUNK_SIZE = 100;
                 const uniqueAssets = [...new Set(transferredAssets)];
 
+                // A single hot asset can match tens of thousands of historical
+                // offers (observed on WAX: asset 1099538624457 was in 35,979
+                // offer rows), which pushes the chunked lookup past the
+                // cluster's default 30s statement_timeout regardless of chunk
+                // size — chunking bounds input width but not per-asset fan-out.
+                // Raise the budget to 180s scoped to this transaction only.
+                await db.query("SET LOCAL statement_timeout = '180s'");
+
                 const relatedOffers = new Map<string, number>();
                 const offerStates = [OfferState.PENDING.valueOf(), OfferState.INVALID.valueOf()].join(',');
 
