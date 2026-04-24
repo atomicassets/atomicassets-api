@@ -351,7 +351,19 @@ export default class AtomicMarketHandler extends ContractHandler {
             );
         });
 
-        this.filler.jobs.add('update_atomicmarket_sales_filters', 20, JobQueuePriority.HIGH, async () => {
+        // Cadence bumped 20s → 60s and gated by a cheap EXISTS probe after the
+        // 2026-04-24 00:01 UTC cliff where cold-cache joins across atomicassets_*
+        // tables saturated Cinder I/O on eca-wax-mainnet-cluster. The proc is
+        // event-driven (reads atomicmarket_sales_filters_updates queue) but
+        // still pays temp-table + CTE-plan cost per empty-queue run. The probe
+        // races harmlessly with the proc's own DELETE on the queue — a late
+        // insertion between probe and call just falls through to the proc,
+        // which returns quickly if the queue is drained by then.
+        this.filler.jobs.add('update_atomicmarket_sales_filters', 60, JobQueuePriority.HIGH, async () => {
+            const probe = await longRunningPool.query(
+                'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
+            );
+            if (!probe.rows[0]?.has_work) return;
             await longRunningPool.query('SELECT update_atomicmarket_sales_filters()');
         });
 
