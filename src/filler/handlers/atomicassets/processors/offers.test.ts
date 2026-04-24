@@ -400,9 +400,10 @@ describe('offerProcessor', () => {
             // Hot assets (e.g. WAX 1099538624457 with 36k historical offers)
             // can push the chunked lookup past the 30s cluster default, which
             // caused a crash-loop on 2026-04-23 at block #430970869. The onCommit
-            // handler opts into a 180s budget scoped to the current transaction
-            // via SET LOCAL; verify it's emitted before the first related-offer
-            // query so the filler actually gets the extra budget.
+            // handler opts into a 300s budget scoped to the current transaction
+            // via SET LOCAL (raised from 180s in migration 1.3.33 work after a
+            // 2026-04-24 12:10 UTC recurrence); verify it's emitted before the
+            // first related-offer query so the filler gets the extra budget.
             const spy = spyOnQuery(db);
             try {
                 const assetIds = ['4000001', '4000002', '4000003'];
@@ -417,7 +418,7 @@ describe('offerProcessor', () => {
                 await processActionTrace(processor, db, createBlock(), createTx(), trace);
 
                 const setLocalIdx = spy.calls.findIndex(c =>
-                    typeof c.text === 'string' && c.text.includes("SET LOCAL statement_timeout = '180s'")
+                    typeof c.text === 'string' && c.text.includes("SET LOCAL statement_timeout = '300s'")
                 );
                 const relatedIdx = spy.calls.findIndex(c =>
                     typeof c.text === 'string' && c.text.includes('SELECT offer.offer_id, offer.state')
