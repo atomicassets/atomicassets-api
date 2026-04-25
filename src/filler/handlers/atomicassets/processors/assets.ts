@@ -156,16 +156,55 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
     destructors.push(processor.onActionTrace(
         contract, 'logtransfer',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogTransferActionData>): Promise<void> => {
-            await db.update('atomicassets_assets', {
+            const assetIds = trace.act.data.asset_ids;
+
+            if (assetIds.length === 0) {
+                notifier.sendActionTrace('transfers', block, tx, trace);
+                return;
+            }
+
+            const blockTime = eosioTimestampToDate(block.timestamp).getTime();
+
+            // Chunk the asset_id array on logtransfer to bound per-statement work on
+            // atomicassets_assets (~475M rows / 211 GB on WAX mainnet). Each row UPDATE
+            // touches 5 affected btree indexes (PK, asset_id, owner_btree,
+            // coll_schema_owner, collection_schema_active) plus fires two row-level
+            // triggers (update_atomicassets_asset_counts,
+            // update_atomicmarket_sales_filters_by_asset). A single uncapped action
+            // can carry thousands of asset_ids — observed 2026-04-25 at block
+            // #431316736 with 3,000 asset_ids in one transfer from `atomicassets`
+            // escrow, which busts the cluster's default 30s statement_timeout and
+            // wedges the filler with no auto-recovery (57014 is intentionally not
+            // retried per feedback_filler_retry_data_loss.md). CHUNK_SIZE=100 mirrors
+            // the offers.ts cap and keeps each UPDATE well under budget regardless of
+            // catchup pressure.
+            const ASSET_CHUNK_SIZE = 100;
+            // Multi-row INSERTs into atomicassets_transfers_assets serialize through
+            // an FK to atomicassets_assets and a unique index on
+            // (contract, transfer_id, asset_id). Cap at 1000 rows per INSERT so a
+            // single pathological transfer doesn't push the conflict-handling path
+            // past the same 30s ceiling.
+            const TRANSFER_INSERT_CHUNK_SIZE = 1000;
+
+            // SET LOCAL scopes the timeout extension to this transaction only — the
+            // cluster-wide 30s default snaps back automatically for everything else
+            // running through this connection. 300s matches the offers.ts ceiling.
+            await db.query("SET LOCAL statement_timeout = '300s'");
+
+            const updateValues = {
                 owner: trace.act.data.to,
                 transferred_at_block: block.block_num,
-                transferred_at_time: eosioTimestampToDate(block.timestamp).getTime(),
+                transferred_at_time: blockTime,
                 updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = ANY ($2) AND owner = $3',
-                values: [contract, trace.act.data.asset_ids, trace.act.data.from]
-            }, ['contract', 'asset_id']);
+                updated_at_time: blockTime,
+            };
+
+            for (const chunk of arrayChunk(assetIds, ASSET_CHUNK_SIZE)) {
+                await db.update('atomicassets_assets', updateValues, {
+                    str: 'contract = $1 AND asset_id = ANY ($2) AND owner = $3',
+                    values: [contract, chunk, trace.act.data.from]
+                }, ['contract', 'asset_id']);
+            }
 
             if (core.args.store_transfers) {
                 await db.insert('atomicassets_transfers', {
@@ -176,15 +215,19 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                     memo: String(trace.act.data.memo).substr(0, 256),
                     txid: Buffer.from(tx.id, 'hex'),
                     created_at_block: block.block_num,
-                    created_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                    created_at_time: blockTime
                 }, ['contract', 'transfer_id'], true, true, 'update');
 
-                await db.insert('atomicassets_transfers_assets', trace.act.data.asset_ids.map((assetID, index) => ({
+                const transferAssetRows = assetIds.map((assetID, index) => ({
                     transfer_id: trace.global_sequence,
                     contract: contract,
                     index: index + 1,
                     asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+                }));
+
+                for (const insertChunk of arrayChunk(transferAssetRows, TRANSFER_INSERT_CHUNK_SIZE)) {
+                    await db.insert('atomicassets_transfers_assets', insertChunk, ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+                }
             }
 
             notifier.sendActionTrace('transfers', block, tx, trace);

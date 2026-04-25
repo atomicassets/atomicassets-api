@@ -346,6 +346,192 @@ describe('assetProcessor', () => {
             expect(transferAssetsResult.rows[0].asset_id).to.equal('4000000000001');
         });
 
+        // Chunking: assets.ts caps each UPDATE at ASSET_CHUNK_SIZE=100 asset_ids and
+        // each transfers_assets INSERT at 1000 rows. A single uncapped logtransfer
+        // observed 3,000 asset_ids on WAX block #431316736 (2026-04-25), which busts
+        // the cluster's 30s statement_timeout. These tests verify the chunk
+        // boundaries and end-to-end correctness across chunks.
+        describe('chunking', () => {
+            function spyOnUpdate(target: ContractDBTransaction): {
+                calls: Array<{ table: string; values: any; condition: any }>;
+                restore: () => void;
+            } {
+                const calls: Array<{ table: string; values: any; condition: any }> = [];
+                const originalUpdate = target.update.bind(target);
+                (target as any).update = async (...args: any[]) => {
+                    const [table, values, condition] = args;
+                    calls.push({ table, values, condition });
+                    return originalUpdate(...args);
+                };
+                return { calls, restore: () => { (target as any).update = originalUpdate; } };
+            }
+
+            function spyOnInsert(target: ContractDBTransaction): {
+                calls: Array<{ table: string; rowCount: number }>;
+                restore: () => void;
+            } {
+                const calls: Array<{ table: string; rowCount: number }> = [];
+                const originalInsert = target.insert.bind(target);
+                (target as any).insert = async (...args: any[]) => {
+                    const [table, rows] = args;
+                    const rowCount = Array.isArray(rows) ? rows.length : 1;
+                    calls.push({ table, rowCount });
+                    return originalInsert(...args);
+                };
+                return { calls, restore: () => { (target as any).insert = originalInsert; } };
+            }
+
+            async function mintAssetsWithOwner(owner: string, assetIds: string[]): Promise<void> {
+                for (const assetId of assetIds) {
+                    const mintTrace = createActionTrace(CONTRACT, 'logmint', {
+                        asset_id: assetId,
+                        authorized_minter: 'minter1',
+                        collection_name: 'testcol11111',
+                        schema_name: 'testschema11',
+                        template_id: 1,
+                        new_asset_owner: owner,
+                        immutable_data: [],
+                        mutable_data: [],
+                        backed_tokens: [],
+                        immutable_template_data: [],
+                    } as LogMintAssetActionData);
+                    await processActionTrace(processor, db, createBlock(), createTx(), mintTrace);
+                }
+            }
+
+            it('issues a single UPDATE for asset counts at or below CHUNK_SIZE', async () => {
+                const assetIds = Array.from({ length: 100 }, (_, i) => String(6_000_000_000 + i));
+                await mintAssetsWithOwner('sender111111', assetIds);
+
+                const updateSpy = spyOnUpdate(db);
+                try {
+                    const transferData: LogTransferActionData = {
+                        collection_name: 'testcol11111',
+                        from: 'sender111111',
+                        to: 'receiver1111',
+                        asset_ids: assetIds,
+                        memo: 'small transfer',
+                    };
+                    const transferTrace = createActionTrace(CONTRACT, 'logtransfer', transferData);
+                    const transferBlock = createBlock();
+                    await processActionTrace(processor, db, transferBlock, createTx(), transferTrace);
+
+                    const assetUpdates = updateSpy.calls.filter(c => c.table === 'atomicassets_assets');
+                    expect(assetUpdates).to.have.lengthOf(1);
+
+                    const ownersResult = await client.query(
+                        'SELECT DISTINCT owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = ANY($2)',
+                        [CONTRACT, assetIds]
+                    );
+                    expect(ownersResult.rowCount).to.equal(1);
+                    expect(ownersResult.rows[0].owner).to.equal('receiver1111');
+                } finally {
+                    updateSpy.restore();
+                }
+            });
+
+            it('issues multiple UPDATEs when asset_ids exceed CHUNK_SIZE and updates every row', async () => {
+                // 250 unique ids -> ceil(250/100) = 3 UPDATE calls.
+                const assetIds = Array.from({ length: 250 }, (_, i) => String(7_000_000_000 + i));
+                await mintAssetsWithOwner('sender111111', assetIds);
+
+                const updateSpy = spyOnUpdate(db);
+                const insertSpy = spyOnInsert(db);
+                try {
+                    const transferData: LogTransferActionData = {
+                        collection_name: 'testcol11111',
+                        from: 'sender111111',
+                        to: 'receiver1111',
+                        asset_ids: assetIds,
+                        memo: 'big transfer',
+                    };
+                    const transferTrace = createActionTrace(CONTRACT, 'logtransfer', transferData);
+                    const transferBlock = createBlock();
+                    await processActionTrace(processor, db, transferBlock, createTx(), transferTrace);
+
+                    const assetUpdates = updateSpy.calls.filter(c => c.table === 'atomicassets_assets');
+                    expect(assetUpdates).to.have.lengthOf(3);
+                    for (const call of assetUpdates) {
+                        const idChunk = call.condition.values[1];
+                        expect(idChunk.length).to.be.at.most(100);
+                    }
+
+                    const ownersResult = await client.query(
+                        'SELECT DISTINCT owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = ANY($2)',
+                        [CONTRACT, assetIds]
+                    );
+                    expect(ownersResult.rowCount).to.equal(1);
+                    expect(ownersResult.rows[0].owner).to.equal('receiver1111');
+
+                    const transferAssetsResult = await client.query(
+                        'SELECT COUNT(*)::int AS n FROM atomicassets_transfers_assets WHERE contract = $1 AND transfer_id = $2',
+                        [CONTRACT, transferTrace.global_sequence]
+                    );
+                    expect(transferAssetsResult.rows[0].n).to.equal(250);
+
+                    // 250 transfers_assets rows fit in a single 1000-row insert chunk.
+                    const transferAssetsInserts = insertSpy.calls.filter(c => c.table === 'atomicassets_transfers_assets');
+                    expect(transferAssetsInserts).to.have.lengthOf(1);
+                    expect(transferAssetsInserts[0].rowCount).to.equal(250);
+                } finally {
+                    updateSpy.restore();
+                    insertSpy.restore();
+                }
+            });
+
+            it('chunks transfers_assets inserts above 1000 rows', async () => {
+                // 1500 unique ids -> 15 UPDATE chunks and 2 INSERT chunks (1000 + 500).
+                const assetIds = Array.from({ length: 1500 }, (_, i) => String(8_000_000_000 + i));
+                await mintAssetsWithOwner('sender111111', assetIds);
+
+                const insertSpy = spyOnInsert(db);
+                try {
+                    const transferData: LogTransferActionData = {
+                        collection_name: 'testcol11111',
+                        from: 'sender111111',
+                        to: 'receiver1111',
+                        asset_ids: assetIds,
+                        memo: 'huge transfer',
+                    };
+                    const transferTrace = createActionTrace(CONTRACT, 'logtransfer', transferData);
+                    await processActionTrace(processor, db, createBlock(), createTx(), transferTrace);
+
+                    const transferAssetsInserts = insertSpy.calls.filter(c => c.table === 'atomicassets_transfers_assets');
+                    expect(transferAssetsInserts).to.have.lengthOf(2);
+                    expect(transferAssetsInserts[0].rowCount).to.equal(1000);
+                    expect(transferAssetsInserts[1].rowCount).to.equal(500);
+
+                    const transferAssetsResult = await client.query(
+                        'SELECT COUNT(*)::int AS n FROM atomicassets_transfers_assets WHERE contract = $1 AND transfer_id = $2',
+                        [CONTRACT, transferTrace.global_sequence]
+                    );
+                    expect(transferAssetsResult.rows[0].n).to.equal(1500);
+                } finally {
+                    insertSpy.restore();
+                }
+            });
+
+            it('skips chunking and DB work entirely on empty asset_ids', async () => {
+                const updateSpy = spyOnUpdate(db);
+                try {
+                    const transferData: LogTransferActionData = {
+                        collection_name: 'testcol11111',
+                        from: 'sender111111',
+                        to: 'receiver1111',
+                        asset_ids: [],
+                        memo: 'no-op transfer',
+                    };
+                    const transferTrace = createActionTrace(CONTRACT, 'logtransfer', transferData);
+                    await processActionTrace(processor, db, createBlock(), createTx(), transferTrace);
+
+                    const assetUpdates = updateSpy.calls.filter(c => c.table === 'atomicassets_assets');
+                    expect(assetUpdates).to.have.lengthOf(0);
+                } finally {
+                    updateSpy.restore();
+                }
+            });
+        });
+
         it('should skip transfer records when store_transfers is false', async () => {
             // Re-create processor with store_transfers = false
             if (destroyProcessor) {
