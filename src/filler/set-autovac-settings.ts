@@ -18,9 +18,9 @@ export async function setAutoVacSettings(connection: ConnectionManager): Promise
     }
 
     const {rows: tables} = await connection.database.query(`
-        SELECT schemaname, relname AS tablename, n_live_tup::INT AS rows,
+        SELECT schemaname, relname AS tablename, n_live_tup AS rows,
             (SELECT STRING_AGG(quote_ident(attname), ',') FROM pg_attribute WHERE attrelid = relid AND attnum > 0 AND NOT attisdropped) AS columns
-        FROM pg_stat_user_tables 
+        FROM pg_stat_user_tables
         WHERE schemaname = 'public'
             AND relid NOT IN (SELECT inhparent FROM pg_inherits)
     `);
@@ -28,17 +28,24 @@ export async function setAutoVacSettings(connection: ConnectionManager): Promise
     let hasError = false;
 
     for (const table of tables) {
+        // n_live_tup is bigint; node-postgres returns it as a string. Coerce
+        // to Number for comparison (live tuple counts up to ~9e15 are safe).
+        // Previously cast as ::INT in SQL, which overflowed int4 once
+        // contract_traces crossed 2.1B rows on WAX mainnet and silently
+        // skipped per-table autovacuum tuning on every filler restart.
+        const rowCount = Number(table.rows);
+
         let scale = '0.05';
         let threshold = 50;
         let statistics = 100; // 300 * statistics rows are analysed
 
-        if (table.rows > 1_000_00) {
+        if (rowCount > 100_000) {
             scale = '0.0';
             threshold = 10_000;
             statistics = 200;
         }
 
-        if (table.rows > 5_000_000) {
+        if (rowCount > 5_000_000) {
             threshold = 100_000;
             statistics = 400;
         }
