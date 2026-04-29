@@ -6,6 +6,28 @@ import {NotificationData} from '../filler/notifier';
 import {ApiError} from './error';
 import logger from '../utils/winston';
 
+// Serialize a metadata-condition object for use as a `::jsonb` parameter.
+// validateId returns numeric IDs as strings to preserve precision for
+// uint64 values that overflow JS Number.MAX_SAFE_INTEGER, but on-chain
+// metadata stores those same IDs as JSON numbers. JSONB containment (`@>`)
+// is type-strict, so a naive JSON.stringify of `{sale_id: "172238298"}`
+// matches zero rows against `{"sale_id":172238298}` in the heap. Emit
+// values that look like integer literals as JSON number tokens directly
+// from the source string, preserving full precision; other values flow
+// through JSON.stringify unchanged.
+export function buildJsonbCondition(condition: { [key: string]: any }): string {
+    const parts: string[] = [];
+    for (const [key, value] of Object.entries(condition)) {
+        const keyJson = JSON.stringify(key);
+        if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+            parts.push(`${keyJson}:${value}`);
+        } else {
+            parts.push(`${keyJson}:${JSON.stringify(value)}`);
+        }
+    }
+    return `{${parts.join(',')}}`;
+}
+
 export async function getContractActionLogs(
     db: DB, contract: string, actions: string[], condition: { [key: string]: any },
     offset: number = 0, limit: number = 100, order: 'asc' | 'desc' = 'asc'
@@ -15,7 +37,7 @@ export async function getContractActionLogs(
         'WHERE account = $1 AND name = ANY($2) AND metadata @> $3::jsonb ' +
         'ORDER BY global_sequence ' + (order === 'asc' ? 'ASC' : 'DESC') + ' LIMIT $4 OFFSET $5 ';
 
-    const query = await db.query(queryStr, [contract, actions, JSON.stringify(condition), limit, offset]);
+    const query = await db.query(queryStr, [contract, actions, buildJsonbCondition(condition), limit, offset]);
     const emptyCondition = Object.keys(condition).reduce((prev, curr) => ({...prev, [curr]: undefined}), {});
 
     return query.rows.map(row => ({

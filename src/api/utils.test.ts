@@ -1,7 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 
-import {applyActionGreylistFilters, extractNotificationIdentifiers, respondApiError} from './utils';
+import {applyActionGreylistFilters, buildJsonbCondition, extractNotificationIdentifiers, respondApiError} from './utils';
 import {NotificationData} from '../filler/notifier';
 import {ApiError} from './error';
 
@@ -69,6 +69,42 @@ describe('utils', () => {
         it('ignores repeated identifiers', () => {
             expect(extractNotificationIdentifiers([deltaNotification, deltaNotification], key))
                 .to.deep.equal(['deltaNotificationVal']);
+        });
+    });
+
+    describe('buildJsonbCondition', () => {
+        it('emits numeric string values as JSON number tokens', () => {
+            expect(buildJsonbCondition({sale_id: '172238298'}))
+                .to.equal('{"sale_id":172238298}');
+        });
+
+        it('preserves full precision for uint64 values that overflow JS Number', () => {
+            expect(buildJsonbCondition({asset_id: '18446744073709551615'}))
+                .to.equal('{"asset_id":18446744073709551615}');
+        });
+
+        it('keeps eosio names quoted as strings', () => {
+            expect(buildJsonbCondition({collection_name: 'alien.worlds'}))
+                .to.equal('{"collection_name":"alien.worlds"}');
+        });
+
+        it('mixes numeric ids and string names correctly', () => {
+            expect(buildJsonbCondition({sale_id: '1', collection_name: 'alien.worlds'}))
+                .to.equal('{"sale_id":1,"collection_name":"alien.worlds"}');
+        });
+
+        it('handles negative integer strings', () => {
+            expect(buildJsonbCondition({offset: '-5'}))
+                .to.equal('{"offset":-5}');
+        });
+
+        it('handles empty conditions', () => {
+            expect(buildJsonbCondition({})).to.equal('{}');
+        });
+
+        it('keeps non-integer numeric-looking strings as strings', () => {
+            expect(buildJsonbCondition({version: '1.2.3'}))
+                .to.equal('{"version":"1.2.3"}');
         });
     });
 
