@@ -32,7 +32,7 @@
       ORDER BY global_sequence DESC
       LIMIT N
 
-  ...which is exactly what the eosio-contract-api `*/logs` endpoints
+  ...which is exactly what the eosio-contract-api log endpoints
   produce via getContractActionLogs (api/utils.ts). For an old target id,
   the planner picks Parallel Index Scan Backward on this btree, applies
   the JSONB containment filter as a post-index check, and chews through
