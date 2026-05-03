@@ -92,7 +92,7 @@
         "chai-as-promised": "^8.0.2",
         "eslint": "^9.39.2",
         "eslint-config-prettier": "^10.1.8",
-        "globals": "^16.5.0",
+        "globals": "^17.6.0",
         "mocha": "^11.7.5",
         "sinon": "^21.0.1",
         "typescript": "^5.9.3",
