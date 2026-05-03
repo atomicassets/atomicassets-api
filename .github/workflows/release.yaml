@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
-    tags: ['[0-9]+.[0-9]+.[0-9]+', 'v[0-9]+.[0-9]+.[0-9]+']
+    tags: ['*.*.*']
 
 concurrency:
   group: release-${{ github.ref }}
