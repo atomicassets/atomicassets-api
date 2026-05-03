@@ -139,7 +139,7 @@ export async function getAllAccountStatsAction(params: RequestValues, ctx: Atomi
 
     // @ts-ignore
     queryString += 'ORDER BY ' + sortColumnMapping[args.sort] + ' DESC NULLS LAST ' +
-        'LIMIT $' + ++varCounter + ' OFFSET $' + ++varCounter;
+        'LIMIT $' + ++varCounter + ' OFFSET $' + (varCounter + 1);
     queryValues.push(args.limit);
     queryValues.push((args.page - 1) * args.limit);
 
@@ -198,7 +198,7 @@ export async function getSchemaStatsByCollectionV1Action(params: RequestValues, 
 
     let queryString = 'SELECT * FROM (' + buildSchemaStatsQuery(args.after, args.before) + ') x ';
     const queryValues = [ctx.coreArgs.atomicmarket_account, args.symbol, ctx.pathParams.collection_name];
-    let varCounter = queryValues.length;
+    const varCounter = queryValues.length;
 
     const sortColumnMapping = {
         volume: 'volume',
@@ -206,7 +206,7 @@ export async function getSchemaStatsByCollectionV1Action(params: RequestValues, 
     };
 
     if (args.match) {
-        queryString += 'WHERE schema_name ILIKE $' + ++varCounter + ' ';
+        queryString += 'WHERE schema_name ILIKE $' + (varCounter + 1) + ' ';
         queryValues.push('%' + args.match + '%');
     }
 
@@ -472,7 +472,7 @@ export async function getStatsGraphAction(params: RequestValues, ctx: AtomicMark
     }
 
     if (typeof args.maker_marketplace === 'string') {
-        queryString += 'AND maker_marketplace = $' + ++varCounter + ' ';
+        queryString += 'AND maker_marketplace = $' + (varCounter + 1) + ' ';
         queryValues.push(args.maker_marketplace);
     }
 

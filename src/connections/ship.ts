@@ -212,8 +212,8 @@ export default class StateHistoryBlockReader {
                             }
                         }
 
-                        let deserializedTraces = [];
-                        let deserializedDeltas = [];
+                        let deserializedTraces;
+                        let deserializedDeltas;
 
                         try {
                             deserializedTraces = await traces;

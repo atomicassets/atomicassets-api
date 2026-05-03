@@ -82,7 +82,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
     destructors.push(processor.onActionTrace(
         contract, 'purchasesale',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<PurchaseSaleActionData>): Promise<void> => {
-            let finalPrice = null;
+            let finalPrice;
 
             if (parseInt(trace.act.data.intended_delphi_median, 10) === 0) {
                 const sale = await db.query(
