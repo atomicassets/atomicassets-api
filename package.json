@@ -67,7 +67,7 @@
         "ws": "^8.17.1"
     },
     "devDependencies": {
-        "@eslint/js": "^9.36.0",
+        "@eslint/js": "^10.0.1",
         "@swc-node/register": "^1.11.1",
         "@swc/cli": "^0.8.0",
         "@swc/core": "^1.13.0",
@@ -90,7 +90,7 @@
         "c8": "^11.0.0",
         "chai": "^6.2.2",
         "chai-as-promised": "^8.0.2",
-        "eslint": "^9.39.2",
+        "eslint": "^10.3.0",
         "eslint-config-prettier": "^10.1.8",
         "globals": "^17.6.0",
         "mocha": "^11.7.5",
