@@ -5,6 +5,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    ignore:
+      # await-lock 3.x is ESM-only; project still uses CommonJS interop. Pin until ESM migration.
+      - dependency-name: 'await-lock'
+        update-types: ['version-update:semver-major']
+      # typescript 6.x deprecates options we still set; revisit when 6.x is stable + we're ready to migrate.
+      - dependency-name: 'typescript'
+        update-types: ['version-update:semver-major']
     groups:
       types:
         patterns:
