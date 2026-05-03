@@ -18,8 +18,8 @@ importers:
         specifier: ^1.4.2
         version: 1.5.1
       await-lock:
-        specifier: ^2.2.1
-        version: 2.2.2
+        specifier: ^3.0.0
+        version: 3.0.0
       body-parser:
         specifier: ^2.2.2
         version: 2.2.2
@@ -900,8 +900,8 @@ packages:
   atomicassets@1.5.1:
     resolution: {integrity: sha512-KZI/NghU68t2jEykR9KI6CVoDeErcMiNYMLHz3F7mrkFWlTXVjiJ6tbT3y2VDaF/tcDqmLd0szNnVl1/QgTTNw==}
 
-  await-lock@2.2.2:
-    resolution: {integrity: sha512-aDczADvlvTGajTDjcjpJMqRkOF6Qdz3YbPZm/PyW6tKPkx2hlYBzxMhEywM/tU72HrVZjgl5VCdRuMlA7pZ8Gw==}
+  await-lock@3.0.0:
+    resolution: {integrity: sha512-eO6fLiSnrJrMdjWMNK8zbVRXPs2TKJg78iKZd9wDpN3na5tcoV6EoeiOlMgk2QaAQ1gIrK1YuMsJHXWqz89tSA==}
 
   b4a@1.8.1:
     resolution: {integrity: sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==}
@@ -3207,7 +3207,7 @@ snapshots:
     dependencies:
       big-integer: 1.6.52
 
-  await-lock@2.2.2: {}
+  await-lock@3.0.0: {}
 
   b4a@1.8.1: {}
 

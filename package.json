@@ -45,7 +45,7 @@
         "@wharfkit/antelope": "^1.1.1",
         "async-exit-hook": "^2.0.1",
         "atomicassets": "^1.4.2",
-        "await-lock": "^2.2.1",
+        "await-lock": "^3.0.0",
         "body-parser": "^2.2.2",
         "common-tags": "^1.8.2",
         "compression": "^1.8.0",
