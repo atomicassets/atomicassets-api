@@ -15,9 +15,9 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
 - Subscribes to a State History Plugin (SHIP) endpoint and indexes blocks
   into PostgreSQL in real time.
 - Exposes a REST API documented via OpenAPI / Swagger at `/docs` covering:
-  AtomicAssets (NFTs and templates), AtomicMarket (sales, auctions, buy
-  offers), AtomicTools (link claims), AtomicHub tools, neftyblends,
-  neftydrops, neftypacks, and helper namespaces.
+  AtomicAssets (NFTs, templates, schemas, collections), AtomicMarket
+  (sales, auctions, buy offers), AtomicTools (link claims), and curated
+  collection lists.
 - Streams live updates via WebSockets (Socket.IO) for sales, transfers,
   and trades.
 - Ships a Prometheus metrics endpoint for monitoring filler health.
