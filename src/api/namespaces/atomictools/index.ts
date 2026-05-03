@@ -42,7 +42,7 @@ export class AtomicToolsNamespace extends ApiNamespace {
         } catch (error) {
             // If table doesn't exist yet (schema not initialized), gracefully handle
             if (typeof this.args.atomicassets_account !== 'string') {
-                throw new Error('AtomicTools API requires atomicassets_account argument when table is not initialized');
+                throw new Error('AtomicTools API requires atomicassets_account argument when table is not initialized', { cause: error });
             }
         }
     }
