@@ -37,9 +37,9 @@ export default class ListPoller {
                 throw new Error(`Invalid response from ${this.config.url}: ${response.status}, ${response.statusText}`);
             }
 
-            const lists = (await response.json()).lists;
+            const body = (await response.json()) as { lists: List[] };
 
-            await this.syncListsWithDb(lists as List[]);
+            await this.syncListsWithDb(body.lists);
         } catch (error) {
             logger.error(error);
         }

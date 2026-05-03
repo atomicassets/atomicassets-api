@@ -1,96 +1,40 @@
-# Turbo Prune Dockerfile - Optimized 3-stage build with BuildKit cache mounts
-# USAGE: Copy to apps/<service-name>/Dockerfile and replace:
-#   - @atomichub/eosio-contract-api with actual service package name (e.g., @atomichub/config-service)
-#   - apps/eosio-contract-api with actual service directory (e.g., apps/config-service)
-#   - Port number (default 9000)
+# syntax=docker/dockerfile:1.7
+ARG NODE_VERSION=22
 
-# DHI Registry URL - injected via build-arg, varies by environment
-ARG DHI_REGISTRY
+FROM node:${NODE_VERSION}-bookworm-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+RUN corepack enable
 
-# Stage 1: Prepare - Prune monorepo for specific service
-FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS prepare
+# Stage 1: install full deps + build
+FROM base AS builder
+WORKDIR /app
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
 
-# DHI production image - create app directory
-USER root
-RUN mkdir -p /home/node/app && chown node:node /home/node/app
-
+# Stage 2: runtime image with prod-only deps
+FROM base AS runtime
+ENV NODE_ENV=production
+ENV DO_NOT_TRACK=1
 WORKDIR /app
 
-# Copy only files needed for turbo prune (minimal context)
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
-COPY turbo.json ./
+RUN groupadd -g 1001 app \
+ && useradd -u 1001 -g app -s /usr/sbin/nologin -d /app app
 
-# Copy package.json files for all workspaces (needed for dependency graph)
-# This is much lighter than copying entire source code
-COPY apps/*/package.json apps/
-COPY packages/*/package.json packages/
+COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/.npmrc ./
+RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --prod
+COPY --from=builder /app/build ./build
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/definitions ./definitions
 
-# Install only turbo CLI with proper env vars (lightweight, just for pruning)
-# IMPORTANT: PNPM_HOME must be set for global installs
-RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store \
-  export PNPM_HOME="/home/node/.local/share/pnpm" && \
-  export PATH="$PNPM_HOME:$PATH" && \
-  pnpm add -g turbo
-
-# Copy only the specific service source (needed for turbo prune to analyze)
-COPY apps/eosio-contract-api ./apps/eosio-contract-api
-
-# Copy shared packages source (needed for dependency resolution)
-COPY packages ./packages
-
-# Set ENV for global pnpm packages
-ENV PNPM_HOME="/home/node/.local/share/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-
-# Prune to create minimal workspace for this service
-RUN turbo prune @atomichub/eosio-contract-api --docker
-
-# Stage 2: Builder - Install dependencies and build
-FROM ${DHI_REGISTRY}/node:22-debian13-sfw-dev AS builder
-
-USER node
-WORKDIR /home/node/app
-
-# Copy pruned package.json files
-COPY --from=prepare --chown=node:node /app/out/json/ .
-
-# Copy workspace packages source BEFORE install (needed for pnpm workspace links)
-COPY --from=prepare --chown=node:node /app/out/full/packages/ ./packages/
-
-# Install dependencies from pruned workspace with cache mount
-RUN --mount=type=cache,target=/home/node/.local/share/pnpm/store,uid=1000,gid=1000 \
-  pnpm install --frozen-lockfile=true
-
-# Copy pruned source code
-COPY --from=prepare --chown=node:node /app/out/full/ .
-
-# Copy root SWC config (not included in turbo prune output)
-COPY --chown=node:node .swcrc .
-
-# Build the service with cache mount for turbo cache
-RUN --mount=type=cache,target=/home/node/app/.turbo-cache,uid=1000,gid=1000 \
-  pnpm turbo run build --filter="@atomichub/eosio-contract-api..." --cache-dir=.turbo-cache
-
-# Stage 3: Runtime - Production image
-FROM ${DHI_REGISTRY}/node:22-debian13 AS runtime
-
-USER node
-WORKDIR /home/node/app
-
-# Copy built application from builder
-COPY --from=builder --chown=node:node /home/node/app .
-
-# NOTE: Stay at monorepo root - don't change WORKDIR to apps/eosio-contract-api
-# This allows services to find config files using relative paths like ../config/config.json
+RUN chown -R app:app /app
+USER app
 
 ARG VERSION
-# Disable telemetry
-ENV DO_NOT_TRACK=1
-
-ENV NODE_ENV=production
 ENV VERSION=${VERSION}
 
 EXPOSE 9000
 
-# Run service from its directory so ./definitions paths work, but configs are still at /home/node/app/config
-CMD ["sh", "-c", "cd apps/eosio-contract-api && node --enable-source-maps build/bin/server.js"]
+CMD ["node", "--enable-source-maps", "build/bin/server.js"]

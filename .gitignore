@@ -1,7 +1,14 @@
 .idea
+.vscode
 build
+dist
 docker
 node_modules
+coverage
+.nyc_output
+
+# typescript
+*.tsbuildinfo
 
 # logs
 logs/*.log
@@ -13,3 +20,8 @@ modules/enabled/*.js
 config/connections.config.json
 config/readers.config.json
 config/server.config.json
+
+# env files
+.env
+.env.local
+.env.*.local

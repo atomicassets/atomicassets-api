@@ -1,6 +1,11 @@
 {
     "node-option": ["conditions=swc-node"],
-    "extends": "../../.mocharc.json",
+    "ui": "bdd",
     "require": ["@swc-node/register", "./test/setup.ts"],
-    "timeout": 5000
+    "extensions": ["ts"],
+    "timeout": 5000,
+    "color": true,
+    "reporter": "spec",
+    "recursive": true,
+    "exit": true
 }

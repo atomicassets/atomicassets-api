@@ -1,5 +1,9 @@
 import type { PeerCertificate } from 'tls';
-import { Redis, Cluster, RedisOptions, ClusterOptions, RedisClientInstance } from '@atomichub/backend-common/redis';
+
+import { Redis, Cluster } from 'iovalkey';
+import type { RedisOptions, ClusterOptions } from 'iovalkey';
+
+export type RedisClientInstance = Redis | Cluster;
 
 export interface RedisConnectionOptions {
     host: string;

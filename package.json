@@ -1,15 +1,26 @@
 {
-    "name": "@atomichub/eosio-contract-api",
+    "name": "atomicassets-api",
     "version": "1.3.24",
-    "description": "EOSIO Contract API",
-    "author": "pink.gg",
-    "license": "AGPL-3.0",
-    "repository": "https://github.com/pinknetworkx/eosio-contract-api",
+    "description": "AtomicAssets API: indexer and HTTP API for AtomicAssets, AtomicMarket, AtomicTools, and related contracts on Antelope (EOSIO) chains.",
+    "license": "MIT",
+    "author": "AtomicAssets contributors",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/atomicassets/atomicassets-api.git"
+    },
+    "homepage": "https://github.com/atomicassets/atomicassets-api#readme",
+    "bugs": {
+        "url": "https://github.com/atomicassets/atomicassets-api/issues"
+    },
+    "engines": {
+        "node": ">=22.0.0",
+        "pnpm": ">=10.0.0"
+    },
     "scripts": {
         "check-types": "tsc --noEmit",
         "clean": "rm -rf ./build/* && rm -rf ./logs/*",
         "lint": "eslint \"src/**/*.ts\"",
-        "build": "swc src -d build --strip-leading-paths --config-file ../../.swcrc",
+        "build": "swc src -d build --strip-leading-paths",
         "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/filler/receiver.test.ts' 'src/api/utils.test.ts' 'src/api/namespaces/validation.test.ts' 'src/api/namespaces/atomictools/format.test.ts'",
         "test:integration": "[ -f config/connections.config.json ] && mocha --require @swc-node/register 'src/**/*.test.ts' || echo 'Integration tests skipped: config/connections.config.json not found'",
         "test:init-db": "node --require @swc-node/register src/bin/init-test-db.ts",
@@ -31,7 +42,6 @@
         "db:migrate:up": "tsc && node --trace-warnings ./build/bin/migrate.js"
     },
     "dependencies": {
-        "@atomichub/backend-common": "workspace:*",
         "@wharfkit/antelope": "^1.1.1",
         "async-exit-hook": "^2.0.1",
         "atomicassets": "^1.4.2",
@@ -44,6 +54,7 @@
         "express": "^5.2.1",
         "express-rate-limit": "^8.3.1",
         "int64-buffer": "^1.0.1",
+        "iovalkey": "^0.3.3",
         "moize": "^6.1.1",
         "node-worker-threads-pool": "^1.5.1",
         "p-queue": "^6.6.2",
@@ -56,7 +67,10 @@
         "ws": "^8.17.1"
     },
     "devDependencies": {
-        "@atomichub/tsconfig": "workspace:*",
+        "@eslint/js": "^9.39.2",
+        "@swc-node/register": "^1.11.1",
+        "@swc/cli": "^0.8.0",
+        "@swc/core": "^1.13.0",
         "@types/body-parser": "^1.19.6",
         "@types/common-tags": "^1.8.4",
         "@types/compression": "^1.7.5",
@@ -64,17 +78,24 @@
         "@types/cors": "^2.8.19",
         "@types/elliptic": "^6.4.18",
         "@types/express": "^5.0.6",
+        "@types/chai": "^5.2.3",
+        "@types/chai-as-promised": "^8.0.2",
         "@types/express-serve-static-core": "^4.17.33",
-        "@types/node": "^22",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "^22.19.9",
         "@types/pg": "^8.16.0",
+        "@types/sinon": "^21.0.0",
         "@types/swagger-ui-express": "^4.1.6",
         "@types/ws": "^7.4.7",
-        "@typescript-eslint/eslint-plugin": "^5.21.0",
-        "@typescript-eslint/parser": "^5.21.0",
-        "eslint": "^7.32.0",
-        "ts-loader": "^9.2.8",
-        "ts-node": "^10.7.0",
-        "typescript": "^4.6.3"
+        "c8": "^11.0.0",
+        "chai": "^6.2.2",
+        "chai-as-promised": "^8.0.2",
+        "eslint": "^9.39.2",
+        "globals": "^15.14.0",
+        "mocha": "^11.7.5",
+        "sinon": "^21.0.1",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.20.0"
     },
     "private": true
 }

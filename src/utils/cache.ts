@@ -1,6 +1,7 @@
 import express from 'express';
 import * as crypto from 'crypto';
-import type { RedisClientInstance } from '@atomichub/backend-common/redis';
+
+import type { RedisClientInstance } from '../connections/redis';
 
 import logger from './winston';
 import { mergeRequestData } from '../api/namespaces/utils';
