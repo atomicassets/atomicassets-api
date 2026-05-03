@@ -3,7 +3,7 @@
     "version": "1.3.24",
     "description": "AtomicAssets API: indexer and HTTP API for AtomicAssets, AtomicMarket, AtomicTools, and related contracts on Antelope (EOSIO) chains.",
     "license": "MIT",
-    "author": "AtomicAssets contributors",
+    "author": "FACINGS INC.",
     "repository": {
         "type": "git",
         "url": "https://github.com/atomicassets/atomicassets-api.git"
