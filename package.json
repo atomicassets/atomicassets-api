@@ -95,7 +95,7 @@
         "globals": "^17.6.0",
         "mocha": "^11.7.5",
         "sinon": "^21.0.1",
-        "typescript": "^5.9.3",
+        "typescript": "^6.0.3",
         "typescript-eslint": "^8.45.0"
     },
     "private": true
