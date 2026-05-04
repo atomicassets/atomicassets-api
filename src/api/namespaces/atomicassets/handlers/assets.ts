@@ -140,11 +140,29 @@ export async function getRawAssetsAction(
         count: {type: 'bool'}
     });
 
+    // The LEFT JOIN to atomicassets_templates is only needed when a parameter
+    // actually consumes template columns (sort by template-derived name, the
+    // is_transferable/is_burnable flags carried on the template, or any
+    // data:* / template_data:* filter that compares against the template's
+    // immutable_data). Skipping it otherwise lets the planner use the
+    // composite (contract, minted_at_time) index on assets_count-shape
+    // queries; in production the count plan dropped from ~11.5M to ~2.7M
+    // (Parallel Index Only Scan) when the join was removed.
+    const needsTemplateJoin = args.sort === 'name'
+        || params.is_transferable !== undefined
+        || params.is_burnable !== undefined
+        || Object.keys(params).some(key =>
+            key.startsWith('data:') || key.startsWith('data.')
+            || key.startsWith('template_data:') || key.startsWith('template_data.')
+        );
+
     const query = new QueryBuilder(
-        'SELECT asset.asset_id FROM atomicassets_assets asset ' +
-        'LEFT JOIN atomicassets_templates "template" ON (' +
-        'asset.contract = template.contract AND asset.template_id = template.template_id' +
-        ') '
+        'SELECT asset.asset_id FROM atomicassets_assets asset' +
+        (needsTemplateJoin
+            ? ' LEFT JOIN atomicassets_templates "template" ON (' +
+              'asset.contract = template.contract AND asset.template_id = template.template_id' +
+              ') '
+            : ' ')
     );
     if (options?.extraTables) {
         query.appendToBase(options.extraTables);
@@ -152,7 +170,10 @@ export async function getRawAssetsAction(
 
     query.equal('asset.contract', ctx.coreArgs.atomicassets_account);
 
-    await buildAssetQueryCondition(params, query, {assetTable: '"asset"', templateTable: '"template"'});
+    await buildAssetQueryCondition(params, query, {
+        assetTable: '"asset"',
+        templateTable: needsTemplateJoin ? '"template"' : undefined,
+    });
     await buildBoundaryFilter(
         params, query, 'asset.asset_id', 'int',
         args.sort === 'updated' ? 'asset.updated_at_time' : 'asset.minted_at_time'
