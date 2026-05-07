@@ -592,23 +592,59 @@ export class ContractDBTransaction {
             }
 
             const pgTypes: string[] = allColumns.map((_, i) => inferPgType(columnArrays[i]));
+            const isArrayColumn: boolean[] = columnArrays.map(arr => arr.some((v: any) => Array.isArray(v)));
+            // PG's unnest($::T[][]) flattens multidim arrays completely. When any
+            // inner array is empty, that column produces 0 rows for the multi-column
+            // unnest, which silently pads the other columns with NULL — typed as
+            // scalar T (not T[]) — and the assignment fails with 42804
+            // ("column is of type T[] but expression is of type T"). Fall back to a
+            // VALUES-clause path with explicit per-row casts when any empty array
+            // is present.
+            const hasEmptyArrayValue = columnArrays.some((arr, i) =>
+                isArrayColumn[i] && arr.some((v: any) => Array.isArray(v) && v.length === 0)
+            );
 
             const esc = this.client.escapeIdentifier.bind(this.client);
             const setClause = setColumns.map(c => esc(c) + ' = u.' + esc(c)).join(', ');
             const whereClause = pkColumns.map(c => 't.' + esc(c) + ' = u.' + esc(c)).join(' AND ');
-            // Use [][] for columns that contain per-row array values (e.g. jsonb[], varchar[])
-            const unnestParams = columnArrays.map((arr, i) => {
-                const hasArrayValues = arr.some((v: any) => Array.isArray(v));
-                const suffix = hasArrayValues ? '[][]' : '[]';
-                return '$' + (i + 1) + '::' + pgTypes[i] + suffix;
-            }).join(', ');
             const colAliases = allColumns.map(c => esc(c)).join(', ');
 
-            const sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +
-                ' FROM unnest(' + unnestParams + ') AS u(' + colAliases + ')' +
-                ' WHERE ' + whereClause + ';';
+            let sql: string;
+            let queryValues: any[];
 
-            const result = await this.clientQuery(sql, columnArrays);
+            if (hasEmptyArrayValue) {
+                const valueRows = rows.map((_, rowIdx) => {
+                    const placeholders = allColumns.map((_c, colIdx) => {
+                        const paramIdx = rowIdx * allColumns.length + colIdx + 1;
+                        const suffix = isArrayColumn[colIdx] ? '[]' : '';
+                        return '$' + paramIdx + '::' + pgTypes[colIdx] + suffix;
+                    });
+                    return '(' + placeholders.join(', ') + ')';
+                }).join(', ');
+
+                sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +
+                    ' FROM (VALUES ' + valueRows + ') AS u(' + colAliases + ')' +
+                    ' WHERE ' + whereClause + ';';
+
+                queryValues = rows.flatMap(row => [
+                    ...pkColumns.map(c => row.pkValues[c]),
+                    ...setColumns.map(c => row.setValues[c]),
+                ]);
+            } else {
+                // Use [][] for columns that contain per-row array values (e.g. jsonb[], varchar[])
+                const unnestParams = columnArrays.map((_arr, i) => {
+                    const suffix = isArrayColumn[i] ? '[][]' : '[]';
+                    return '$' + (i + 1) + '::' + pgTypes[i] + suffix;
+                }).join(', ');
+
+                sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +
+                    ' FROM unnest(' + unnestParams + ') AS u(' + colAliases + ')' +
+                    ' WHERE ' + whereClause + ';';
+
+                queryValues = columnArrays;
+            }
+
+            const result = await this.clientQuery(sql, queryValues);
             this.stats.operations += result.rowCount;
 
             if (result.rowCount < rows.length) {
