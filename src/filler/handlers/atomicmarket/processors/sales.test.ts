@@ -206,5 +206,44 @@ describe('saleProcessor', () => {
             expect(sale.final_price).to.equal(sale.listing_price);
             expect(Number(sale.updated_at_block)).to.equal(purchaseBlock.block_num);
         });
+
+        it('should not overwrite an already-SOLD sale on replay', async () => {
+            await createSaleInDB('500005');
+
+            const firstBlock = createBlock();
+            const firstTrace = createActionTrace(MARKET_CONTRACT, 'purchasesale', {
+                buyer: 'buyer1111111',
+                sale_id: '500005',
+                intended_delphi_median: '0',
+                taker_marketplace: 'taker1111111',
+            } as PurchaseSaleActionData);
+            await processActionTrace(processor, db, firstBlock, createTx(), firstTrace);
+
+            const afterFirst = await client.query(
+                'SELECT * FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
+                [MARKET_CONTRACT, '500005']
+            );
+            const initialRow = afterFirst.rows[0];
+            expect(initialRow.state).to.equal(SaleState.SOLD.valueOf());
+
+            // Replay with different buyer/marketplace — guard should ignore the second event entirely.
+            const replayBlock = createBlock();
+            const replayTrace = createActionTrace(MARKET_CONTRACT, 'purchasesale', {
+                buyer: 'attacker1111',
+                sale_id: '500005',
+                intended_delphi_median: '0',
+                taker_marketplace: 'taker2222222',
+            } as PurchaseSaleActionData);
+            await processActionTrace(processor, db, replayBlock, createTx(), replayTrace);
+
+            const afterReplay = await client.query(
+                'SELECT * FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
+                [MARKET_CONTRACT, '500005']
+            );
+            const replayedRow = afterReplay.rows[0];
+            expect(replayedRow.buyer).to.equal('buyer1111111');
+            expect(replayedRow.taker_marketplace).to.equal('taker1111111');
+            expect(Number(replayedRow.updated_at_block)).to.equal(Number(initialRow.updated_at_block));
+        });
     });
 });

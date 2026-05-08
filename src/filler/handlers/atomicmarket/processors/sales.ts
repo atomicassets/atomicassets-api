@@ -82,7 +82,26 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
     destructors.push(processor.onActionTrace(
         contract, 'purchasesale',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<PurchaseSaleActionData>): Promise<void> => {
-            let finalPrice;
+            // Replay guard: a SOLD sale row already has the correct final_price/buyer
+            // from initial processing. Recomputing during SHIP replay would overwrite
+            // final_price using delphioracle_pairs precisions that may be stale (e.g.,
+            // after a backup restore). Mirrors PR #2507 in nft-data-api which fixed
+            // the 2026-04-09 WAX 10,000x current_usd incident.
+            const existing = await db.query(
+                'SELECT state FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
+                [core.args.atomicmarket_account, trace.act.data.sale_id]
+            );
+
+            if (existing.rowCount === 0) {
+                logger.warn('AtomicMarket: Sale was purchased but was not found (possible fork replay). sale_id=' + trace.act.data.sale_id);
+                return;
+            }
+
+            if (existing.rows[0].state === SaleState.SOLD.valueOf()) {
+                return;
+            }
+
+            let finalPrice = null;
 
             if (parseInt(trace.act.data.intended_delphi_median, 10) === 0) {
                 const sale = await db.query(
