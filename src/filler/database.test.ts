@@ -650,6 +650,83 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
         });
     });
 
+    describe('updateBatch with empty inner array values', () => {
+        // PG 42804 regression guard. Without the VALUES-clause fallback in
+        // updateBatch, an empty inner array (e.g. tags=[] for one row of a
+        // text[] column) caused unnest($::text[][]) to flatten to 0 rows for
+        // that column and pad the others with scalar NULL — typed text not
+        // text[] — which the assignment rejected with "column is of type
+        // text[] but expression is of type text".
+        it('updates rows even when one row has an empty inner array value', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_empty_arr (id int PRIMARY KEY, tags text[] NOT NULL, counts int[] NOT NULL) ON COMMIT DROP'
+            );
+            await transaction.query(
+                'INSERT INTO ub_empty_arr (id, tags, counts) VALUES ' +
+                "(1, ARRAY['a','b'], ARRAY[1,2]), " +
+                "(2, ARRAY['c'], ARRAY[3])"
+            );
+
+            // Row 1 clears tags but keeps counts; row 2 keeps tags but clears
+            // counts. Two empty-array values across two distinct columns.
+            const result = await transaction.updateBatch(
+                'ub_empty_arr',
+                ['id'],
+                ['tags', 'counts'],
+                [
+                    { pkValues: { id: 1 }, setValues: { tags: [], counts: [9, 9] } },
+                    { pkValues: { id: 2 }, setValues: { tags: ['x'], counts: [] } },
+                ]
+            );
+
+            expect(result.rowCount).to.equal(2);
+
+            const check = await transaction.query(
+                'SELECT id, tags, counts FROM ub_empty_arr ORDER BY id'
+            );
+            expect(check.rows[0].id).to.equal(1);
+            expect(check.rows[0].tags).to.deep.equal([]);
+            expect(check.rows[0].counts).to.deep.equal([9, 9]);
+            expect(check.rows[1].id).to.equal(2);
+            expect(check.rows[1].tags).to.deep.equal(['x']);
+            expect(check.rows[1].counts).to.deep.equal([]);
+
+            await transaction.abort();
+        });
+
+        it('still uses the unnest path when no inner array is empty', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_nonempty_arr (id int PRIMARY KEY, tags text[] NOT NULL) ON COMMIT DROP'
+            );
+            await transaction.query(
+                "INSERT INTO ub_nonempty_arr (id, tags) VALUES (1, ARRAY['a']), (2, ARRAY['b'])"
+            );
+
+            const result = await transaction.updateBatch(
+                'ub_nonempty_arr',
+                ['id'],
+                ['tags'],
+                [
+                    { pkValues: { id: 1 }, setValues: { tags: ['x', 'y'] } },
+                    { pkValues: { id: 2 }, setValues: { tags: ['z'] } },
+                ]
+            );
+
+            expect(result.rowCount).to.equal(2);
+            const check = await transaction.query(
+                'SELECT id, tags FROM ub_nonempty_arr ORDER BY id'
+            );
+            expect(check.rows[0].tags).to.deep.equal(['x', 'y']);
+            expect(check.rows[1].tags).to.deep.equal(['z']);
+
+            await transaction.abort();
+        });
+    });
+
     after(async () => {
         await connection.redis.disconnect();
         await connection.database.pool.end();
