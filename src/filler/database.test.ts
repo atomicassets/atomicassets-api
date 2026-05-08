@@ -651,22 +651,25 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
     });
 
     describe('updateBatch with empty inner array values', () => {
-        // PG 42804 regression guard. Without the VALUES-clause fallback in
-        // updateBatch, an empty inner array (e.g. tags=[] for one row of a
-        // text[] column) caused unnest($::text[][]) to flatten to 0 rows for
-        // that column and pad the others with scalar NULL — typed text not
-        // text[] — which the assignment rejected with "column is of type
-        // text[] but expression is of type text".
+        // PG 42804 regression guard. inferPgType maps any per-row JS array
+        // value to `jsonb`, so production columns that mirror this shape are
+        // jsonb[] (arrays of jsonb scalars). Without the VALUES-clause
+        // fallback in updateBatch, an empty inner array — e.g.
+        // notify_accounts=[] for a collection with no notify accounts —
+        // caused unnest($::jsonb[][]) to flatten to 0 rows for that column
+        // and pad the others with scalar NULL typed jsonb (not jsonb[]),
+        // which the assignment rejected with "column is of type jsonb[] but
+        // expression is of type jsonb".
         it('updates rows even when one row has an empty inner array value', async () => {
             const transaction = await contract.startTransaction();
 
             await transaction.query(
-                'CREATE TEMP TABLE ub_empty_arr (id int PRIMARY KEY, tags text[] NOT NULL, counts int[] NOT NULL) ON COMMIT DROP'
+                'CREATE TEMP TABLE ub_empty_arr (id int PRIMARY KEY, tags jsonb[] NOT NULL, counts jsonb[] NOT NULL) ON COMMIT DROP'
             );
             await transaction.query(
                 'INSERT INTO ub_empty_arr (id, tags, counts) VALUES ' +
-                "(1, ARRAY['a','b'], ARRAY[1,2]), " +
-                "(2, ARRAY['c'], ARRAY[3])"
+                "(1, ARRAY['\"a\"','\"b\"']::jsonb[], ARRAY['1','2']::jsonb[]), " +
+                "(2, ARRAY['\"c\"']::jsonb[], ARRAY['3']::jsonb[])"
             );
 
             // Row 1 clears tags but keeps counts; row 2 keeps tags but clears
@@ -700,10 +703,10 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             const transaction = await contract.startTransaction();
 
             await transaction.query(
-                'CREATE TEMP TABLE ub_nonempty_arr (id int PRIMARY KEY, tags text[] NOT NULL) ON COMMIT DROP'
+                'CREATE TEMP TABLE ub_nonempty_arr (id int PRIMARY KEY, tags jsonb[] NOT NULL) ON COMMIT DROP'
             );
             await transaction.query(
-                "INSERT INTO ub_nonempty_arr (id, tags) VALUES (1, ARRAY['a']), (2, ARRAY['b'])"
+                "INSERT INTO ub_nonempty_arr (id, tags) VALUES (1, ARRAY['\"a\"']::jsonb[]), (2, ARRAY['\"b\"']::jsonb[])"
             );
 
             const result = await transaction.updateBatch(
