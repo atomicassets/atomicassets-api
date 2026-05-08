@@ -1449,6 +1449,25 @@ describe('inferPgType', () => {
         expect(inferPgType([null, '100000000000'])).to.equal('bigint');
     });
 
+    it('returns double precision for decimal string values (atomicmarket fees, ratios)', () => {
+        // Real-world values from atomicmarket_config: maker_market_fee, taker_market_fee
+        expect(inferPgType(['0.01'])).to.equal('double precision');
+        expect(inferPgType(['0.1'])).to.equal('double precision');
+        expect(inferPgType(['-0.5'])).to.equal('double precision');
+        expect(inferPgType([null, '1.234'])).to.equal('double precision');
+    });
+
+    it('returns double precision for scientific-notation strings', () => {
+        expect(inferPgType(['1e10'])).to.equal('double precision');
+        expect(inferPgType(['1.5e-3'])).to.equal('double precision');
+    });
+
+    it('returns double precision when integer + decimal strings are mixed', () => {
+        // Both must succeed under double precision; only "all integer" picks bigint.
+        expect(inferPgType(['120', '0.01'])).to.equal('double precision');
+        expect(inferPgType(['0.5', '120'])).to.equal('double precision');
+    });
+
     it('falls back to text when numeric and non-numeric strings are mixed', () => {
         expect(inferPgType(['123', 'abc', '456'])).to.equal('text');
         expect(inferPgType([null, '99', 'not_a_number'])).to.equal('text');

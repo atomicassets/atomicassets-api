@@ -137,14 +137,32 @@ export function inferPgType(values: any[]): string {
                     return 'jsonb';
                 }
             }
-            if (/^-?\d+$/.test(trimmed)) {
-                // Verify ALL non-null string values are numeric before inferring bigint;
-                // mixed values would cause unnest($n::bigint[]) cast failures at runtime
+            const integerRe = /^-?\d+$/;
+            const decimalRe = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
+            if (integerRe.test(trimmed)) {
+                // Verify ALL non-null string values are numeric before inferring a
+                // numeric pgType; mixed values would cause unnest($n::T[]) cast failures.
+                const allInteger = values.every(v =>
+                    v === null || v === undefined ||
+                    (typeof v === 'string' && integerRe.test(v.trim()))
+                );
+                if (allInteger) return 'bigint';
                 const allNumeric = values.every(v =>
                     v === null || v === undefined ||
-                    (typeof v === 'string' && /^-?\d+$/.test(v.trim()))
+                    (typeof v === 'string' && decimalRe.test(v.trim()))
                 );
-                return allNumeric ? 'bigint' : 'text';
+                return allNumeric ? 'double precision' : 'text';
+            }
+            if (decimalRe.test(trimmed)) {
+                // Decimal-looking string (e.g. "0.01" market fee, "1.3" version-as-fee).
+                // Columns like atomicmarket_config.maker_market_fee are double precision;
+                // unnest($::text[]) → assignment fails with 42804 ("expression is of type
+                // text"). Pick double precision when every value parses as decimal.
+                const allNumeric = values.every(v =>
+                    v === null || v === undefined ||
+                    (typeof v === 'string' && decimalRe.test(v.trim()))
+                );
+                return allNumeric ? 'double precision' : 'text';
             }
             return 'text';
         }
