@@ -243,7 +243,11 @@ describe('saleProcessor', () => {
             const replayedRow = afterReplay.rows[0];
             expect(replayedRow.buyer).to.equal('buyer1111111');
             expect(replayedRow.taker_marketplace).to.equal('taker1111111');
+            // final_price is the actual corruption vector this guard prevents — assert
+            // it stayed identical to the value computed during initial processing.
+            expect(replayedRow.final_price).to.equal(initialRow.final_price);
             expect(Number(replayedRow.updated_at_block)).to.equal(Number(initialRow.updated_at_block));
+            expect(Number(replayedRow.updated_at_time)).to.equal(Number(initialRow.updated_at_time));
         });
     });
 });

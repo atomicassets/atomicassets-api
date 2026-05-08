@@ -86,9 +86,10 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
             // from initial processing. Recomputing during SHIP replay would overwrite
             // final_price using delphioracle_pairs precisions that may be stale (e.g.,
             // after a backup restore). Mirrors PR #2507 in nft-data-api which fixed
-            // the 2026-04-09 WAX 10,000x current_usd incident.
+            // the 2026-04-09 WAX 10,000x current_usd incident. The early-out also
+            // skips the JOIN below during catchup, when most rows are already SOLD.
             const existing = await db.query(
-                'SELECT state FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
+                'SELECT state, listing_price FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
                 [core.args.atomicmarket_account, trace.act.data.sale_id]
             );
 
@@ -104,17 +105,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
             let finalPrice = null;
 
             if (parseInt(trace.act.data.intended_delphi_median, 10) === 0) {
-                const sale = await db.query(
-                    'SELECT listing_price FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
-                    [core.args.atomicmarket_account, trace.act.data.sale_id]
-                );
-
-                if (sale.rowCount === 0) {
-                    logger.warn('AtomicMarket: Sale was purchased but was not found (possible fork replay). sale_id=' + trace.act.data.sale_id);
-                    return;
-                }
-
-                finalPrice = sale.rows[0].listing_price;
+                finalPrice = existing.rows[0].listing_price;
             } else {
                 const query = await db.query(
                     'SELECT pair.invert_delphi_pair, delphi.base_precision, delphi.quote_precision, delphi.median_precision, sale.listing_price ' +
