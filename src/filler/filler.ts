@@ -57,6 +57,24 @@ export default class Filler {
         }
     }
 
+    /**
+     * Returns true when the reader is further than `thresholdBlocks` behind
+     * chain head. Scheduled aggregators (atomicassets/atomicmarket mints,
+     * sales filters) gate themselves on this so they don't pile concurrent
+     * UPDATEs on hot tables while the filler is already saturating its
+     * DataSource queue catching up. 200 blocks ≈ 100 s of WAX time — past
+     * normal reversible-window jitter (~50 blocks) but close enough to
+     * resume aggregator runs as soon as the backlog clears.
+     *
+     * Added 2026-05-09 after the wax.atomichub.io/drops/92030 hype-drop
+     * cliff: with pg_stat_statements newly available we measured
+     * update_atomicmarket_sales_filters() at 19.5 s mean / 296 s max per
+     * call, exactly the contention shape that compounds during a spike.
+     */
+    public isFallingBehind(thresholdBlocks: number = 200): boolean {
+        return this.reader.blocksUntilHead > thresholdBlocks;
+    }
+
     async deleteDB(): Promise<void> {
         const transaction = await this.connection.database.begin();
 
