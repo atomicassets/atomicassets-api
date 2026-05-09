@@ -319,6 +319,10 @@ export default class AtomicAssetsHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicassets_mints', 30, JobQueuePriority.MEDIUM, async () => {
+            // Skip while the filler is catching up — see Filler.isFallingBehind.
+            if (this.filler.isFallingBehind()) {
+                return;
+            }
             await longRunningPool.query(
                 'CALL update_atomicassets_mints($1, $2)',
                 [this.args.atomicassets_account, this.filler.reader.lastIrreversibleBlock]

@@ -360,6 +360,12 @@ export default class AtomicMarketHandler extends ContractHandler {
         // insertion between probe and call just falls through to the proc,
         // which returns quickly if the queue is drained by then.
         this.filler.jobs.add('update_atomicmarket_sales_filters', 60, JobQueuePriority.HIGH, async () => {
+            // Skip while the filler is catching up — the proc holds long
+            // statement-timeout transactions that contend with block writes
+            // on the same hot rows. See Filler.isFallingBehind for context.
+            if (this.filler.isFallingBehind()) {
+                return;
+            }
             const probe = await longRunningPool.query(
                 'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
             );
