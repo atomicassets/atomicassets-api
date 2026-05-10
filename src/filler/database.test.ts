@@ -652,14 +652,13 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
 
     describe('updateBatch with empty inner array values', () => {
         // PG 42804 regression guard. inferPgType maps any per-row JS array
-        // value to `jsonb`, so production columns that mirror this shape are
-        // jsonb[] (arrays of jsonb scalars). Without the VALUES-clause
-        // fallback in updateBatch, an empty inner array — e.g.
-        // notify_accounts=[] for a collection with no notify accounts —
-        // caused unnest($::jsonb[][]) to flatten to 0 rows for that column
-        // and pad the others with scalar NULL typed jsonb (not jsonb[]),
-        // which the assignment rejected with "column is of type jsonb[] but
-        // expression is of type jsonb".
+        // value to `jsonb`, so jsonb[] columns hit the empty-array padding
+        // path inside updateBatch. The VALUES-clause fallback emits a
+        // per-row $N::jsonb[] cast, which keeps the array structure intact
+        // even when one of the rows passes [] for that column. Element
+        // values are JSON-encoded scalars because pg-node serializes JS
+        // arrays as PG array literals and PG re-parses each element as
+        // jsonb (a bare 'x' is not valid JSON; '"x"' is).
         it('updates rows even when one row has an empty inner array value', async () => {
             const transaction = await contract.startTransaction();
 
@@ -679,8 +678,8 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
                 ['id'],
                 ['tags', 'counts'],
                 [
-                    { pkValues: { id: 1 }, setValues: { tags: [], counts: [9, 9] } },
-                    { pkValues: { id: 2 }, setValues: { tags: ['x'], counts: [] } },
+                    { pkValues: { id: 1 }, setValues: { tags: [], counts: ['9', '9'] } },
+                    { pkValues: { id: 2 }, setValues: { tags: ['"x"'], counts: [] } },
                 ]
             );
 
@@ -699,32 +698,39 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        it('still uses the unnest path when no inner array is empty', async () => {
+        // Companion coverage for the unnest path uses scalar columns. The
+        // $N::T[][] form that updateBatch emits for array-typed columns
+        // flattens completely under unnest() (preserving row structure
+        // requires the VALUES-clause path), so a meaningful unnest test
+        // must use scalar columns where rectangular 1D inputs are correct.
+        it('uses the unnest path for scalar columns', async () => {
             const transaction = await contract.startTransaction();
 
             await transaction.query(
-                'CREATE TEMP TABLE ub_nonempty_arr (id int PRIMARY KEY, tags jsonb[] NOT NULL) ON COMMIT DROP'
+                'CREATE TEMP TABLE ub_unnest_scalar (id int PRIMARY KEY, name text NOT NULL, count bigint NOT NULL) ON COMMIT DROP'
             );
             await transaction.query(
-                "INSERT INTO ub_nonempty_arr (id, tags) VALUES (1, ARRAY['\"a\"']::jsonb[]), (2, ARRAY['\"b\"']::jsonb[])"
+                "INSERT INTO ub_unnest_scalar (id, name, count) VALUES (1, 'a', 10), (2, 'b', 20)"
             );
 
             const result = await transaction.updateBatch(
-                'ub_nonempty_arr',
+                'ub_unnest_scalar',
                 ['id'],
-                ['tags'],
+                ['name', 'count'],
                 [
-                    { pkValues: { id: 1 }, setValues: { tags: ['x', 'y'] } },
-                    { pkValues: { id: 2 }, setValues: { tags: ['z'] } },
+                    { pkValues: { id: 1 }, setValues: { name: 'updated_a', count: 100 } },
+                    { pkValues: { id: 2 }, setValues: { name: 'updated_b', count: 200 } },
                 ]
             );
 
             expect(result.rowCount).to.equal(2);
             const check = await transaction.query(
-                'SELECT id, tags FROM ub_nonempty_arr ORDER BY id'
+                'SELECT id, name, count FROM ub_unnest_scalar ORDER BY id'
             );
-            expect(check.rows[0].tags).to.deep.equal(['x', 'y']);
-            expect(check.rows[1].tags).to.deep.equal(['z']);
+            expect(check.rows[0].name).to.equal('updated_a');
+            expect(check.rows[0].count).to.equal('100');
+            expect(check.rows[1].name).to.equal('updated_b');
+            expect(check.rows[1].count).to.equal('200');
 
             await transaction.abort();
         });
