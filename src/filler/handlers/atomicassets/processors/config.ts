@@ -23,12 +23,24 @@ export function configProcessor(core: AtomicAssetsHandler, processor: DataProces
                     const index = tokens.indexOf(token.sym);
 
                     if (index === -1) {
+                        // ON CONFLICT DO NOTHING — the in-memory `tokens` list
+                        // and the on-DB row set can diverge across restarts
+                        // (e.g., when init re-loads supported_tokens from the
+                        // DB and a config delta is replayed in catch-up mode).
+                        // The init path at handlers/atomicassets/index.ts:175
+                        // already uses ON CONFLICT DO NOTHING explicitly; mirror
+                        // it here so the delta-time replay is equally idempotent.
+                        // 2026-05-10 jungle4 stall (block 52023599) was the
+                        // reproducer: 23505 → TRANSIENT_PG_CODES retry →
+                        // double-release → consumer queue paused. The token
+                        // row's content is fixed by the chain (precision is
+                        // immutable per symbol), so DO NOTHING is correct.
                         await db.insert('atomicassets_tokens', {
                             contract: contract,
                             token_symbol: token.sym.split(',')[1],
                             token_contract: token.contract,
                             token_precision: token.sym.split(',')[0]
-                        }, ['contract', 'token_symbol']);
+                        }, ['contract', 'token_symbol'], true, true, 'nothing');
                     }
                 }
             }
