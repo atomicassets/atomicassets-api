@@ -611,16 +611,14 @@ export class ContractDBTransaction {
 
             const pgTypes: string[] = allColumns.map((_, i) => inferPgType(columnArrays[i]));
             const isArrayColumn: boolean[] = columnArrays.map(arr => arr.some((v: any) => Array.isArray(v)));
-            // PG's unnest($::T[][]) flattens multidim arrays completely. When any
-            // inner array is empty, that column produces 0 rows for the multi-column
-            // unnest, which silently pads the other columns with NULL — typed as
-            // scalar T (not T[]) — and the assignment fails with 42804
-            // ("column is of type T[] but expression is of type T"). Fall back to a
-            // VALUES-clause path with explicit per-row casts when any empty array
-            // is present.
-            const hasEmptyArrayValue = columnArrays.some((arr, i) =>
-                isArrayColumn[i] && arr.some((v: any) => Array.isArray(v) && v.length === 0)
-            );
+            // PG's unnest($::T[][]) flattens multidim arrays completely, so the
+            // unnest path produces scalar T values that cannot be assigned to
+            // T[] columns (42804 "expression is of type T"). The empty-array
+            // case is one symptom of this, but the deeper truth is that the
+            // unnest path is only safe for scalar columns — any per-row array
+            // value must go through the VALUES-clause path with explicit
+            // per-row $N::T[] casts that preserve row structure.
+            const requiresValuesPath = isArrayColumn.some(b => b);
 
             const esc = this.client.escapeIdentifier.bind(this.client);
             const setClause = setColumns.map(c => esc(c) + ' = u.' + esc(c)).join(', ');
@@ -630,7 +628,7 @@ export class ContractDBTransaction {
             let sql: string;
             let queryValues: any[];
 
-            if (hasEmptyArrayValue) {
+            if (requiresValuesPath) {
                 const valueRows = rows.map((_, rowIdx) => {
                     const placeholders = allColumns.map((_c, colIdx) => {
                         const paramIdx = rowIdx * allColumns.length + colIdx + 1;
