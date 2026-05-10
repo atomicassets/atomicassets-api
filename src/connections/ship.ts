@@ -263,7 +263,16 @@ export default class StateHistoryBlockReader {
 
                         this.unconfirmed += 1;
 
-                        if (this.unconfirmed >= this.options.min_block_confirmation) {
+                        // Defer the ack while blocksQueue is overloaded so SHIP backs off.
+                        // SHIP only sends past max_messages_in_flight when it receives an
+                        // ack; holding the ack is the strongest backpressure we have on
+                        // its send side. Accumulated `unconfirmed` is sent in one batch
+                        // as soon as the queue drains under the threshold. See
+                        // IBlockReaderOptions.max_blocks_queue for the full rationale.
+                        const maxQueue = this.options.max_blocks_queue || 0;
+                        const queueOverloaded = maxQueue > 0 && this.blocksQueue.size >= maxQueue;
+
+                        if (this.unconfirmed >= this.options.min_block_confirmation && !queueOverloaded) {
                             this.send(['get_blocks_ack_request_v0', { num_messages: this.unconfirmed }]);
                             this.unconfirmed = 0;
                         }

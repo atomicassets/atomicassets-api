@@ -81,7 +81,8 @@ export default class StateReceiver {
             ds_threads: config.ds_ship_threads,
             allow_empty_deltas: false,
             allow_empty_traces: false,
-            allow_empty_blocks: false
+            allow_empty_blocks: false,
+            max_blocks_queue: config.ship_max_blocks_queue
         });
 
         this.dsQueue = new PQueue({concurrency: 1, autoStart: true});
