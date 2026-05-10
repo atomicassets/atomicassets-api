@@ -698,11 +698,44 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        // Companion coverage for the unnest path uses scalar columns. The
-        // $N::T[][] form that updateBatch emits for array-typed columns
-        // flattens completely under unnest() (preserving row structure
-        // requires the VALUES-clause path), so a meaningful unnest test
-        // must use scalar columns where rectangular 1D inputs are correct.
+        // PG 42804 regression guard for non-empty array updates. Before
+        // database.ts routed all array columns through the VALUES path,
+        // updateBatch emitted $N::T[][] with unnest() which flattened row
+        // structure and assigned scalar T to a T[] column. The single known
+        // production caller hitting this path is atomicassets_config
+        // collection_format updates during catchup-mode irreversible block
+        // replay (config.ts:37-43).
+        it('handles array columns without empty values (jsonb[] regression)', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_array_only (id int PRIMARY KEY, tags jsonb[] NOT NULL) ON COMMIT DROP'
+            );
+            await transaction.query(
+                "INSERT INTO ub_array_only (id, tags) VALUES (1, ARRAY['\"a\"']::jsonb[]), (2, ARRAY['\"b\"']::jsonb[])"
+            );
+
+            const result = await transaction.updateBatch(
+                'ub_array_only',
+                ['id'],
+                ['tags'],
+                [
+                    { pkValues: { id: 1 }, setValues: { tags: ['"x"', '"y"'] } },
+                    { pkValues: { id: 2 }, setValues: { tags: ['"z"'] } },
+                ]
+            );
+
+            expect(result.rowCount).to.equal(2);
+            const check = await transaction.query(
+                'SELECT id, tags FROM ub_array_only ORDER BY id'
+            );
+            expect(check.rows[0].tags).to.deep.equal(['x', 'y']);
+            expect(check.rows[1].tags).to.deep.equal(['z']);
+
+            await transaction.abort();
+        });
+
+        // Companion coverage that scalar columns still use the unnest path.
         it('uses the unnest path for scalar columns', async () => {
             const transaction = await contract.startTransaction();
 
