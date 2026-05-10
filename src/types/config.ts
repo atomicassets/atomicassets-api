@@ -105,6 +105,12 @@ export interface IReaderConfig {
     ship_prefetch_blocks: number;
     ship_min_block_confirmation: number;
     ship_ds_queue_size: number;
+    /**
+     * Soft ceiling for the SHIP-side blocks queue. When the queue is at or
+     * above this size, the reader stops acking blocks so SHIP backs off
+     * (W2.2). Optional — when unset or 0, ack semantics are unchanged.
+     */
+    ship_max_blocks_queue?: number;
 
     db_group_blocks: number;
 
