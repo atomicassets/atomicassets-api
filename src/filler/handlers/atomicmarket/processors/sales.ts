@@ -102,7 +102,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
                 return;
             }
 
-            let finalPrice = null;
+            let finalPrice;
 
             if (parseInt(trace.act.data.intended_delphi_median, 10) === 0) {
                 finalPrice = existing.rows[0].listing_price;
