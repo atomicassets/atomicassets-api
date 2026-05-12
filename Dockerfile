@@ -15,22 +15,23 @@ COPY . .
 RUN pnpm build
 
 # Stage 2: runtime image with prod-only deps
+# The node:bookworm-slim base ships a `node` user at uid 1000 — reuse it
+# instead of creating a custom user, and set WORKDIR to /home/node/app to
+# match the runtime config path expectations in src/bin/*.ts (which require
+# config files from /home/node/app/config/).
 FROM base AS runtime
 ENV NODE_ENV=production
 ENV DO_NOT_TRACK=1
-WORKDIR /app
+WORKDIR /home/node/app
 
-RUN groupadd -g 1001 app \
- && useradd -u 1001 -g app -s /usr/sbin/nologin -d /app app
+COPY --from=builder --chown=node:node /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/.npmrc ./
+RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --prod \
+ && chown -R node:node /home/node/app
+COPY --from=builder --chown=node:node /app/build ./build
+COPY --from=builder --chown=node:node /app/config ./config
+COPY --from=builder --chown=node:node /app/definitions ./definitions
 
-COPY --from=builder /app/package.json /app/pnpm-lock.yaml /app/pnpm-workspace.yaml /app/.npmrc ./
-RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --prod
-COPY --from=builder /app/build ./build
-COPY --from=builder /app/config ./config
-COPY --from=builder /app/definitions ./definitions
-
-RUN chown -R app:app /app
-USER app
+USER node
 
 ARG VERSION
 ENV VERSION=${VERSION}
