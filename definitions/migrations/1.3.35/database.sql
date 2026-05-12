@@ -42,13 +42,14 @@
     autovacuum_vacuum_insert_scale_factor   = 0.05  )
     autovacuum_vacuum_insert_threshold      = 500   )
 
-    No fillfactor change here: the workload is INSERT-then-DELETE only
-    (no UPDATEs anywhere in the codebase), so HOT updates can never
-    occur and a lower table-level fillfactor would just waste page
-    space without helping. The bloat we're chasing lives in the
-    partial INDEXES, not the heap; index density is governed by
-    per-index fillfactor (btree default 90) and addressed via the
-    REINDEX CONCURRENTLY operator-note below.
+    No fillfactor change here: the workload on this specific table
+    is INSERT-then-DELETE only (no UPDATE statements against
+    atomicmarket_sales_filters_updates exist in src/ or definitions/),
+    so HOT updates can never occur and a lower table-level fillfactor
+    would just waste page space without helping. The bloat we're
+    chasing lives in the partial INDEXES, not the heap; index density
+    is governed by per-index fillfactor (btree default 90) and
+    addressed via the REINDEX CONCURRENTLY operator-note below.
 
     The cluster defaults
     (autovacuum_vacuum_scale_factor=0.2 + autovacuum_vacuum_threshold
