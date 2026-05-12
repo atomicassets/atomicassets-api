@@ -5,6 +5,7 @@ import {Registry} from 'prom-client';
 import logger from '../utils/winston';
 import ConnectionManager from '../connections/manager';
 import {ICollectOptions, MetricsCollectorHandler} from './handler';
+import {HttpMetrics} from '../api/middlewares/http-metrics';
 
 
 export class MetricsServer {
@@ -15,7 +16,8 @@ export class MetricsServer {
         private readonly port: number,
         connections: ConnectionManager,
         process: 'api' | 'filler',
-        options: ICollectOptions = {}
+        options: ICollectOptions = {},
+        private readonly httpMetrics?: HttpMetrics,
     ) {
         this.metricsCollector = new MetricsCollectorHandler(connections, process, os.hostname(), options);
         this.server = express();
@@ -23,7 +25,13 @@ export class MetricsServer {
 
     serve(): void {
         this.server.all('/metrics', async (_req, res) => {
-            res.send(await this.metricsCollector.getMetrics(new Registry()));
+            const collectorOutput = await this.metricsCollector.getMetrics(new Registry());
+            if (this.httpMetrics) {
+                const httpOutput = await this.httpMetrics.getMetrics();
+                res.send(`${collectorOutput}\n${httpOutput}`);
+                return;
+            }
+            res.send(collectorOutput);
         });
 
 

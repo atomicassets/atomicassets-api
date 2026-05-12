@@ -5,14 +5,19 @@ import { HTTPServer } from './server';
 import { IServerConfig } from '../types/config';
 import ConnectionManager from '../connections/manager';
 import { getNamespaces } from './namespaces';
+import { HttpMetrics } from './middlewares/http-metrics';
 
 export default class Api {
     private readonly namespaces: ApiNamespace[];
     private readonly server: HTTPServer;
 
-    constructor(private readonly config: IServerConfig, private readonly connection: ConnectionManager) {
+    constructor(
+        private readonly config: IServerConfig,
+        private readonly connection: ConnectionManager,
+        httpMetrics?: HttpMetrics,
+    ) {
         this.namespaces = getNamespaces(config.namespaces, connection);
-        this.server = new HTTPServer(config, connection);
+        this.server = new HTTPServer(config, connection, httpMetrics);
     }
 
     async listen(): Promise<void> {

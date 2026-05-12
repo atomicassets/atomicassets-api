@@ -3,6 +3,7 @@ import logger from '../utils/winston';
 import { IConnectionsConfig, IServerConfig } from '../types/config';
 import Api from '../api/api';
 import {MetricsServer} from '../metrics/server';
+import {HttpMetrics} from '../api/middlewares/http-metrics';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const serverConfig: IServerConfig = require('/home/node/app/config/server.config.json');
@@ -48,9 +49,28 @@ const connection = new ConnectionManager(connectionConfig);
     }
 
     try {
-        const server = new Api(serverConfig, connection);
+        // Shared HTTP metrics instance: middleware records into its Registry
+        // on the main API port; MetricsServer exposes that Registry alongside
+        // the existing collector gauges on the separate metrics_port. The
+        // ServiceMonitor in Kubernetes scrapes metrics_port, so HTTP latency
+        // and the collector's pool/connection gauges are served from one
+        // endpoint, matching the prometheus-adapter rule that feeds the HPA.
+        const httpMetrics = new HttpMetrics({
+            serviceName: 'eosio-contract-api-server',
+            // Skip infra probes so they don't pollute the p95 used for
+            // HPA scaling. /metrics itself is on a different Express app
+            // (metrics_port), so it doesn't need to be skipped here.
+            skipPaths: [
+                '/health',
+                '/healthc',
+                '/alive',
+                '/eosio-contract-api/health',
+                '/eosio-contract-api/alive',
+            ],
+        });
+        const server = new Api(serverConfig, connection, httpMetrics);
         if (serverConfig.metrics_port) {
-            new MetricsServer(serverConfig.metrics_port, connection, 'api').serve();
+            new MetricsServer(serverConfig.metrics_port, connection, 'api', {}, httpMetrics).serve();
         }
         await server.listen();
     } catch (e) {

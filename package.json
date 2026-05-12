@@ -1,6 +1,6 @@
 {
     "name": "atomicassets-api",
-    "version": "1.4.1",
+    "version": "1.4.2",
     "description": "AtomicAssets API: indexer and HTTP API for AtomicAssets, AtomicMarket, AtomicTools, and related contracts on Antelope (EOSIO) chains.",
     "license": "MIT",
     "author": "FACINGS INC.",
@@ -22,7 +22,7 @@
         "clean": "rm -rf ./build/* && rm -rf ./logs/*",
         "lint": "eslint \"src/**/*.ts\"",
         "build": "swc src -d build --strip-leading-paths",
-        "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/filler.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/filler/receiver.test.ts' 'src/api/utils.test.ts' 'src/api/namespaces/validation.test.ts' 'src/api/namespaces/atomictools/format.test.ts'",
+        "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/filler.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/filler/receiver.test.ts' 'src/api/utils.test.ts' 'src/api/middlewares/http-metrics.test.ts' 'src/api/namespaces/validation.test.ts' 'src/api/namespaces/atomictools/format.test.ts'",
         "test:integration": "[ -f config/connections.config.json ] && mocha --require @swc-node/register 'src/**/*.test.ts' || echo 'Integration tests skipped: config/connections.config.json not found'",
         "test:init-db": "node --require @swc-node/register src/bin/init-test-db.ts",
         "test:e2e:ci": "pnpm test:init-db && mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
@@ -86,6 +86,7 @@
         "@types/node": "^25.6.0",
         "@types/pg": "^8.16.0",
         "@types/sinon": "^21.0.0",
+        "@types/supertest": "^7.2.0",
         "@types/swagger-ui-express": "^4.1.6",
         "@types/ws": "^8.18.1",
         "c8": "^11.0.0",
@@ -96,6 +97,7 @@
         "globals": "^17.6.0",
         "mocha": "^11.7.5",
         "sinon": "^21.0.1",
+        "supertest": "^7.2.2",
         "typescript": "^5.9.3",
         "typescript-eslint": "^8.45.0"
     },

@@ -26,6 +26,7 @@ import {mergeRequestData} from './namespaces/utils';
 import {Send} from 'express-serve-static-core';
 type GetInfoResult = any;
 import { initListValidator } from './namespaces/lists';
+import { HttpMetrics } from './middlewares/http-metrics';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson: any = require(path.resolve(__dirname, '../../package.json'));
@@ -45,7 +46,11 @@ export class HTTPServer implements DB {
 
     readonly database: Pool;
 
-    constructor(readonly config: IServerConfig, readonly connection: ConnectionManager) {
+    constructor(
+        readonly config: IServerConfig,
+        readonly connection: ConnectionManager,
+        readonly httpMetrics?: HttpMetrics,
+    ) {
         this.database = connection.database.createPool({
             query_timeout: config.max_query_time_ms || 10000,
             max: config.max_db_connections || 50,
@@ -129,6 +134,14 @@ export class WebServer {
 
         this.express.set('etag', false);
         this.express.set('x-powered-by', false);
+
+        // Mount HTTP metrics early so latency and in-flight counts cover the
+        // full handling time, including compression and rate-limit overhead.
+        // /metrics is served on a separate port via MetricsServer, so it's
+        // not in this app's request path and doesn't need to be skipped here.
+        if (this.server.httpMetrics) {
+            this.express.use(this.server.httpMetrics.middleware());
+        }
 
         this.express.use(((req, res, next) => {
             res.setHeader('Last-Modified', (new Date()).toUTCString());
