@@ -399,6 +399,69 @@ describe('AtomicAssets Assets API', () => {
             expect(result).to.equal('1');
         });
 
+        txit('count + sort=name skips the templates JOIN', async () => {
+            // Regression guard: getRawAssetsAction's `needsTemplateJoin`
+            // forces the LEFT JOIN to atomicassets_templates when
+            // sort === 'name', but count requests short-circuit before
+            // any ORDER BY is applied — so the JOIN is pure overhead on
+            // the count path. Production observed the count plan drop
+            // from ~11.5M to ~2.7M rows when the JOIN was removed.
+            await client.createAsset();
+            await client.createAsset();
+
+            const observedQueries: string[] = [];
+            const recordingDb = {
+                query: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.query(text, values);
+                },
+                fetchOne: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.fetchOne(text, values);
+                },
+            };
+            const ctx = getTestContext(recordingDb as any);
+
+            const result = await getRawAssetsAction(
+                {count: 'true', sort: 'name'},
+                ctx,
+            );
+
+            expect(result).to.equal('2');
+            expect(
+                observedQueries.some(q => /LEFT JOIN atomicassets_templates/i.test(q)),
+                'count requests must not JOIN atomicassets_templates even when sort=name',
+            ).to.equal(false);
+        });
+
+        txit('non-count sort=name keeps the templates JOIN', async () => {
+            // Complementary guard for the above: when count is NOT set,
+            // sort === 'name' DOES need the JOIN because the ORDER BY
+            // clause reads `template.immutable_data`. Drops the gate too
+            // aggressively → name sort returns wrong order or crashes.
+            await client.createAsset();
+
+            const observedQueries: string[] = [];
+            const recordingDb = {
+                query: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.query(text, values);
+                },
+                fetchOne: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.fetchOne(text, values);
+                },
+            };
+            const ctx = getTestContext(recordingDb as any);
+
+            await getRawAssetsAction({sort: 'name'}, ctx);
+
+            expect(
+                observedQueries.some(q => /LEFT JOIN atomicassets_templates/i.test(q)),
+                'non-count sort=name must JOIN atomicassets_templates for ORDER BY',
+            ).to.equal(true);
+        });
+
         txit('orders ascending', async () => {
             const {asset_id: asset_id1} = await client.createAsset();
 
