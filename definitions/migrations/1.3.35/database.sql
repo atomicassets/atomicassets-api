@@ -1,6 +1,7 @@
 /*
   1.3.35 - Per-table autovacuum thresholds on
-  atomicmarket_sales_filters_updates so its heap + indexes stop bloating.
+  atomicmarket_sales_filters_updates so the queue stays clean and the
+  planner sees fresh statistics.
 
   Background:
     atomicmarket_sales_filters_updates is the work queue for
@@ -30,11 +31,16 @@
     detected; this migration tunes the table so the bloat plateaus
     sooner instead.
 
-  Settings:
-    autovacuum_vacuum_scale_factor    = 0.0  )  fire on absolute
-    autovacuum_vacuum_threshold       = 100  )  dead-tuple count, not
-    autovacuum_analyze_scale_factor   = 0.0  )  relative to a tiny
-    autovacuum_analyze_threshold      = 100  )  live set
+  Settings (mirror the values that have been running on every ECA DB
+  on the blockchain cluster since the 2026-05-03 incident, applied
+  out-of-band via direct ALTER TABLE):
+
+    autovacuum_vacuum_scale_factor          = 0.05  )
+    autovacuum_vacuum_threshold             = 50    )  see notes below
+    autovacuum_analyze_scale_factor         = 0.05  )
+    autovacuum_analyze_threshold            = 500   )
+    autovacuum_vacuum_insert_scale_factor   = 0.05  )
+    autovacuum_vacuum_insert_threshold      = 500   )
 
     No fillfactor change here: the workload is INSERT-then-DELETE only
     (no UPDATEs anywhere in the codebase), so HOT updates can never
@@ -44,13 +50,30 @@
     per-index fillfactor (btree default 90) and addressed via the
     REINDEX CONCURRENTLY operator-note below.
 
-    Without scale_factor=0 the cluster default fires when n_dead_tup
-    exceeds (autovacuum_vacuum_threshold +
-    autovacuum_vacuum_scale_factor * reltuples), i.e. 50 + 0.2 *
-    reltuples at the cluster defaults — a fraction of the *estimated*
-    live-row count. On a queue with reltuples < 1000 that trigger
-    floats just above n_dead_tup forever. Pinning to absolute counts
-    gates autovacuum on the metric that actually matters here.
+    The cluster defaults
+    (autovacuum_vacuum_scale_factor=0.2 + autovacuum_vacuum_threshold
+    = 50 + 0.2 * reltuples) only fire when n_dead_tup exceeds 20 % of
+    the *estimated* live-row count. On a queue that holds ~hundreds
+    of rows that trigger floats just above n_dead_tup forever — vacuum
+    only fires when the queue is *full*, which is exactly the worst
+    moment. Pinning scale_factor to 0.05 (1/4 of default) collapses
+    the moving target to something close to a fixed lower bound while
+    still letting it scale up if the queue ever runs hot.
+
+    autovacuum_vacuum_insert_* is the load-bearing setting here. For
+    this workload rows arrive constantly and are DELETE'd in batches,
+    so the dead-tuple trigger is bursty (nothing dead between drains,
+    then a flood). The insert-trigger keeps vacuum and ANALYZE firing
+    on every ~500-tuple burst of arrivals, which is what actually
+    keeps planner statistics fresh and the heap dense.
+
+    Verified 2026-05-12 on every ECA DB (wax-mainnet, wax-testnet,
+    eos-mainnet, proton-mainnet, proton-testnet, jungle4-testnet) at
+    dbinfo version 1.3.34: these reloptions are already applied
+    out-of-band, heap is steady at < 64 KB, autovacuum_count is in
+    the 40-50k range over the cluster pod lifetimes. This migration
+    codifies that state so (a) the dbinfo version catches up and
+    (b) greenfield chain deployments get the same tuning automatically.
 
   Operator note:
     This migration only changes thresholds, not table contents. It
@@ -71,10 +94,12 @@
 */
 
 ALTER TABLE atomicmarket_sales_filters_updates SET (
-  autovacuum_vacuum_scale_factor    = 0.0,
-  autovacuum_vacuum_threshold       = 100,
-  autovacuum_analyze_scale_factor   = 0.0,
-  autovacuum_analyze_threshold      = 100
+  autovacuum_vacuum_scale_factor          = 0.05,
+  autovacuum_vacuum_threshold             = 50,
+  autovacuum_analyze_scale_factor         = 0.05,
+  autovacuum_analyze_threshold            = 500,
+  autovacuum_vacuum_insert_scale_factor   = 0.05,
+  autovacuum_vacuum_insert_threshold      = 500
 );
 
 UPDATE dbinfo SET "value" = '1.3.35' WHERE name = 'version';
