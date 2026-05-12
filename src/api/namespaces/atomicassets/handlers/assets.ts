@@ -148,7 +148,12 @@ export async function getRawAssetsAction(
     // composite (contract, minted_at_time) index on assets_count-shape
     // queries; in production the count plan dropped from ~11.5M to ~2.7M
     // (Parallel Index Only Scan) when the join was removed.
-    const needsTemplateJoin = args.sort === 'name'
+    //
+    // Count requests short-circuit before any ORDER BY is applied (line 184
+    // below), so `sort === 'name'` never actually consumes a template column
+    // on the count path — drop it from the gate so `/assets/_count?sort=name`
+    // also benefits.
+    const needsTemplateJoin = (!args.count && args.sort === 'name')
         || params.is_transferable !== undefined
         || params.is_burnable !== undefined
         || Object.keys(params).some(key =>

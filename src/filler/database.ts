@@ -647,11 +647,13 @@ export class ContractDBTransaction {
                     ...setColumns.map(c => row.setValues[c]),
                 ]);
             } else {
-                // Use [][] for columns that contain per-row array values (e.g. jsonb[], varchar[])
-                const unnestParams = columnArrays.map((_arr, i) => {
-                    const suffix = isArrayColumn[i] ? '[][]' : '[]';
-                    return '$' + (i + 1) + '::' + pgTypes[i] + suffix;
-                }).join(', ');
+                // Scalar-only batch: no column carries per-row array values
+                // (the array-column case takes the requiresValuesPath branch
+                // above). Every parameter is a flat 1-D array unnested into
+                // its column, so the type suffix is always `[]`.
+                const unnestParams = columnArrays.map((_arr, i) =>
+                    '$' + (i + 1) + '::' + pgTypes[i] + '[]',
+                ).join(', ');
 
                 sql = 'UPDATE ' + esc(table) + ' AS t SET ' + setClause +
                     ' FROM unnest(' + unnestParams + ') AS u(' + colAliases + ')' +
