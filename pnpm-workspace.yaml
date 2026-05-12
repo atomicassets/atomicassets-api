@@ -1,6 +1,5 @@
 onlyBuiltDependencies:
-- '@scarf/scarf'
-- '@swc/core'
+  - '@scarf/scarf'
+  - '@swc/core'
 overrides:
   serialize-javascript: ^7.0.5
-
