@@ -22,7 +22,7 @@
         "clean": "rm -rf ./build/* && rm -rf ./logs/*",
         "lint": "eslint \"src/**/*.ts\"",
         "build": "swc src -d build --strip-leading-paths",
-        "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/filler.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/filler/receiver.test.ts' 'src/api/utils.test.ts' 'src/api/middlewares/http-metrics.test.ts' 'src/api/namespaces/validation.test.ts' 'src/api/namespaces/atomictools/format.test.ts'",
+        "test": "mocha --require @swc-node/register 'src/utils/**/*.test.ts' 'src/filler/filler.test.ts' 'src/filler/jobqueue.test.ts' 'src/filler/utils.test.ts' 'src/filler/receiver.test.ts' 'src/api/utils.test.ts' 'src/api/middlewares/http-metrics.test.ts' 'src/api/namespaces/atomicassets/handlers/assets-join.test.ts' 'src/api/namespaces/validation.test.ts' 'src/api/namespaces/atomictools/format.test.ts'",
         "test:integration": "[ -f config/connections.config.json ] && mocha --require @swc-node/register 'src/**/*.test.ts' || echo 'Integration tests skipped: config/connections.config.json not found'",
         "test:init-db": "node --require @swc-node/register src/bin/init-test-db.ts",
         "test:e2e:ci": "pnpm test:init-db && mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
