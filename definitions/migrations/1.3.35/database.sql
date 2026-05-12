@@ -1,6 +1,6 @@
 /*
-  1.3.35 - Per-table autovacuum + fillfactor on
-  atomicmarket_sales_filters_updates so its heap stops bloating.
+  1.3.35 - Per-table autovacuum thresholds on
+  atomicmarket_sales_filters_updates so its heap + indexes stop bloating.
 
   Background:
     atomicmarket_sales_filters_updates is the work queue for
@@ -35,14 +35,22 @@
     autovacuum_vacuum_threshold       = 100  )  dead-tuple count, not
     autovacuum_analyze_scale_factor   = 0.0  )  relative to a tiny
     autovacuum_analyze_threshold      = 100  )  live set
-    fillfactor                        = 80   -- HOT-update headroom
 
-    Without scale_factor=0, the cluster default
-    (autovacuum_vacuum_scale_factor=0.2 + autovacuum_vacuum_threshold
-    = 50 + 0.2 * n_live_tup) only fires when dead_tup exceeds a
-    moving fraction of live_tup; on a queue with live_tup < 1000 that
-    threshold is constantly chasing the workload. Pinning to absolute
-    counts gates autovacuum on the metric that actually matters here.
+    No fillfactor change here: the workload is INSERT-then-DELETE only
+    (no UPDATEs anywhere in the codebase), so HOT updates can never
+    occur and a lower table-level fillfactor would just waste page
+    space without helping. The bloat we're chasing lives in the
+    partial INDEXES, not the heap; index density is governed by
+    per-index fillfactor (btree default 90) and addressed via the
+    REINDEX CONCURRENTLY operator-note below.
+
+    Without scale_factor=0 the cluster default fires when n_dead_tup
+    exceeds (autovacuum_vacuum_threshold +
+    autovacuum_vacuum_scale_factor * reltuples), i.e. 50 + 0.2 *
+    reltuples at the cluster defaults — a fraction of the *estimated*
+    live-row count. On a queue with reltuples < 1000 that trigger
+    floats just above n_dead_tup forever. Pinning to absolute counts
+    gates autovacuum on the metric that actually matters here.
 
   Operator note:
     This migration only changes thresholds, not table contents. It
@@ -66,8 +74,7 @@ ALTER TABLE atomicmarket_sales_filters_updates SET (
   autovacuum_vacuum_scale_factor    = 0.0,
   autovacuum_vacuum_threshold       = 100,
   autovacuum_analyze_scale_factor   = 0.0,
-  autovacuum_analyze_threshold      = 100,
-  fillfactor                        = 80
+  autovacuum_analyze_threshold      = 100
 );
 
 UPDATE dbinfo SET "value" = '1.3.35' WHERE name = 'version';
