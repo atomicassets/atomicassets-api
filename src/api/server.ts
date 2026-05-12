@@ -1,7 +1,9 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import express from 'express';
 import compression from 'compression';
+import {Registry} from 'prom-client';
 import {Server} from 'socket.io';
 import * as http from 'http';
 
@@ -27,6 +29,7 @@ import {Send} from 'express-serve-static-core';
 type GetInfoResult = any;
 import { initListValidator } from './namespaces/lists';
 import { HttpMetrics } from './middlewares/http-metrics';
+import { MetricsCollectorHandler } from '../metrics/handler';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJson: any = require(path.resolve(__dirname, '../../package.json'));
@@ -46,6 +49,12 @@ export class HTTPServer implements DB {
 
     readonly database: Pool;
 
+    // Connection/pool gauges. Served on /metrics on the API port (alongside
+    // http_request_* from HttpMetrics) so a single ServiceMonitor target
+    // covers both. MetricsServer on metrics_port keeps serving the same
+    // metrics for legacy scrape configs.
+    readonly metricsCollector: MetricsCollectorHandler;
+
     constructor(
         readonly config: IServerConfig,
         readonly connection: ConnectionManager,
@@ -56,6 +65,7 @@ export class HTTPServer implements DB {
             max: config.max_db_connections || 50,
             idleTimeoutMillis: 1000 * 60 * 4,
         });
+        this.metricsCollector = new MetricsCollectorHandler(connection, 'api', os.hostname(), {});
         this.web = new WebServer(this);
 
         this.httpServer = http.createServer(this.web.express);
@@ -390,6 +400,20 @@ export class WebServer {
 
         router.get(['/timestamp', '/eosio-contract-api/timestamp'], async (_: express.Request, res: express.Response) => {
             res.json({success: true, data: Date.now(), query_time: Date.now()});
+        });
+
+        // /metrics on the API port so a single ServiceMonitor scrape covers
+        // HPA inputs (http_request_*) and connection/pool gauges. Skipped by
+        // HttpMetrics middleware so scrape traffic doesn't pollute the p95.
+        router.get(['/metrics', '/eosio-contract-api/metrics'], async (_req, res) => {
+            const collectorOutput = await server.metricsCollector.getMetrics(new Registry());
+            if (server.httpMetrics) {
+                const httpOutput = await server.httpMetrics.getMetrics();
+                res.set('Content-Type', server.httpMetrics.contentType());
+                res.send(`${collectorOutput}\n${httpOutput}`);
+                return;
+            }
+            res.send(collectorOutput);
         });
 
         this.express.use(router);

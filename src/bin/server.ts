@@ -57,13 +57,16 @@ const connection = new ConnectionManager(connectionConfig);
         // endpoint, matching the prometheus-adapter rule that feeds the HPA.
         const httpMetrics = new HttpMetrics({
             serviceName: 'eosio-contract-api-server',
-            // Skip infra probes so they don't pollute the p95 used for
-            // HPA scaling. /metrics itself is on a different Express app
-            // (metrics_port), so it doesn't need to be skipped here.
+            // Skip /metrics and infra probes so scrape and probe traffic
+            // don't pollute the p95 used for HPA scaling. /metrics is served
+            // both on this app (API port, scraped by ServiceMonitor) and on
+            // MetricsServer's metrics_port (legacy scrape config).
             skipPaths: [
+                '/metrics',
                 '/health',
                 '/healthc',
                 '/alive',
+                '/eosio-contract-api/metrics',
                 '/eosio-contract-api/health',
                 '/eosio-contract-api/alive',
             ],
