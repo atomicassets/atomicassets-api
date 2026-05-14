@@ -18,6 +18,15 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
   AtomicAssets (NFTs, templates, schemas, collections), AtomicMarket
   (sales, auctions, buy offers), AtomicTools (link claims), and curated
   collection lists.
+- Indexes AtomicHub-specific contracts when enabled in the reader config:
+  AtomicPacks (`atomicpacksx` — pack templates, claims, and reveal results)
+  and AtomicDrops (`atomicdropsx` — drop templates and claims). Enable per
+  chain by adding the relevant entries to `readers.config.json`:
+
+      { "handler": "atomicpacksx",
+        "args": { "atomicpacksx_account": "atomicpacksx", "store_logs": true } }
+      { "handler": "atomicdropsx",
+        "args": { "atomicdropsx_account": "atomicdropsx", "store_logs": true } }
 - Streams live updates via WebSockets (Socket.IO) for sales, transfers,
   and trades.
 - Ships a Prometheus metrics endpoint for monitoring filler health.
