@@ -1,5 +1,10 @@
 -- atomicpacksx tables — pack templates, rolls (rarity distributions), claims
 -- (user opens), and claim_assets (NFTs revealed by each claim).
+--
+-- Counter columns (e.g., pack open counts) are deliberately NOT stored on the
+-- base tables. They are derived in the atomicpacksx_packs_master view from
+-- the canonical atomicpacksx_claims rows so they stay correct across replays
+-- and reorgs without any in-handler increment tracking.
 
 CREATE TABLE IF NOT EXISTS atomicpacksx_config (
     contract character varying(12) NOT NULL,
@@ -10,11 +15,15 @@ CREATE TABLE IF NOT EXISTS atomicpacksx_config (
 CREATE TABLE IF NOT EXISTS atomicpacksx_packs (
     contract character varying(12) NOT NULL,
     pack_id bigint NOT NULL,
+    -- AtomicAssets contract that owns the collection — explicitly stored so
+    -- views can join against atomicassets_collections_master on the full
+    -- (contract, collection_name) compound key (multiple AtomicAssets
+    -- contracts can coexist in a single DB).
+    assets_contract character varying(12) NOT NULL,
     collection_name character varying(13) NOT NULL,
     pack_template_id bigint,
     unlock_time bigint,
     display_data text,
-    use_count bigint NOT NULL DEFAULT 0,
     created_at_block bigint NOT NULL,
     created_at_time bigint NOT NULL,
     updated_at_block bigint NOT NULL,
@@ -55,11 +64,16 @@ CREATE TABLE IF NOT EXISTS atomicpacksx_claims (
 CREATE TABLE IF NOT EXISTS atomicpacksx_claim_assets (
     contract character varying(12) NOT NULL,
     claim_id bigint NOT NULL,
+    -- 1-based to match the rest of the schema (atomicassets_transfers_assets,
+    -- atomicmarket_*_assets all use 1-based indices for ordered asset lists).
     "index" integer NOT NULL,
     asset_id bigint NOT NULL,
     CONSTRAINT atomicpacksx_claim_assets_pkey PRIMARY KEY (contract, claim_id, "index")
 );
 
+-- FKs use ON DELETE RESTRICT so a stray DELETE against a parent row fails
+-- loudly rather than silently dropping child data. Wholesale chain wipes go
+-- through AtomicPacksHandler.deleteDB() which deletes children first.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'atomicpacksx_pack_rolls_pack_fkey') THEN
@@ -82,7 +96,7 @@ BEGIN
     END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS atomicpacksx_packs_collection ON atomicpacksx_packs USING btree (collection_name);
+CREATE INDEX IF NOT EXISTS atomicpacksx_packs_collection ON atomicpacksx_packs USING btree (assets_contract, collection_name);
 CREATE INDEX IF NOT EXISTS atomicpacksx_packs_template ON atomicpacksx_packs USING btree (pack_template_id);
 CREATE INDEX IF NOT EXISTS atomicpacksx_packs_updated_at_time ON atomicpacksx_packs USING btree (updated_at_time);
 

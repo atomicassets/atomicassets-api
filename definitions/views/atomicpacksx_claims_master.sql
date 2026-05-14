@@ -11,6 +11,7 @@ SELECT
     cl.claimed_at_time,
     cl.resolved_at_block,
     cl.resolved_at_time,
+    pk.assets_contract,
     pk.collection_name,
     pk.pack_template_id,
     pk.display_data AS pack_display_data,
@@ -22,9 +23,12 @@ SELECT
            AND a.claim_id = cl.claim_id
        ) asset
     ) AS result_assets,
+    -- Match on the AtomicAssets contract too so the lookup is unambiguous
+    -- when multiple atomicassets contracts coexist in the same DB.
     (SELECT row_to_json(c.*)
        FROM atomicassets_collections_master c
-       WHERE c.collection_name = pk.collection_name
+       WHERE c.contract = pk.assets_contract
+         AND c.collection_name = pk.collection_name
     ) AS collection
 FROM atomicpacksx_claims cl
 LEFT JOIN atomicpacksx_packs pk

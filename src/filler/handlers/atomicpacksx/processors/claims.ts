@@ -20,6 +20,9 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
         contract, 'logclaim',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogClaimActionData>): Promise<void> => {
             const ts = eosioTimestampToDate(block.timestamp).getTime();
+            // use_count for the parent pack is derived from this table in
+            // atomicpacksx_packs_master, so no in-handler counter update is
+            // needed here — replays and reorgs stay correct automatically.
             await db.insert('atomicpacksx_claims', {
                 contract,
                 claim_id: trace.act.data.claim_id,
@@ -33,15 +36,6 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
                 resolved_at_block: null,
                 resolved_at_time: null,
             }, ['contract', 'claim_id'], true, true, 'update');
-
-            // Increment pack use_count so consumers can see pop_count without
-            // a COUNT() on claims.
-            await db.query(
-                'UPDATE atomicpacksx_packs SET use_count = use_count + 1, ' +
-                'updated_at_block = $1, updated_at_time = $2 ' +
-                'WHERE contract = $3 AND pack_id = $4',
-                [block.block_num, ts, contract, trace.act.data.pack_id],
-            );
         }, AtomicPacksUpdatePriority.ACTION_CREATE_CLAIM.valueOf(),
     ));
 
@@ -60,10 +54,13 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
             }, ['contract', 'claim_id']);
 
             if (Array.isArray(trace.act.data.asset_ids) && trace.act.data.asset_ids.length > 0) {
+                // 1-based index to match atomicassets_transfers_assets and the
+                // atomicmarket_*_assets tables — keeps downstream consumers
+                // and ORDER BY queries consistent with the rest of the schema.
                 await db.insert('atomicpacksx_claim_assets', trace.act.data.asset_ids.map((assetId, index) => ({
                     contract,
                     claim_id: trace.act.data.claim_id,
-                    index,
+                    index: index + 1,
                     asset_id: assetId,
                 })), ['contract', 'claim_id', 'index'], true, true, 'update');
             }

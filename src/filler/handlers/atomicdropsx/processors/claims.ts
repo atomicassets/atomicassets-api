@@ -58,14 +58,10 @@ export function claimsProcessor(core: AtomicDropsHandler, processor: DataProcess
             claimed_at_time: ts,
         }, ['contract', 'claim_id'], true, true, 'update');
 
-        // Maintain current_claimed counter on the drop so consumers can
-        // read recent activity without a COUNT() on the claims table.
-        await db.query(
-            'UPDATE atomicdropsx_drops SET current_claimed = current_claimed + $1, ' +
-            'updated_at_block = $2, updated_at_time = $3 ' +
-            'WHERE contract = $4 AND drop_id = $5',
-            [amount, block.block_num, ts, contract, trace.act.data.drop_id],
-        );
+        // current_claimed for the parent drop is computed in
+        // atomicdropsx_drops_master as SUM(amount) over the canonical claim
+        // rows, so no in-handler counter maintenance is needed — replays and
+        // reorgs stay correct automatically.
     }
 
     destructors.push(processor.onActionTrace(

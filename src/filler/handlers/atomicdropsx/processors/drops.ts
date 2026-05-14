@@ -34,6 +34,7 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
             await db.insert('atomicdropsx_drops', {
                 contract,
                 drop_id: trace.act.data.drop_id,
+                assets_contract: core.args.atomicassets_account,
                 collection_name: trace.act.data.collection_name,
                 assets_to_mint: JSON.stringify(trace.act.data.assets_to_mint ?? []),
                 listing_price: price.amount,
@@ -44,7 +45,6 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
                 account_limit: trace.act.data.account_limit ?? 0,
                 account_limit_cooldown: trace.act.data.account_limit_cooldown ?? 0,
                 max_claimable: trace.act.data.max_claimable ?? 0,
-                current_claimed: 0,
                 start_time: trace.act.data.start_time ?? null,
                 end_time: trace.act.data.end_time ?? null,
                 display_data: trace.act.data.display_data ?? null,

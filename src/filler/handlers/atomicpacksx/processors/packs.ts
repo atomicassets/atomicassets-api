@@ -21,11 +21,11 @@ export function packsProcessor(core: AtomicPacksHandler, processor: DataProcesso
             await db.insert('atomicpacksx_packs', {
                 contract,
                 pack_id: trace.act.data.pack_id,
+                assets_contract: core.args.atomicassets_account,
                 collection_name: trace.act.data.collection_name,
                 pack_template_id: trace.act.data.pack_template_id,
                 unlock_time: trace.act.data.unlock_time,
                 display_data: trace.act.data.display_data,
-                use_count: 0,
                 created_at_block: block.block_num,
                 created_at_time: ts,
                 updated_at_block: block.block_num,
