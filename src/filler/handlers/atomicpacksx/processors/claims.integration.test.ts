@@ -154,6 +154,70 @@ describe('atomicpacksx claimsProcessor (WAX ABI: claimunboxed + logresult)', () 
         expect(assets.rows.every((r: any) => r.asset_id === null)).to.equal(true);
     });
 
+    it('logresult creates a placeholder claim row when claimunboxed was missed (orphan recovery)', async () => {
+        // Simulates: user opened a pack BEFORE this filler started indexing,
+        // then logresult fires post-deploy. With no parent claim row, the
+        // naive UPDATE matches 0 rows and the claim_assets INSERT FK-violates.
+        // The orphan-recovery path inserts a placeholder claim row first.
+        await seedPack(client, '7099');
+
+        const block = createBlock();
+        const data: LogResultActionData = {
+            pack_asset_id: '1099987900151',
+            pack_id: '7099',
+            template_ids: ['910', '911'],
+        };
+        await processActionTrace(processor, db, block, createTx(), createActionTrace(PACKS_CONTRACT, 'logresult', data));
+
+        const claim = await client.query(
+            'SELECT state, pack_id, opener, claimed_at_block, resolved_at_block ' +
+            'FROM atomicpacksx_claims WHERE contract = $1 AND pack_asset_id = $2',
+            [PACKS_CONTRACT, '1099987900151'],
+        );
+        expect(claim.rowCount).to.equal(1);
+        expect(claim.rows[0].state).to.equal(ClaimState.RESOLVED.valueOf());
+        expect(claim.rows[0].pack_id).to.equal('7099');
+        expect(claim.rows[0].opener).to.equal('');                              // unknown without claimunboxed
+        expect(Number(claim.rows[0].claimed_at_block)).to.equal(block.block_num); // best-effort = resolved
+        expect(Number(claim.rows[0].resolved_at_block)).to.equal(block.block_num);
+
+        const assets = await client.query(
+            'SELECT template_id FROM atomicpacksx_claim_assets ' +
+            'WHERE contract = $1 AND claim_id = $2 ORDER BY "index"',
+            [PACKS_CONTRACT, '1099987900151'],
+        );
+        expect(assets.rowCount).to.equal(2);
+        expect(assets.rows.map((r: any) => r.template_id)).to.deep.equal(['910', '911']);
+    });
+
+    it('logresult preserves opener + claimed_at from a prior claimunboxed (no clobber)', async () => {
+        await seedPack(client, '7100');
+
+        // 1. claimunboxed records the real opener + claimed_at
+        const block1 = createBlock();
+        const claimData: ClaimUnboxedActionData = { pack_asset_id: '1099987900200', origin_roll_ids: ['0'] };
+        await processActionTrace(processor, db, block1, createTx(), createActionTrace(PACKS_CONTRACT, 'claimunboxed', claimData, {
+            act: { account: PACKS_CONTRACT, name: 'claimunboxed', authorization: [{ actor: 'realopener11', permission: 'active' }], data: claimData },
+        }));
+
+        // 2. logresult fires later — the placeholder INSERT should NOT
+        // overwrite the existing opener / claimed_at_block.
+        const block2 = createBlock({ block_num: block1.block_num + 100 });
+        const resultData: LogResultActionData = { pack_asset_id: '1099987900200', pack_id: '7100', template_ids: ['920'] };
+        await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'logresult', resultData));
+
+        const res = await client.query(
+            'SELECT opener, claimed_at_block, resolved_at_block, state ' +
+            'FROM atomicpacksx_claims WHERE contract = $1 AND pack_asset_id = $2',
+            [PACKS_CONTRACT, '1099987900200'],
+        );
+        expect(res.rowCount).to.equal(1);
+        expect(res.rows[0].opener).to.equal('realopener11');                     // preserved
+        expect(Number(res.rows[0].claimed_at_block)).to.equal(block1.block_num);  // preserved
+        expect(Number(res.rows[0].resolved_at_block)).to.equal(block2.block_num); // updated
+        expect(res.rows[0].state).to.equal(ClaimState.RESOLVED.valueOf());
+    });
+
     it('atomicpacksx_packs_master.use_count is derived from claims (counts CLAIMED + RESOLVED)', async () => {
         await seedPack(client, '7003');
 

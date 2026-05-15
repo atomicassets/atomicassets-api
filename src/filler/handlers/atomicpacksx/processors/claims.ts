@@ -62,9 +62,40 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
         contract, 'logresult',
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<LogResultActionData>): Promise<void> => {
             const ts = eosioTimestampToDate(block.timestamp).getTime();
+
+            // Recovery path: if `claimunboxed` fired BEFORE this indexer
+            // started (or in any window where the filler was down), there's
+            // no parent claim row for this pack_asset_id. The naive UPDATE
+            // would match 0 rows and the subsequent claim_assets INSERT
+            // would FK-violate.
+            //
+            // Insert a placeholder claim row (ON CONFLICT DO NOTHING so we
+            // don't clobber an existing claimunboxed-sourced row's opener /
+            // claimed_at_*). For the orphan case the placeholder uses
+            // `opener = ''` and `claimed_at_* = resolved_at_*` (the best
+            // we can do without the original claimunboxed action data).
+            // The UPDATE below then sets the resolution fields on either
+            // the pre-existing or just-inserted row.
+            await db.insert('atomicpacksx_claims', {
+                contract,
+                claim_id: trace.act.data.pack_asset_id,
+                pack_id: trace.act.data.pack_id,
+                opener: '',                              // unknown from logresult alone
+                pack_asset_id: trace.act.data.pack_asset_id,
+                state: ClaimState.RESOLVED.valueOf(),
+                txid: null,                              // unknown from logresult alone
+                claimed_at_block: block.block_num,       // best-effort = resolved
+                claimed_at_time: ts,
+                resolved_at_block: block.block_num,
+                resolved_at_time: ts,
+            }, ['contract', 'claim_id'], true, true, 'nothing');
+
+            // Now UPDATE the resolution fields on whichever row exists
+            // (the placeholder we just inserted, OR the real claimunboxed
+            // row if it had been recorded earlier).
             await db.update('atomicpacksx_claims', {
                 state: ClaimState.RESOLVED.valueOf(),
-                pack_id: trace.act.data.pack_id,         // first known here
+                pack_id: trace.act.data.pack_id,
                 resolved_at_block: block.block_num,
                 resolved_at_time: ts,
             }, {
