@@ -24,6 +24,7 @@
         "build": "swc src -d build --strip-leading-paths",
         "test": "mocha --require @swc-node/register 'src/**/*.test.ts' --ignore 'src/**/*.integration.test.ts'",
         "test:integration": "[ -f config/connections.config.json ] && mocha --require @swc-node/register 'src/**/*.integration.test.ts' || echo 'Integration tests skipped: config/connections.config.json not found'",
+        "test:integration:ci": "pnpm test:init-db && mocha --require @swc-node/register --timeout 30000 'src/**/*.integration.test.ts'",
         "test:init-db": "node --require @swc-node/register src/bin/init-test-db.ts",
         "test:e2e:ci": "pnpm test:init-db && mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
         "test:watch": "mocha --require @swc-node/register --watch --watch-extensions ts 'src/**/*.test.ts' --ignore 'src/**/*.integration.test.ts'",
