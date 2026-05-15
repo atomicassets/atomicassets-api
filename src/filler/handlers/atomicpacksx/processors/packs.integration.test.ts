@@ -16,9 +16,10 @@ import { ContractDBTransaction } from '../../../database';
 
 import { packsProcessor } from './packs';
 import {
+    CompletePackActionData,
     LogNewPackActionData,
     SetPackDataActionData,
-    SetUnlockTimeActionData,
+    SetPackTimeActionData,
 } from '../types/actions';
 
 const PACKS_CONTRACT = 'atomicpacksx';
@@ -44,7 +45,7 @@ function createMockModuleLoader(): ModuleLoader {
     return loader;
 }
 
-describe('atomicpacksx packsProcessor', () => {
+describe('atomicpacksx packsProcessor (WAX ABI)', () => {
     let client: Client;
     let processor: DataProcessor;
     let db: ContractDBTransaction;
@@ -72,17 +73,14 @@ describe('atomicpacksx packsProcessor', () => {
         await client.query('ROLLBACK');
     });
 
-    it('lognewpack inserts a row in atomicpacksx_packs with display_data + unlock_time', async () => {
+    it('lognewpack inserts a row with NULL pack_template_id and NULL display_data (filled later)', async () => {
         const block = createBlock({ timestamp: '2026-05-15T00:00:00.000' });
-        const tx = createTx();
         const data: LogNewPackActionData = {
             pack_id: '5001',
             collection_name: 'testcol11111',
-            pack_template_id: '700',
-            unlock_time: 1747526400000,
-            display_data: '{"name":"Mythic Pack","img":"QmHash"}',
+            unlock_time: 1747526400,
         };
-        await processActionTrace(processor, db, block, tx, createActionTrace(PACKS_CONTRACT, 'lognewpack', data));
+        await processActionTrace(processor, db, block, createTx(), createActionTrace(PACKS_CONTRACT, 'lognewpack', data));
 
         const res = await client.query(
             'SELECT * FROM atomicpacksx_packs WHERE contract = $1 AND pack_id = $2',
@@ -91,79 +89,48 @@ describe('atomicpacksx packsProcessor', () => {
         expect(res.rowCount).to.equal(1);
         const row = res.rows[0];
         expect(row.collection_name).to.equal('testcol11111');
-        expect(row.pack_template_id).to.equal('700');
-        expect(Number(row.unlock_time)).to.equal(1747526400000);
-        expect(row.display_data).to.equal('{"name":"Mythic Pack","img":"QmHash"}');
+        expect(row.pack_template_id).to.be.null;   // populated by completepack
+        expect(row.display_data).to.be.null;       // populated by setpackdata
+        expect(Number(row.unlock_time)).to.equal(1747526400);
         expect(row.assets_contract).to.equal(ASSETS_CONTRACT);
-        expect(Number(row.created_at_block)).to.equal(block.block_num);
-        expect(Number(row.updated_at_block)).to.equal(block.block_num);
     });
 
-    it('lognewpack on the same (contract, pack_id) updates in place', async () => {
-        // First insert.
-        const block1 = createBlock({ timestamp: '2026-05-15T00:00:00.000' });
+    it('completepack sets pack_template_id on an existing pack row', async () => {
+        const block1 = createBlock();
         await processActionTrace(processor, db, block1, createTx(), createActionTrace<LogNewPackActionData>(
             PACKS_CONTRACT, 'lognewpack',
-            {
-                pack_id: '5002',
-                collection_name: 'testcol11111',
-                pack_template_id: '701',
-                unlock_time: 1747526400000,
-                display_data: '{"name":"Original"}',
-            },
+            { pack_id: '5002', collection_name: 'testcol11111', unlock_time: 1747526400 },
         ));
 
-        // Second insert with same pack_id, new display_data + later block.
-        const block2 = createBlock({
-            timestamp: '2026-05-15T00:01:00.000',
-            block_num: block1.block_num + 1,
-        });
-        await processActionTrace(processor, db, block2, createTx(), createActionTrace<LogNewPackActionData>(
-            PACKS_CONTRACT, 'lognewpack',
-            {
-                pack_id: '5002',
-                collection_name: 'testcol11111',
-                pack_template_id: '701',
-                unlock_time: 1747612800000,
-                display_data: '{"name":"Updated"}',
-            },
-        ));
+        const block2 = createBlock({ block_num: block1.block_num + 1 });
+        const data: CompletePackActionData = {
+            authorized_account: 'creator11111',
+            pack_id: '5002',
+            pack_template_id: '700',
+        };
+        await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'completepack', data));
 
         const res = await client.query(
-            'SELECT display_data, unlock_time, updated_at_block, ' +
-            '       (SELECT COUNT(*) FROM atomicpacksx_packs WHERE contract = $1 AND pack_id = $2) AS row_count ' +
-            'FROM atomicpacksx_packs WHERE contract = $1 AND pack_id = $2',
+            'SELECT pack_template_id, updated_at_block FROM atomicpacksx_packs WHERE contract = $1 AND pack_id = $2',
             [PACKS_CONTRACT, '5002'],
         );
         expect(res.rowCount).to.equal(1);
-        const row = res.rows[0];
-        // Single row (no duplicate insert).
-        expect(Number(row.row_count)).to.equal(1);
-        expect(row.display_data).to.equal('{"name":"Updated"}');
-        expect(Number(row.unlock_time)).to.equal(1747612800000);
-        expect(Number(row.updated_at_block)).to.equal(block2.block_num);
+        expect(res.rows[0].pack_template_id).to.equal('700');
+        expect(Number(res.rows[0].updated_at_block)).to.equal(block2.block_num);
     });
 
-    it('setpackdata updates display_data and updated_at_* but leaves unlock_time alone', async () => {
-        const block1 = createBlock({ timestamp: '2026-05-15T00:00:00.000' });
+    it('setpackdata updates display_data only (tolerates extra authorized_account field)', async () => {
+        const block1 = createBlock();
         await processActionTrace(processor, db, block1, createTx(), createActionTrace<LogNewPackActionData>(
             PACKS_CONTRACT, 'lognewpack',
-            {
-                pack_id: '5003',
-                collection_name: 'testcol11111',
-                pack_template_id: '702',
-                unlock_time: 1747526400000,
-                display_data: '{"name":"Initial"}',
-            },
+            { pack_id: '5003', collection_name: 'testcol11111', unlock_time: 1747526400 },
         ));
 
-        const block2 = createBlock({
-            timestamp: '2026-05-15T00:01:00.000',
-            block_num: block1.block_num + 1,
-        });
+        const block2 = createBlock({ block_num: block1.block_num + 1 });
         const data: SetPackDataActionData = {
+            authorized_account: 'creator11111',
             pack_id: '5003',
-            display_data: '{"name":"Renamed","img":"QmNewHash"}',
+            display_data: '{"name":"Mythic Pack"}',
         };
         await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'setpackdata', data));
 
@@ -173,44 +140,44 @@ describe('atomicpacksx packsProcessor', () => {
             [PACKS_CONTRACT, '5003'],
         );
         expect(res.rowCount).to.equal(1);
-        expect(res.rows[0].display_data).to.equal('{"name":"Renamed","img":"QmNewHash"}');
-        // unlock_time untouched by setpackdata.
-        expect(Number(res.rows[0].unlock_time)).to.equal(1747526400000);
+        expect(res.rows[0].display_data).to.equal('{"name":"Mythic Pack"}');
+        expect(Number(res.rows[0].unlock_time)).to.equal(1747526400);  // untouched
         expect(Number(res.rows[0].updated_at_block)).to.equal(block2.block_num);
     });
 
-    it('setunlocktime updates unlock_time and updated_at_* but leaves display_data alone', async () => {
-        const block1 = createBlock({ timestamp: '2026-05-15T00:00:00.000' });
+    it('setpacktime updates unlock_time using new_unlock_time field (WAX ABI)', async () => {
+        const block1 = createBlock();
         await processActionTrace(processor, db, block1, createTx(), createActionTrace<LogNewPackActionData>(
             PACKS_CONTRACT, 'lognewpack',
-            {
-                pack_id: '5004',
-                collection_name: 'testcol11111',
-                pack_template_id: '703',
-                unlock_time: 1747526400000,
-                display_data: '{"name":"Locked"}',
-            },
+            { pack_id: '5004', collection_name: 'testcol11111', unlock_time: 1747526400 },
         ));
 
-        const block2 = createBlock({
-            timestamp: '2026-05-15T00:01:00.000',
-            block_num: block1.block_num + 1,
-        });
-        const data: SetUnlockTimeActionData = {
+        const block2 = createBlock({ block_num: block1.block_num + 1 });
+        const data: SetPackTimeActionData = {
+            authorized_account: 'creator11111',
             pack_id: '5004',
-            unlock_time: 1747700000000,
+            new_unlock_time: 1747700000,
         };
-        await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'setunlocktime', data));
+        await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'setpacktime', data));
 
         const res = await client.query(
-            'SELECT display_data, unlock_time, updated_at_block FROM atomicpacksx_packs ' +
+            'SELECT unlock_time, updated_at_block FROM atomicpacksx_packs ' +
             'WHERE contract = $1 AND pack_id = $2',
             [PACKS_CONTRACT, '5004'],
         );
         expect(res.rowCount).to.equal(1);
-        // display_data untouched by setunlocktime.
-        expect(res.rows[0].display_data).to.equal('{"name":"Locked"}');
-        expect(Number(res.rows[0].unlock_time)).to.equal(1747700000000);
+        expect(Number(res.rows[0].unlock_time)).to.equal(1747700000);
         expect(Number(res.rows[0].updated_at_block)).to.equal(block2.block_num);
+    });
+
+    it('announcepack is a no-op (info already covered by lognewpack + setpackdata in same tx)', async () => {
+        const block = createBlock();
+        await processActionTrace(processor, db, block, createTx(), createActionTrace(
+            PACKS_CONTRACT, 'announcepack',
+            { authorized_account: 'creator11111', collection_name: 'testcol11111', unlock_time: 1747526400, display_data: '{"name":"Mystery Pack"}' },
+        ));
+
+        const res = await client.query('SELECT count(*) AS n FROM atomicpacksx_packs');
+        expect(Number(res.rows[0].n)).to.equal(0);  // no row inserted (pack_id unknown)
     });
 });

@@ -5,29 +5,48 @@ import { ShipBlock } from '../../../../types/ship';
 import { EosioActionTrace, EosioTransaction } from '../../../../types/eosio';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import {
-    CancelClaimActionData,
-    LogClaimActionData,
+    ClaimUnboxedActionData,
     LogResultActionData,
 } from '../types/actions';
 
+/**
+ * Pack-claim lifecycle on WAX mainnet:
+ *
+ *   1. User calls `claimunboxed(pack_asset_id, origin_roll_ids)`. The
+ *      contract burns the pack NFT and transitions to a CLAIMED state.
+ *      WAX has NO `claim_id` chain field — `pack_asset_id` IS the unique
+ *      claim identifier (each pack opening burns exactly one specific
+ *      NFT). The opener account comes from the action's authorization,
+ *      not action data.
+ *
+ *   2. Server later fires `logresult(pack_asset_id, pack_id, template_ids)`
+ *      revealing which templates the user got. We populate `pack_id` here
+ *      (we didn't know it from claimunboxed alone since the pack was
+ *      identified by asset, not pack_id).
+ *
+ * The schema's `claim_id bigint` column is populated from `pack_asset_id`
+ * (1:1 mapping). Template IDs land in the new `template_id` column on
+ * `atomicpacksx_claim_assets` (added in 1.5.1 migration). Actual minted
+ * asset_ids come from a separate atomicassets `logmint` notify chain
+ * (not handled in 1.5.1; future work will fill the existing `asset_id`
+ * column then).
+ *
+ * No `cancelclaim` listener — the action does not exist on WAX.
+ */
 export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
     const contract = core.args.atomicpacksx_account;
 
-    // logclaim emits when a user opens a pack. The pack NFT is burned by
-    // the contract; the result NFTs are minted later via logresult.
     destructors.push(processor.onActionTrace(
-        contract, 'logclaim',
-        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogClaimActionData>): Promise<void> => {
+        contract, 'claimunboxed',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<ClaimUnboxedActionData>): Promise<void> => {
             const ts = eosioTimestampToDate(block.timestamp).getTime();
-            // use_count for the parent pack is derived from this table in
-            // atomicpacksx_packs_master, so no in-handler counter update is
-            // needed here — replays and reorgs stay correct automatically.
+            const opener = trace.act.authorization?.[0]?.actor ?? '';
             await db.insert('atomicpacksx_claims', {
                 contract,
-                claim_id: trace.act.data.claim_id,
-                pack_id: trace.act.data.pack_id,
-                opener: trace.act.data.opener,
+                claim_id: trace.act.data.pack_asset_id,   // 1:1 mapping
+                pack_id: null,                            // populated by logresult
+                opener,
                 pack_asset_id: trace.act.data.pack_asset_id,
                 state: ClaimState.CLAIMED.valueOf(),
                 txid: Buffer.from(tx.id, 'hex'),
@@ -39,48 +58,37 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
         }, AtomicPacksUpdatePriority.ACTION_CREATE_CLAIM.valueOf(),
     ));
 
-    // logresult emits when the server reveals the NFTs for a claim.
     destructors.push(processor.onActionTrace(
         contract, 'logresult',
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<LogResultActionData>): Promise<void> => {
             const ts = eosioTimestampToDate(block.timestamp).getTime();
             await db.update('atomicpacksx_claims', {
                 state: ClaimState.RESOLVED.valueOf(),
+                pack_id: trace.act.data.pack_id,         // first known here
                 resolved_at_block: block.block_num,
                 resolved_at_time: ts,
             }, {
-                str: 'contract = $1 AND claim_id = $2',
-                values: [contract, trace.act.data.claim_id],
-            }, ['contract', 'claim_id']);
+                str: 'contract = $1 AND pack_asset_id = $2',
+                values: [contract, trace.act.data.pack_asset_id],
+            }, ['contract', 'pack_asset_id']);
 
-            if (Array.isArray(trace.act.data.asset_ids) && trace.act.data.asset_ids.length > 0) {
-                // 1-based index to match atomicassets_transfers_assets and the
-                // atomicmarket_*_assets tables — keeps downstream consumers
-                // and ORDER BY queries consistent with the rest of the schema.
-                await db.insert('atomicpacksx_claim_assets', trace.act.data.asset_ids.map((assetId, index) => ({
+            if (Array.isArray(trace.act.data.template_ids) && trace.act.data.template_ids.length > 0) {
+                // Template IDs land in `template_id` (new in 1.5.1).
+                // `asset_id` stays NULL until atomicassets `logmint` notify
+                // backfills the actual minted asset_ids per opening.
+                // 1-based index matches the rest of the schema
+                // (atomicassets_transfers_assets, atomicmarket_*_assets).
+                //
+                // claim_id is pack_asset_id (1:1 mapping established at
+                // claimunboxed time).
+                await db.insert('atomicpacksx_claim_assets', trace.act.data.template_ids.map((templateId, index) => ({
                     contract,
-                    claim_id: trace.act.data.claim_id,
+                    claim_id: trace.act.data.pack_asset_id,
                     index: index + 1,
-                    asset_id: assetId,
+                    asset_id: null,
+                    template_id: templateId,
                 })), ['contract', 'claim_id', 'index'], true, true, 'update');
             }
-        }, AtomicPacksUpdatePriority.ACTION_UPDATE_CLAIM.valueOf(),
-    ));
-
-    // Optional cancel — for chains where the contract publishes a cancel
-    // action. Some atomicpacksx variants don't emit one; the listener is
-    // harmless when the action never fires.
-    destructors.push(processor.onActionTrace(
-        contract, 'cancelclaim',
-        async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<CancelClaimActionData>): Promise<void> => {
-            await db.update('atomicpacksx_claims', {
-                state: ClaimState.CANCELLED.valueOf(),
-                resolved_at_block: block.block_num,
-                resolved_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND claim_id = $2',
-                values: [contract, trace.act.data.claim_id],
-            }, ['contract', 'claim_id']);
         }, AtomicPacksUpdatePriority.ACTION_UPDATE_CLAIM.valueOf(),
     ));
 

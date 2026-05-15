@@ -15,9 +15,15 @@ SELECT
     pk.collection_name,
     pk.pack_template_id,
     pk.display_data AS pack_display_data,
+    -- result_assets carries both `template_id` (set by logresult — the
+    -- template each minted NFT will be from) and `asset_id` (set later
+    -- by atomicassets logmint notify — the actual minted asset_id).
+    -- Consumers can pick whichever is relevant: pre-mint embeds use
+    -- template_id, post-mint links use asset_id. Both null until the
+    -- corresponding chain action fires.
     (SELECT json_agg(asset ORDER BY asset.index)
        FROM (
-         SELECT a.asset_id, a."index"
+         SELECT a.asset_id, a.template_id, a."index"
          FROM atomicpacksx_claim_assets a
          WHERE a.contract = cl.contract
            AND a.claim_id = cl.claim_id

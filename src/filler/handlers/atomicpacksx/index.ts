@@ -67,8 +67,16 @@ export default class AtomicPacksHandler extends ContractHandler {
         return false;
     }
 
-    static async upgrade(_client: PoolClient, _version: string): Promise<void> {
-        return;
+    static async upgrade(client: PoolClient, version: string): Promise<void> {
+        if (version === '1.5.1') {
+            // Re-run the view DDL — the column list changed (template_id
+            // added to result_assets json_agg). CREATE OR REPLACE works
+            // because no column types changed in the SELECT signature.
+            await client.query(
+                fs.readFileSync('./definitions/views/atomicpacksx_claims_master.sql', { encoding: 'utf8' }),
+            );
+            logger.info('AtomicPacks 1.5.1 master view refreshed');
+        }
     }
 
     constructor(filler: Filler, args: { [key: string]: any }) {
