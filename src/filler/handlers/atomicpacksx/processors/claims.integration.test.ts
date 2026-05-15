@@ -17,9 +17,8 @@ import { ContractDBTransaction } from '../../../database';
 import { claimsProcessor } from './claims';
 import { ClaimState } from '../index';
 import {
-    LogClaimActionData,
+    ClaimUnboxedActionData,
     LogResultActionData,
-    CancelClaimActionData,
 } from '../types/actions';
 
 const PACKS_CONTRACT = 'atomicpacksx';
@@ -56,7 +55,7 @@ async function seedPack(client: Client, packId: string): Promise<void> {
     );
 }
 
-describe('atomicpacksx claimsProcessor', () => {
+describe('atomicpacksx claimsProcessor (WAX ABI: claimunboxed + logresult)', () => {
     let client: Client;
     let processor: DataProcessor;
     let db: ContractDBTransaction;
@@ -84,107 +83,105 @@ describe('atomicpacksx claimsProcessor', () => {
         await client.query('ROLLBACK');
     });
 
-    it('logclaim inserts a claim row in CLAIMED state with the tx id', async () => {
-        await seedPack(client, '7001');
-
-        const block = createBlock({ timestamp: '2026-05-14T00:00:00.000' });
+    it('claimunboxed inserts a CLAIMED row with claim_id = pack_asset_id and opener from authorization', async () => {
+        const block = createBlock({ timestamp: '2026-05-15T00:00:00.000' });
         const tx = createTx();
-        const data: LogClaimActionData = {
-            claim_id: '900001',
-            pack_id: '7001',
-            opener: 'opener111111',
+        const data: ClaimUnboxedActionData = {
             pack_asset_id: '1099999000001',
+            origin_roll_ids: ['0'],
         };
-        const trace = createActionTrace(PACKS_CONTRACT, 'logclaim', data);
+        const trace = createActionTrace(PACKS_CONTRACT, 'claimunboxed', data, {
+            act: {
+                account: PACKS_CONTRACT,
+                name: 'claimunboxed',
+                authorization: [{ actor: 'opener111111', permission: 'active' }],
+                data,
+            },
+        });
 
         await processActionTrace(processor, db, block, tx, trace);
 
         const res = await client.query(
-            'SELECT * FROM atomicpacksx_claims WHERE contract = $1 AND claim_id = $2',
-            [PACKS_CONTRACT, '900001'],
+            'SELECT * FROM atomicpacksx_claims WHERE contract = $1 AND pack_asset_id = $2',
+            [PACKS_CONTRACT, '1099999000001'],
         );
         expect(res.rowCount).to.equal(1);
         const row = res.rows[0];
-        expect(row.pack_id).to.equal('7001');
-        expect(row.opener).to.equal('opener111111');
+        expect(row.claim_id).to.equal('1099999000001');     // 1:1 with pack_asset_id
+        expect(row.opener).to.equal('opener111111');         // from authorization
+        expect(row.pack_id).to.be.null;                      // populated by logresult
         expect(row.state).to.equal(ClaimState.CLAIMED.valueOf());
         expect(row.txid).to.deep.equal(Buffer.from(tx.id, 'hex'));
-        expect(Number(row.claimed_at_block)).to.equal(block.block_num);
         expect(row.resolved_at_block).to.be.null;
     });
 
-    it('logresult transitions to RESOLVED and inserts 1-based claim_assets rows', async () => {
+    it('logresult transitions to RESOLVED + sets pack_id + writes template_ids into claim_assets', async () => {
         await seedPack(client, '7002');
 
-        // First seed a claim via logclaim, then resolve it.
-        const block1 = createBlock({ timestamp: '2026-05-14T00:00:00.000' });
-        const tx1 = createTx();
-        await processActionTrace(processor, db, block1, tx1, createActionTrace<LogClaimActionData>(
-            PACKS_CONTRACT, 'logclaim',
-            { claim_id: '900002', pack_id: '7002', opener: 'opener222222', pack_asset_id: '1099999000002' },
-        ));
+        // 1. claimunboxed inserts the claim
+        const block1 = createBlock();
+        const data1: ClaimUnboxedActionData = { pack_asset_id: '1099999000002', origin_roll_ids: ['0'] };
+        await processActionTrace(processor, db, block1, createTx(), createActionTrace(PACKS_CONTRACT, 'claimunboxed', data1, {
+            act: { account: PACKS_CONTRACT, name: 'claimunboxed', authorization: [{ actor: 'opener222222', permission: 'active' }], data: data1 },
+        }));
 
-        const block2 = createBlock({ timestamp: '2026-05-14T00:01:00.000', block_num: block1.block_num + 1 });
-        const tx2 = createTx();
-        const result: LogResultActionData = { claim_id: '900002', asset_ids: ['2001', '2002', '2003'] };
-        await processActionTrace(processor, db, block2, tx2, createActionTrace(PACKS_CONTRACT, 'logresult', result));
+        // 2. logresult resolves it
+        const block2 = createBlock({ block_num: block1.block_num + 1 });
+        const data2: LogResultActionData = {
+            pack_asset_id: '1099999000002',
+            pack_id: '7002',
+            template_ids: ['501', '502', '503'],
+        };
+        await processActionTrace(processor, db, block2, createTx(), createActionTrace(PACKS_CONTRACT, 'logresult', data2));
 
         const claim = await client.query(
-            'SELECT state, resolved_at_block FROM atomicpacksx_claims WHERE contract = $1 AND claim_id = $2',
-            [PACKS_CONTRACT, '900002'],
+            'SELECT state, pack_id, resolved_at_block FROM atomicpacksx_claims WHERE contract = $1 AND pack_asset_id = $2',
+            [PACKS_CONTRACT, '1099999000002'],
         );
         expect(claim.rows[0].state).to.equal(ClaimState.RESOLVED.valueOf());
+        expect(claim.rows[0].pack_id).to.equal('7002');
         expect(Number(claim.rows[0].resolved_at_block)).to.equal(block2.block_num);
 
         const assets = await client.query(
-            'SELECT "index", asset_id FROM atomicpacksx_claim_assets ' +
+            'SELECT "index", template_id, asset_id FROM atomicpacksx_claim_assets ' +
             'WHERE contract = $1 AND claim_id = $2 ORDER BY "index"',
-            [PACKS_CONTRACT, '900002'],
+            [PACKS_CONTRACT, '1099999000002'],
         );
         expect(assets.rowCount).to.equal(3);
-        // 1-based indices match the rest of the schema.
         expect(assets.rows.map((r: any) => r.index)).to.deep.equal([1, 2, 3]);
-        expect(assets.rows.map((r: any) => r.asset_id)).to.deep.equal(['2001', '2002', '2003']);
+        expect(assets.rows.map((r: any) => r.template_id)).to.deep.equal(['501', '502', '503']);
+        // asset_id stays NULL until atomicassets logmint backfills it
+        expect(assets.rows.every((r: any) => r.asset_id === null)).to.equal(true);
     });
 
-    it('cancelclaim transitions the claim to CANCELLED', async () => {
+    it('atomicpacksx_packs_master.use_count is derived from claims (counts CLAIMED + RESOLVED)', async () => {
         await seedPack(client, '7003');
 
-        const block1 = createBlock();
-        const tx1 = createTx();
-        await processActionTrace(processor, db, block1, tx1, createActionTrace<LogClaimActionData>(
-            PACKS_CONTRACT, 'logclaim',
-            { claim_id: '900003', pack_id: '7003', opener: 'opener333333', pack_asset_id: '1099999000003' },
+        // Two claimunboxed actions for the same pack — but we don't know
+        // pack_id at claimunboxed time. logresult fills it.
+        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimUnboxedActionData>(
+            PACKS_CONTRACT, 'claimunboxed',
+            { pack_asset_id: '1099999000003', origin_roll_ids: ['0'] },
+            { act: { account: PACKS_CONTRACT, name: 'claimunboxed', authorization: [{ actor: 'opener333333', permission: 'active' }], data: { pack_asset_id: '1099999000003', origin_roll_ids: ['0'] } } },
+        ));
+        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<LogResultActionData>(
+            PACKS_CONTRACT, 'logresult',
+            { pack_asset_id: '1099999000003', pack_id: '7003', template_ids: ['501'] },
         ));
 
-        const block2 = createBlock({ block_num: block1.block_num + 1 });
-        await processActionTrace(processor, db, block2, createTx(), createActionTrace<CancelClaimActionData>(
-            PACKS_CONTRACT, 'cancelclaim', { claim_id: '900003' },
+        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimUnboxedActionData>(
+            PACKS_CONTRACT, 'claimunboxed',
+            { pack_asset_id: '1099999000004', origin_roll_ids: ['0'] },
+            { act: { account: PACKS_CONTRACT, name: 'claimunboxed', authorization: [{ actor: 'opener444444', permission: 'active' }], data: { pack_asset_id: '1099999000004', origin_roll_ids: ['0'] } } },
         ));
-
-        const res = await client.query(
-            'SELECT state FROM atomicpacksx_claims WHERE contract = $1 AND claim_id = $2',
-            [PACKS_CONTRACT, '900003'],
-        );
-        expect(res.rows[0].state).to.equal(ClaimState.CANCELLED.valueOf());
-    });
-
-    it('atomicpacksx_packs_master.use_count is derived from claims', async () => {
-        await seedPack(client, '7004');
-
-        // Two claims, one resolved.
-        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<LogClaimActionData>(
-            PACKS_CONTRACT, 'logclaim',
-            { claim_id: '900004', pack_id: '7004', opener: 'opener444444', pack_asset_id: '4001' },
-        ));
-        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<LogClaimActionData>(
-            PACKS_CONTRACT, 'logclaim',
-            { claim_id: '900005', pack_id: '7004', opener: 'opener555555', pack_asset_id: '4002' },
+        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<LogResultActionData>(
+            PACKS_CONTRACT, 'logresult',
+            { pack_asset_id: '1099999000004', pack_id: '7003', template_ids: ['502'] },
         ));
 
         const res = await client.query(
             'SELECT use_count FROM atomicpacksx_packs_master WHERE contract = $1 AND pack_id = $2',
-            [PACKS_CONTRACT, '7004'],
+            [PACKS_CONTRACT, '7003'],
         );
         expect(Number(res.rows[0].use_count)).to.equal(2);
     });

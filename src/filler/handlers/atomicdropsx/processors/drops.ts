@@ -10,7 +10,7 @@ import {
     SetDropDataActionData,
     SetDropPriceActionData,
     SetDropLimitActionData,
-    SetDropTimeActionData,
+    SetDropTimesActionData,
     EraseDropActionData,
 } from '../types/actions';
 
@@ -103,16 +103,21 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
         }, AtomicDropsUpdatePriority.ACTION_UPDATE_DROP.valueOf(),
     ));
 
+    /**
+     * `setdroptimes` (PLURAL) on WAX. Both `start_time` and `end_time` are
+     * required by the contract (no partial updates), so the processor
+     * sets both unconditionally — the upstream's "preserve unspecified"
+     * branching doesn't apply to WAX.
+     */
     destructors.push(processor.onActionTrace(
-        contract, 'setdroptime',
-        async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<SetDropTimeActionData>): Promise<void> => {
-            const update: Record<string, any> = {
+        contract, 'setdroptimes',
+        async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<SetDropTimesActionData>): Promise<void> => {
+            await db.update('atomicdropsx_drops', {
+                start_time: trace.act.data.start_time,
+                end_time: trace.act.data.end_time,
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            };
-            if (trace.act.data.start_time !== undefined) update.start_time = trace.act.data.start_time;
-            if (trace.act.data.end_time !== undefined) update.end_time = trace.act.data.end_time;
-            await db.update('atomicdropsx_drops', update, {
+            }, {
                 str: 'contract = $1 AND drop_id = $2',
                 values: [contract, trace.act.data.drop_id],
             }, ['contract', 'drop_id']);

@@ -17,7 +17,9 @@ import { ContractDBTransaction } from '../../../database';
 import { claimsProcessor } from './claims';
 import {
     ClaimDropActionData,
-    ClaimWhitelistActionData,
+    ClaimDropKeyActionData,
+    ClaimDropWlActionData,
+    TriggerDropActionData,
 } from '../types/actions';
 
 const DROPS_CONTRACT = 'atomicdropsx';
@@ -58,7 +60,7 @@ async function seedDrop(client: Client, dropId: string, listingPrice = '50000000
     );
 }
 
-describe('atomicdropsx claimsProcessor', () => {
+describe('atomicdropsx claimsProcessor (WAX ABI)', () => {
     let client: Client;
     let processor: DataProcessor;
     let db: ContractDBTransaction;
@@ -86,21 +88,20 @@ describe('atomicdropsx claimsProcessor', () => {
         await client.query('ROLLBACK');
     });
 
-    it('claimdrop inserts a paid claim with total_price = listing_price × amount', async () => {
+    it('claimdrop inserts a paid claim with total_price = listing_price × claim_amount (WAX field name)', async () => {
         // 5.00000000 WAX listing × 3 claims = 15.00000000 WAX → 1500000000 raw.
         await seedDrop(client, '8001', '500000000');
 
-        const block = createBlock();
-        const tx = createTx();
         const data: ClaimDropActionData = {
             claimer: 'claimer11111',
             drop_id: '8001',
-            amount: 3,
+            claim_amount: 3,
         };
-        await processActionTrace(processor, db, block, tx, createActionTrace(DROPS_CONTRACT, 'claimdrop', data));
+        await processActionTrace(processor, db, createBlock(), createTx(),
+            createActionTrace(DROPS_CONTRACT, 'claimdrop', data));
 
         const res = await client.query(
-            'SELECT claim_id, claimer, amount, total_price, price_symbol, is_whitelist ' +
+            'SELECT claimer, amount, total_price, price_symbol, is_whitelist ' +
             'FROM atomicdropsx_claims WHERE contract = $1',
             [DROPS_CONTRACT],
         );
@@ -113,16 +114,16 @@ describe('atomicdropsx claimsProcessor', () => {
         expect(row.is_whitelist).to.equal(false);
     });
 
-    it('claimwlnft records a whitelist claim (is_whitelist=true)', async () => {
+    it('claimdropwl records a whitelist claim (is_whitelist=true) on WAX', async () => {
         await seedDrop(client, '8002');
 
-        const data: ClaimWhitelistActionData = {
+        const data: ClaimDropWlActionData = {
             claimer: 'claimer22222',
             drop_id: '8002',
-            amount: 1,
+            claim_amount: 1,
         };
         await processActionTrace(processor, db, createBlock(), createTx(),
-            createActionTrace(DROPS_CONTRACT, 'claimwlnft', data));
+            createActionTrace(DROPS_CONTRACT, 'claimdropwl', data));
 
         const res = await client.query(
             'SELECT is_whitelist FROM atomicdropsx_claims WHERE contract = $1 AND drop_id = $2',
@@ -132,38 +133,67 @@ describe('atomicdropsx claimsProcessor', () => {
         expect(res.rows[0].is_whitelist).to.equal(true);
     });
 
-    it('atomicdropsx_drops_master.current_claimed is computed from SUM(amount) over claims', async () => {
+    it('claimdropkey (key-auth whitelist) records is_whitelist=true', async () => {
         await seedDrop(client, '8003');
 
-        // Two claims totaling 5.
+        const data: ClaimDropKeyActionData = {
+            claimer: 'claimer33333',
+            drop_id: '8003',
+            claim_amount: 2,
+        };
+        await processActionTrace(processor, db, createBlock(), createTx(),
+            createActionTrace(DROPS_CONTRACT, 'claimdropkey', data));
+
+        const res = await client.query(
+            'SELECT amount, is_whitelist FROM atomicdropsx_claims WHERE contract = $1 AND drop_id = $2',
+            [DROPS_CONTRACT, '8003'],
+        );
+        expect(res.rowCount).to.equal(1);
+        expect(Number(res.rows[0].amount)).to.equal(2);
+        expect(res.rows[0].is_whitelist).to.equal(true);
+    });
+
+    it('triggerdrop (admin-mediated) records claim with recipient as claimer + amount field (not claim_amount)', async () => {
+        await seedDrop(client, '8004', '1000000');
+
+        const data: TriggerDropActionData = {
+            authorized_account: 'service11111',
+            drop_id: '8004',
+            recipient: 'enduser11111',
+            amount: 5,
+            trigger_provider: 'cardpayments',
+            trigger_identifier: 'tx_abc123',
+        };
+        await processActionTrace(processor, db, createBlock(), createTx(),
+            createActionTrace(DROPS_CONTRACT, 'triggerdrop', data));
+
+        const res = await client.query(
+            'SELECT claimer, amount, total_price, is_whitelist ' +
+            'FROM atomicdropsx_claims WHERE contract = $1 AND drop_id = $2',
+            [DROPS_CONTRACT, '8004'],
+        );
+        expect(res.rowCount).to.equal(1);
+        expect(res.rows[0].claimer).to.equal('enduser11111');  // recipient → claimer
+        expect(Number(res.rows[0].amount)).to.equal(5);
+        expect(res.rows[0].total_price).to.equal('5000000');    // 1000000 × 5
+        expect(res.rows[0].is_whitelist).to.equal(false);       // not a whitelist claim
+    });
+
+    it('atomicdropsx_drops_master.current_claimed is computed from SUM(amount) over claims', async () => {
+        await seedDrop(client, '8005');
+
+        // Mix of claim types — all count toward current_claimed.
         await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimDropActionData>(
-            DROPS_CONTRACT, 'claimdrop', { claimer: 'a111', drop_id: '8003', amount: 2 },
+            DROPS_CONTRACT, 'claimdrop', { claimer: 'a111', drop_id: '8005', claim_amount: 2 },
         ));
-        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimDropActionData>(
-            DROPS_CONTRACT, 'claimdrop', { claimer: 'b222', drop_id: '8003', amount: 3 },
+        await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimDropWlActionData>(
+            DROPS_CONTRACT, 'claimdropwl', { claimer: 'b222', drop_id: '8005', claim_amount: 3 },
         ));
 
         const res = await client.query(
             'SELECT current_claimed FROM atomicdropsx_drops_master WHERE contract = $1 AND drop_id = $2',
-            [DROPS_CONTRACT, '8003'],
+            [DROPS_CONTRACT, '8005'],
         );
         expect(Number(res.rows[0].current_claimed)).to.equal(5);
-    });
-
-    it('legacy claimwhitelis variant is recognized for older contract deployments', async () => {
-        await seedDrop(client, '8004');
-
-        await processActionTrace(processor, db, createBlock(), createTx(),
-            createActionTrace<ClaimWhitelistActionData>(
-                DROPS_CONTRACT, 'claimwhitelis',
-                { claimer: 'legacy11111', drop_id: '8004', amount: 1 },
-            ));
-
-        const res = await client.query(
-            'SELECT is_whitelist FROM atomicdropsx_claims WHERE contract = $1 AND drop_id = $2',
-            [DROPS_CONTRACT, '8004'],
-        );
-        expect(res.rowCount).to.equal(1);
-        expect(res.rows[0].is_whitelist).to.equal(true);
     });
 });

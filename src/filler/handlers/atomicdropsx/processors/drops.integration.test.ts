@@ -20,7 +20,7 @@ import {
     SetDropDataActionData,
     SetDropPriceActionData,
     SetDropLimitActionData,
-    SetDropTimeActionData,
+    SetDropTimesActionData,
     EraseDropActionData,
 } from '../types/actions';
 
@@ -233,7 +233,7 @@ describe('atomicdropsx dropsProcessor', () => {
         expect(Number(res.rows[0].max_claimable)).to.equal(1000);
     });
 
-    it('setdroptime with only start_time set leaves end_time untouched', async () => {
+    it('setdroptimes (WAX, plural) updates both start_time and end_time atomically', async () => {
         const block1 = createBlock();
         await processActionTrace(processor, db, block1, createTx(), createActionTrace(
             DROPS_CONTRACT, 'lognewdrop',
@@ -241,9 +241,14 @@ describe('atomicdropsx dropsProcessor', () => {
         ));
 
         const block2 = createBlock({ block_num: block1.block_num + 1 });
-        const data: SetDropTimeActionData = { drop_id: '9007', start_time: 2000 };
+        const data: SetDropTimesActionData = {
+            authorized_account: 'creator11111',
+            drop_id: '9007',
+            start_time: 2000,
+            end_time: 8000,
+        };
         await processActionTrace(processor, db, block2, createTx(), createActionTrace(
-            DROPS_CONTRACT, 'setdroptime', data,
+            DROPS_CONTRACT, 'setdroptimes', data,
         ));
 
         const res = await client.query(
@@ -252,33 +257,9 @@ describe('atomicdropsx dropsProcessor', () => {
             [DROPS_CONTRACT, '9007'],
         );
         expect(res.rowCount).to.equal(1);
+        // WAX requires both fields in setdroptimes — both update unconditionally.
         expect(Number(res.rows[0].start_time)).to.equal(2000);
-        // end_time NOT in the action payload → must stay 5000.
-        expect(Number(res.rows[0].end_time)).to.equal(5000);
-    });
-
-    it('setdroptime with only end_time set leaves start_time untouched', async () => {
-        const block1 = createBlock();
-        await processActionTrace(processor, db, block1, createTx(), createActionTrace(
-            DROPS_CONTRACT, 'lognewdrop',
-            buildLogNewDrop({ drop_id: '9008', start_time: 1000, end_time: 5000 }),
-        ));
-
-        const block2 = createBlock({ block_num: block1.block_num + 1 });
-        const data: SetDropTimeActionData = { drop_id: '9008', end_time: 9000 };
-        await processActionTrace(processor, db, block2, createTx(), createActionTrace(
-            DROPS_CONTRACT, 'setdroptime', data,
-        ));
-
-        const res = await client.query(
-            'SELECT start_time, end_time FROM atomicdropsx_drops ' +
-            'WHERE contract = $1 AND drop_id = $2',
-            [DROPS_CONTRACT, '9008'],
-        );
-        expect(res.rowCount).to.equal(1);
-        // start_time NOT in the action payload → must stay 1000.
-        expect(Number(res.rows[0].start_time)).to.equal(1000);
-        expect(Number(res.rows[0].end_time)).to.equal(9000);
+        expect(Number(res.rows[0].end_time)).to.equal(8000);
     });
 
     it('erasedrop sets is_deleted=true', async () => {
