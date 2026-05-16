@@ -1,0 +1,19 @@
+-- atomicpacksx 1.6.0 — handler architectural rewrite.
+--
+-- The 1.5.x handlers treated `claimunboxed` as the pack-open event, but on
+-- the on-chain contract (atomichub/contracts/atomicpacks-contract/src/
+-- unboxing.cpp) `claimunboxed` is the user's TERMINAL pickup action, not
+-- the open. The real pack-open event is the `unboxpacks` table row INSERT
+-- triggered by `receive_asset_transfer` (notify on atomicassets::transfer
+-- with memo="unbox"). 1.6.0 drives off `onContractRow(unboxpacks)` and
+-- adds a PICKED_UP=3 state for the claimunboxed terminal transition.
+--
+-- Schema impact: NONE. The state column is `smallint NOT NULL DEFAULT 0`
+-- with no enum constraint, so writing the new value 3 is just data. The
+-- existing FK + index set from 1.5.1 already supports the new write paths
+-- (logresult UPDATE WHERE pack_asset_id, defensive INSERT for orphans).
+--
+-- This migration file is therefore a no-op. It exists for symmetry with
+-- the cross-handler database.sql + so future ALTERs land in a versioned
+-- file rather than mutating the base tables/atomicpacksx_tables.sql.
+SELECT 1;

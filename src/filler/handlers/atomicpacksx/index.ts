@@ -21,19 +21,32 @@ export type AtomicPacksArgs = {
 
 export enum AtomicPacksUpdatePriority {
     TABLE_CONFIG = ATOMICPACKS_BASE_PRIORITY + 10,
-    ACTION_CREATE_PACK = ATOMICPACKS_BASE_PRIORITY + 20,
-    ACTION_UPDATE_PACK = ATOMICPACKS_BASE_PRIORITY + 30,
+    // Row-delta handlers run BEFORE the action handlers below so parent
+    // rows always exist before action-driven UPSERTs reference them.
+    // (FKs are DEFERRABLE so this is belt-and-suspenders, but it also
+    // ensures view aggregations on COMMIT see consistent counts.)
+    TABLE_PACKS = ATOMICPACKS_BASE_PRIORITY + 11,
+    TABLE_UNBOXPACKS = ATOMICPACKS_BASE_PRIORITY + 13,
     ACTION_CREATE_ROLL = ATOMICPACKS_BASE_PRIORITY + 20,
     ACTION_UPDATE_ROLL = ATOMICPACKS_BASE_PRIORITY + 30,
-    ACTION_CREATE_CLAIM = ATOMICPACKS_BASE_PRIORITY + 40,
-    ACTION_UPDATE_CLAIM = ATOMICPACKS_BASE_PRIORITY + 50,
+    // Resolution + pickup actions trail the row deltas.
+    ACTION_RESOLVE_CLAIM = ATOMICPACKS_BASE_PRIORITY + 40,
+    ACTION_PICKUP_CLAIM = ATOMICPACKS_BASE_PRIORITY + 50,
     LOGS = ATOMICPACKS_BASE_PRIORITY,
 }
 
 export enum ClaimState {
+    // CLAIMED: pack opened (unboxpacks row exists), awaiting RNG resolution.
     CLAIMED = 0,
+    // RESOLVED: logresult fired; template_ids known, NFTs awaiting pickup.
     RESOLVED = 1,
+    // CANCELLED: no on-chain equivalent on WAX; reserved for chain variants
+    // that emit a cancelclaim action (none currently).
     CANCELLED = 2,
+    // PICKED_UP: claimunboxed fired; user has the NFTs (atomicassets mintasset).
+    // Note: claimunboxed may fire multiple times if the user picks up rolls
+    // incrementally — state stays PICKED_UP from the first call onward.
+    PICKED_UP = 3,
 }
 
 export default class AtomicPacksHandler extends ContractHandler {
