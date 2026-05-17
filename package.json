@@ -93,7 +93,7 @@
         "c8": "^11.0.0",
         "chai": "^6.2.2",
         "chai-as-promised": "^8.0.2",
-        "eslint": "^10.3.0",
+        "eslint": "^10.4.0",
         "eslint-config-prettier": "^10.1.8",
         "globals": "^17.6.0",
         "mocha": "^11.7.5",
