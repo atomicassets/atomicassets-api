@@ -5,6 +5,36 @@ import { buildAssetFilter, buildGreylistFilter, buildHideOffersFilter } from '..
 import { formatCollection } from '../format';
 import { filterQueryArgs } from '../../validation';
 
+/**
+ * Detects whether any of the user-supplied params on /v1/burns reference
+ * atomicassets_templates columns (data/template_data jsonb filters, the
+ * `match`/`search` name filters, etc). When false, the handler can skip
+ * the LEFT JOIN to atomicassets_templates entirely, which is the unblocker
+ * for the planner to use the `atomicassets_assets_contract_burned_partial`
+ * index added in migration 1.6.1.
+ *
+ * Without this gate, the LEFT JOIN forces a Parallel Seq Scan on the
+ * ~80 GB atomicassets_assets table even when no template-side condition
+ * is requested (the planner won't prove the join is no-op'able with a
+ * partial-index alternative).
+ */
+function burnsQueryNeedsTemplateJoin(params: RequestValues): boolean {
+    for (const key of Object.keys(params)) {
+        if (
+            key === 'match' ||
+            key === 'search' ||
+            key.startsWith('data:text.') ||
+            key.startsWith('data:number.') ||
+            key.startsWith('data:bool.') ||
+            key.startsWith('data.') ||
+            key.startsWith('template_data.')
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export async function getBurnsAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.burns || 5000;
     const args = await filterQueryArgs(params, {
@@ -14,9 +44,13 @@ export async function getBurnsAction(params: RequestValues, ctx: AtomicAssetsCon
         match_owner: {type: 'name'},
     });
 
+    const needsTemplateJoin = burnsQueryNeedsTemplateJoin(params);
+
     const query = new QueryBuilder(
-        'SELECT burned_by_account account, COUNT(*) as assets FROM atomicassets_assets asset ' +
-        'LEFT JOIN atomicassets_templates template ON (asset.contract = template.contract AND asset.template_id = template.template_id)'
+        needsTemplateJoin
+            ? 'SELECT burned_by_account account, COUNT(*) as assets FROM atomicassets_assets asset ' +
+              'LEFT JOIN atomicassets_templates template ON (asset.contract = template.contract AND asset.template_id = template.template_id)'
+            : 'SELECT burned_by_account account, COUNT(*) as assets FROM atomicassets_assets asset'
     );
 
     query.equal('asset.contract', ctx.coreArgs.atomicassets_account).notNull('asset.burned_by_account');
@@ -25,7 +59,11 @@ export async function getBurnsAction(params: RequestValues, ctx: AtomicAssetsCon
         query.addCondition('POSITION(' + query.addVariable(args.match_owner.toLowerCase()) + ' IN asset.burned_by_account) > 0');
     }
 
-    await buildAssetFilter(params, query,  {assetTable: 'asset', templateTable: 'template', allowDataFilter: true});
+    await buildAssetFilter(params, query, {
+        assetTable: 'asset',
+        templateTable: needsTemplateJoin ? 'template' : undefined,
+        allowDataFilter: true,
+    });
     await buildGreylistFilter(params, query, {collectionName: 'asset.collection_name'});
 
     await buildHideOffersFilter(params, query, 'asset');
