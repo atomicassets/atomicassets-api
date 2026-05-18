@@ -81,18 +81,115 @@ CREATE INDEX IF NOT EXISTS atomicassets_assets_contract_owner_partial
     WHERE owner IS NOT NULL;
 
 -- ====================================================================
--- IMPORTANT — existing-cluster operator note (applies to both indexes)
+-- Index 3 — atomicmarket /v1/sales template_mint-sorted queries
+-- ====================================================================
+--
+-- Lives in the atomicassets-api repo because this repo's migration
+-- pipeline (src/filler/upgrade-db.ts) is the single entry point for
+-- DDL on the shared atomic* schema; atomicmarket-api uses the same
+-- pipeline and runs after atomicassets is up.
+--
+-- The marketplace listing query at e.g.
+--   https://wax.atomichub.io/market?blockchain=wax-mainnet&order=asc&sort=template_mint&symbol=WAX
+-- (handler: src/api/namespaces/atomicmarket/handlers/sales.ts via
+-- the LISTED filter table partition) runs roughly:
+--
+--   SELECT listing.sale_id
+--   FROM atomicmarket_sales_filters_listed listing
+--   WHERE listing.market_contract = $1
+--     AND listing.settlement_symbol = $2
+--     -- (sale_state = 1 is implicit in the LISTED partition)
+--   ORDER BY lower(listing.template_mint) ASC NULLS LAST, listing.sale_id
+--   LIMIT 1000
+--
+-- The existing `atomicmarket_sales_filters_listed_lower_idx` is a
+-- single-column expression index on `lower(template_mint)` (49 MB on
+-- the FACINGS WAX-mainnet partition, ~1.73M rows). It works when no
+-- column filters are added (planner picks Index Scan + Incremental
+-- Sort, cost ~236 for LIMIT 1000) but cannot pre-filter by
+-- (market_contract, settlement_symbol). When the query adds those
+-- filters — which the marketplace UI always does — using the index
+-- requires a heap fetch per entry to evaluate the filter, and the
+-- planner switches to Parallel Seq Scan + full Sort over the
+-- partition (cost 314,329 on WAX-mainnet, ~30 sec wall time).
+--
+-- The app-side timeout for atomichub-blockchain-api is 20 sec, so
+-- the user-facing symptom is HTTP 408 with body
+-- `{"success":false,"message":"Max database query time exceeded.
+-- Please try to add more filters to your query."}`.
+--
+-- A partial composite leading with the filter columns then the sort
+-- expression lets the planner satisfy both the WHERE prefix and the
+-- ORDER BY via a single index range scan, with the sale_id tiebreaker
+-- included to keep the sort 1:1 with the existing `lower_idx`
+-- behavior.
+--
+-- This index is a superset of `atomicmarket_sales_filters_listed_lower_idx`
+-- for any query that also filters on (market_contract, settlement_symbol),
+-- which is the only shape the marketplace UI uses. Operators may drop
+-- the old single-column lower_idx after deploying this one, but the
+-- migration leaves it in place because some external integrations may
+-- still query the partition without those filters.
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_filters_listed_mkt_settle_mint_partial
+    ON atomicmarket_sales_filters_listed (market_contract, settlement_symbol, lower(template_mint), sale_id)
+    WHERE lower(template_mint) IS NOT NULL;
+
+-- ====================================================================
+-- Index 4 — covering partial for /v1/accounts/:account (profile dropdown)
+-- ====================================================================
+--
+-- The /v1/accounts/:account handler (handlers/accounts/getAccountAction.ts)
+-- runs the asset-count-by-template query exactly once per page load:
+--
+--   SELECT collection_name, schema_name, template_id, COUNT(*) as assets
+--   FROM atomicassets_assets asset
+--   WHERE contract = $1 AND owner = $2
+--   GROUP BY contract, collection_name, schema_name, template_id
+--   ORDER BY assets DESC
+--
+-- Index 2 above (atomicassets_assets_contract_owner_partial) gets the
+-- planner to use an Index Scan for the WHERE, but the GROUP BY columns
+-- (collection_name, schema_name, template_id) are NOT in that index's
+-- key — so each matched index entry forces a random heap fetch to read
+-- them. On warm cache that's fast (~14 ms for 10k NFTs / 161 collections
+-- on WAX-mainnet). On cold cache the 60+ MB of heap pages hit disk and
+-- the query crosses 19 sec → 408 to the client → empty "All collections"
+-- dropdown on the profile page (and empty "Estimated Value" if the same
+-- handler call also feeds inventory pricing). Reproduced 2026-05-18 on
+-- account `intqi.wam` (10,642 NFTs / 161 collections).
+--
+-- Adding the GROUP BY columns via INCLUDE makes the query an
+-- Index-Only Scan when the visibility map is fresh, eliminating heap
+-- fetches entirely. The b-tree key stays (contract, owner) so range
+-- scans by owner are unaffected; the leaf pages just carry three extra
+-- columns each. Cost on WAX-mainnet: roughly 3-4× the existing partial
+-- (2.2 GB → ~7-8 GB), which is worth it because this query is one of
+-- the hottest profile-page paths and the value of consistent cold-cache
+-- latency outweighs the storage.
+--
+-- This index is a strict superset of Index 2 for this query shape only;
+-- it does NOT supersede Index 2 for the bare `WHERE contract = $1 AND
+-- owner = $2` shape (e.g., the inventory list query in
+-- src/api/namespaces/atomicassets/handlers/assets.ts), where the smaller
+-- key-only partial is cheaper to walk.
+CREATE INDEX IF NOT EXISTS atomicassets_assets_contract_owner_cover_partial
+    ON atomicassets_assets (contract, owner)
+    INCLUDE (collection_name, schema_name, template_id)
+    WHERE owner IS NOT NULL;
+
+-- ====================================================================
+-- IMPORTANT — existing-cluster operator note (applies to all indexes)
 -- ====================================================================
 --
 --   This migration runs inside a BEGIN/COMMIT transaction (see
 --   src/filler/upgrade-db.ts), so CREATE INDEX CONCURRENTLY here would
 --   abort with `CREATE INDEX CONCURRENTLY cannot run inside a transaction
---   block`. The CREATE INDEX statements above are BLOCKING — on an existing
---   populated cluster (atomicassets_assets at 80+ GB), each will hold an
---   ACCESS EXCLUSIVE lock on the table for ~10-30 minutes during the build,
---   stalling the filler.
+--   block`. The CREATE INDEX statements above are BLOCKING — on existing
+--   populated clusters (atomicassets_assets at 80+ GB, the listed sales
+--   partition at 2+ GB), each will hold an ACCESS EXCLUSIVE lock on its
+--   table for ~30 sec to 30 min during the build, stalling the filler.
 --
---   For existing clusters, operators MUST pre-create both indexes
+--   For existing clusters, operators MUST pre-create all four indexes
 --   non-blockingly BEFORE bumping to 1.6.1:
 --
 --     psql -d eca_wax_mainnet \
@@ -109,10 +206,26 @@ CREATE INDEX IF NOT EXISTS atomicassets_assets_contract_owner_partial
 --           ON atomicassets_assets (contract, owner)
 --           WHERE owner IS NOT NULL"
 --
+--     psql -d eca_wax_mainnet \
+--       -c "SET statement_timeout = 0" \
+--       -c "CREATE INDEX CONCURRENTLY IF NOT EXISTS
+--             atomicmarket_sales_filters_listed_mkt_settle_mint_partial
+--           ON atomicmarket_sales_filters_listed
+--               (market_contract, settlement_symbol, lower(template_mint), sale_id)
+--           WHERE lower(template_mint) IS NOT NULL"
+--
+--     psql -d eca_wax_mainnet \
+--       -c "SET statement_timeout = 0" \
+--       -c "CREATE INDEX CONCURRENTLY IF NOT EXISTS
+--             atomicassets_assets_contract_owner_cover_partial
+--           ON atomicassets_assets (contract, owner)
+--           INCLUDE (collection_name, schema_name, template_id)
+--           WHERE owner IS NOT NULL"
+--
 --   The IF NOT EXISTS clauses above then make this migration a no-op
 --   for pre-created clusters.
 --
---   For NEW deployments: atomicassets_assets is empty during first-boot
---   init (handler.setup() creates it before this migration runs), so the
+--   For NEW deployments: both tables are empty during first-boot init
+--   (handler.setup() creates them before this migration runs), so the
 --   CREATE INDEX statements are effectively instant. No operator action
 --   needed.
