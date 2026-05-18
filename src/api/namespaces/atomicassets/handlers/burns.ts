@@ -7,12 +7,10 @@ import { filterQueryArgs } from '../../validation';
 
 /**
  * Detects whether any of the user-supplied params on /v1/burns reference
- * atomicassets_templates columns (data/template_data jsonb filters, the
- * `match`/`search` name filters, is_transferable/is_burnable, etc). When
- * false, the handler can skip the LEFT JOIN to atomicassets_templates
- * entirely, which is the unblocker for the planner to use the
- * `atomicassets_assets_contract_burned_partial` index added in migration
- * 1.6.1.
+ * atomicassets_templates columns. When false, the handler skips the LEFT
+ * JOIN to atomicassets_templates entirely, which is the unblocker for the
+ * planner to use the `atomicassets_assets_contract_burned_partial` index
+ * added in migration 1.6.1.
  *
  * Without this gate, the LEFT JOIN forces a Parallel Seq Scan on the
  * ~80 GB atomicassets_assets table even when no template-side condition
@@ -21,15 +19,24 @@ import { filterQueryArgs } from '../../validation';
  *
  * Key list is kept in sync with the template-touching branches of
  * `buildAssetFilter` / `buildDataConditions` in
- * `src/api/namespaces/atomicassets/utils.ts`:
+ * `src/api/namespaces/atomicassets/utils.ts` AND with the sibling gate in
+ * `assets.ts:157-163` (deliberately broad `data:` / `template_data:`
+ * prefix coverage so a new typed prefix added to buildDataConditions
+ * doesn't silently bypass the join):
  *  - `match`, `search`             -> template.immutable_data->>'name'
- *  - `template_data.` / `:T.`      -> template.immutable_data
- *  - `data.` / `data:T.`           -> template.immutable_data when joined;
- *                                     degrades to asset.immutable_data when
- *                                     not joined, so behavior differs and
- *                                     we keep these triggering the join to
- *                                     preserve the current result semantics
- *  - `is_transferable`, `is_burnable` -> template.transferable / burnable
+ *                                     (utils.ts:161-172; burns calls
+ *                                     buildAssetFilter directly rather
+ *                                     than addTemplateFilter, so these
+ *                                     belong in the gate)
+ *  - `template_data.` / `:`        -> template.immutable_data
+ *                                     (utils.ts:113, 157-159)
+ *  - `data.` / `:`                 -> template.immutable_data when joined;
+ *                                     degrades to asset.immutable_data
+ *                                     when not joined (utils.ts:117-119),
+ *                                     so the join changes the result set
+ *                                     and we keep these triggering it
+ *  - `is_transferable`,
+ *    `is_burnable`                 -> template.transferable / burnable
  *                                     (silently dropped if templateTable
  *                                     is undefined; cf. utils.ts:259,267)
  */
@@ -40,14 +47,10 @@ function burnsQueryNeedsTemplateJoin(params: RequestValues): boolean {
             key === 'search' ||
             key === 'is_transferable' ||
             key === 'is_burnable' ||
-            key.startsWith('data:text.') ||
-            key.startsWith('data:number.') ||
-            key.startsWith('data:bool.') ||
+            key.startsWith('data:') ||
             key.startsWith('data.') ||
-            key.startsWith('template_data.') ||
-            key.startsWith('template_data:text.') ||
-            key.startsWith('template_data:number.') ||
-            key.startsWith('template_data:bool.')
+            key.startsWith('template_data:') ||
+            key.startsWith('template_data.')
         ) {
             return true;
         }
