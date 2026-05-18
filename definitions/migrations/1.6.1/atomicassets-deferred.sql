@@ -1,0 +1,128 @@
+-- 1.6.1 atomicassets deferred: composite partial indexes built CONCURRENTLY.
+--
+-- These statements run outside the migration transaction via the deferred
+-- pipeline in src/filler/upgrade-db.ts (statement_timeout: 1h, dedicated pool),
+-- so CONCURRENTLY is legal here. On existing populated clusters the indexes
+-- build in the background without taking ACCESS EXCLUSIVE on the table; on
+-- new deployments the tables are empty so the builds are effectively instant.
+--
+-- Operator note: no manual pre-create step is required. If a build fails
+-- partway (e.g., disk pressure, statement_timeout exceeded), Postgres marks
+-- the index INVALID; check pg_class.relfilenode + pg_index.indisvalid, drop
+-- the invalid index, and re-run the filler. Re-runs are idempotent via
+-- IF NOT EXISTS.
+--
+-- ====================================================================
+-- Index 1 — /v1/burns query
+-- ====================================================================
+--
+-- The /v1/burns handler (src/api/namespaces/atomicassets/handlers/burns.ts)
+-- runs roughly:
+--
+--   SELECT burned_by_account account, COUNT(*) AS assets
+--   FROM atomicassets_assets asset
+--   [LEFT JOIN atomicassets_templates template ON ...]   -- conditional, see 1.6.1 handler change
+--   WHERE asset.contract = $1 AND asset.burned_by_account IS NOT NULL
+--   GROUP BY asset.burned_by_account
+--   ORDER BY assets DESC, account ASC
+--   LIMIT $2 OFFSET $3
+--
+-- Without this index, the only usable index for the filter is
+-- atomicassets_assets_burned_by_account (btree on burned_by_account alone),
+-- which doesn't pre-filter by contract. The planner correctly rejects that
+-- in favor of a Parallel Seq Scan on the 80+ GB atomicassets_assets table.
+-- On the FACINGS WAX-mainnet replica (1.5.0 schema, ~86 GB table, ~61.6M
+-- rows past the WHERE filter), this scan averages 143 seconds per
+-- /v1/burns call. Compounded across the API's autoscaler fleet it took out
+-- atomichub-blockchain-api with 30s app-side timeouts and cascaded into a
+-- 6-hour crashloop on 2026-05-18.
+--
+-- After this index + the handler-side conditional-JOIN change (see
+-- burns.ts in this PR), measured EXPLAIN ANALYZE drops to ~27 sec on the
+-- same data (5.3x faster). Index size on WAX-mainnet: 1.7 GB partial.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_burned_partial
+    ON atomicassets_assets (contract, burned_by_account)
+    WHERE burned_by_account IS NOT NULL;
+
+-- ====================================================================
+-- Index 2 — /atomicassets owner-filtered queries (profile inventory)
+-- ====================================================================
+--
+-- The most-hammered family of queries in pg_stat_statements on FACINGS
+-- WAX-mainnet (sum of `total_exec_time` > 169 hours, ~160k calls):
+--
+--   SELECT asset.asset_id
+--   FROM atomicassets_assets asset
+--   WHERE asset.contract = $1 AND "asset".owner = $2 [AND "asset".collection_name = $3]
+--   ORDER BY asset.asset_id DESC
+--   LIMIT $4 OFFSET $5
+--
+-- Plus the variants:
+--   SELECT collection_name, schema_name, template_id, COUNT(*)
+--   FROM atomicassets_assets
+--   WHERE contract = $1 AND owner = $2
+--   GROUP BY contract, collection_name, schema_name, template_id;
+--
+--   SELECT COUNT(*) FROM (SELECT asset_id FROM atomicassets_assets WHERE contract = $1 AND owner = $2 ...);
+--
+-- All of these power the user profile / inventory pages.
+--
+-- The existing index `atomicassets_assets_owner_btree` (single column,
+-- non-partial) is what the planner currently uses. It works correctly
+-- for small users (e.g., 2,962 assets -> cost 3316, fast) but degrades
+-- catastrophically for users with large inventories because the planner
+-- has to fetch the heap to filter by `contract` (and sometimes
+-- `collection_name`). On 2026-05-18 we observed 54 concurrent owner-filter
+-- queries on the replica with avg duration 129 seconds, max 253 seconds.
+--
+-- A composite partial index leading with `contract` then `owner` lets
+-- the planner satisfy both the high-cardinality contract filter and the
+-- secondary owner filter via a single index seek, with no heap fetch
+-- needed unless the application also filters by columns this index
+-- doesn't cover (collection_name, template_id, etc).
+CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_owner_partial
+    ON atomicassets_assets (contract, owner)
+    WHERE owner IS NOT NULL;
+
+-- ====================================================================
+-- Index 3 — covering partial for /v1/accounts/:account (profile dropdown)
+-- ====================================================================
+--
+-- The /v1/accounts/:account handler (handlers/accounts/getAccountAction.ts)
+-- runs the asset-count-by-template query exactly once per page load:
+--
+--   SELECT collection_name, schema_name, template_id, COUNT(*) as assets
+--   FROM atomicassets_assets asset
+--   WHERE contract = $1 AND owner = $2
+--   GROUP BY contract, collection_name, schema_name, template_id
+--   ORDER BY assets DESC
+--
+-- Index 2 above (atomicassets_assets_contract_owner_partial) gets the
+-- planner to use an Index Scan for the WHERE, but the GROUP BY columns
+-- (collection_name, schema_name, template_id) are NOT in that index's
+-- key — so each matched index entry forces a random heap fetch to read
+-- them. On warm cache that's fast (~14 ms for 10k NFTs / 161 collections
+-- on WAX-mainnet). On cold cache the 60+ MB of heap pages hit disk and
+-- the query crosses 19 sec -> 408 to the client -> empty "All collections"
+-- dropdown on the profile page (and empty "Estimated Value" if the same
+-- handler call also feeds inventory pricing). Reproduced 2026-05-18 on
+-- account `intqi.wam` (10,642 NFTs / 161 collections).
+--
+-- Adding the GROUP BY columns via INCLUDE makes the query an
+-- Index-Only Scan when the visibility map is fresh, eliminating heap
+-- fetches entirely. The b-tree key stays (contract, owner) so range
+-- scans by owner are unaffected; the leaf pages just carry three extra
+-- columns each. Cost on WAX-mainnet: roughly 3-4x the existing partial
+-- (2.2 GB -> ~7-8 GB), which is worth it because this query is one of
+-- the hottest profile-page paths and the value of consistent cold-cache
+-- latency outweighs the storage.
+--
+-- This index is a strict superset of Index 2 for this query shape only;
+-- it does NOT supersede Index 2 for the bare `WHERE contract = $1 AND
+-- owner = $2` shape (e.g., the inventory list query in
+-- src/api/namespaces/atomicassets/handlers/assets.ts), where the smaller
+-- key-only partial is cheaper to walk.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_owner_cover_partial
+    ON atomicassets_assets (contract, owner)
+    INCLUDE (collection_name, schema_name, template_id)
+    WHERE owner IS NOT NULL;

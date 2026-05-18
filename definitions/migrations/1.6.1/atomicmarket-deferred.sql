@@ -1,0 +1,55 @@
+-- 1.6.1 atomicmarket deferred: partial composite index for v2 sales template_mint sort.
+--
+-- Runs outside the migration transaction via src/filler/upgrade-db.ts deferred
+-- pipeline (statement_timeout: 1h, dedicated pool), so CONCURRENTLY is legal.
+--
+-- ====================================================================
+-- Index — atomicmarket v2 /v1/sales template_mint-sorted queries
+-- ====================================================================
+--
+-- The marketplace listing query at e.g.
+--   https://wax.atomichub.io/market?blockchain=wax-mainnet&order=asc&sort=template_mint&symbol=WAX
+-- (handler: src/api/namespaces/atomicmarket/handlers/sales2.ts — the v2
+-- handler, which queries the partitioned atomicmarket_sales_filters table;
+-- v1 sales.ts queries atomicmarket_sales/atomicmarket_sales_master and
+-- does NOT touch this index) runs roughly:
+--
+--   SELECT listing.sale_id
+--   FROM atomicmarket_sales_filters_listed listing
+--   WHERE listing.market_contract = $1
+--     AND listing.settlement_symbol = $2
+--     -- (sale_state = 1 is implicit in the LISTED partition)
+--   ORDER BY lower(listing.template_mint) ASC NULLS LAST, listing.sale_id
+--   LIMIT 1000
+--
+-- The existing `atomicmarket_sales_filters_listed_lower_idx` is a
+-- single-column expression index on `lower(template_mint)` (49 MB on
+-- the FACINGS WAX-mainnet partition, ~1.73M rows). It works when no
+-- column filters are added (planner picks Index Scan + Incremental
+-- Sort, cost ~236 for LIMIT 1000) but cannot pre-filter by
+-- (market_contract, settlement_symbol). When the query adds those
+-- filters — which the marketplace UI always does — using the index
+-- requires a heap fetch per entry to evaluate the filter, and the
+-- planner switches to Parallel Seq Scan + full Sort over the
+-- partition (cost 314,329 on WAX-mainnet, ~30 sec wall time).
+--
+-- The app-side timeout for atomichub-blockchain-api is 20 sec, so
+-- the user-facing symptom is HTTP 408 with body
+-- `{"success":false,"message":"Max database query time exceeded.
+-- Please try to add more filters to your query."}`.
+--
+-- A partial composite leading with the filter columns then the sort
+-- expression lets the planner satisfy both the WHERE prefix and the
+-- ORDER BY via a single index range scan, with the sale_id tiebreaker
+-- included to keep the sort 1:1 with the existing `lower_idx`
+-- behavior.
+--
+-- This index is a superset of `atomicmarket_sales_filters_listed_lower_idx`
+-- for any query that also filters on (market_contract, settlement_symbol),
+-- which is the only shape the marketplace UI uses. Operators may drop
+-- the old single-column lower_idx after deploying this one, but the
+-- migration leaves it in place because some external integrations may
+-- still query the partition without those filters.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicmarket_sales_filters_listed_mkt_settle_mint_partial
+    ON atomicmarket_sales_filters_listed (market_contract, settlement_symbol, lower(template_mint), sale_id)
+    WHERE lower(template_mint) IS NOT NULL;

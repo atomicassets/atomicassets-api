@@ -1,0 +1,12 @@
+-- 1.6.1: no transactional schema changes.
+--
+-- All four indexes that ship in this release are created CONCURRENTLY
+-- via the deferred SQL pipeline (src/filler/upgrade-db.ts), since
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
+-- See:
+--   - definitions/migrations/1.6.1/atomicassets-deferred.sql
+--   - definitions/migrations/1.6.1/atomicmarket-deferred.sql
+--
+-- This file exists because upgrade-db.ts unconditionally readFileSync's
+-- `${versionDir}/database.sql` for every migration version.
+SELECT 1;
