@@ -1,12 +1,14 @@
--- 1.6.1: no transactional schema changes.
---
--- All four indexes that ship in this release are created CONCURRENTLY
--- via the deferred SQL pipeline (src/filler/upgrade-db.ts), since
--- CREATE INDEX CONCURRENTLY cannot run inside a transaction block.
--- See:
+-- 1.6.1: advance dbinfo.version. All indexes that ship in this release
+-- are created CONCURRENTLY via the deferred SQL pipeline since CREATE
+-- INDEX CONCURRENTLY cannot run inside a transaction block. See:
 --   - definitions/migrations/1.6.1/atomicassets-deferred.sql
 --   - definitions/migrations/1.6.1/atomicmarket-deferred.sql
 --
--- This file exists because upgrade-db.ts unconditionally readFileSync's
--- `${versionDir}/database.sql` for every migration version.
-SELECT 1;
+-- The UPDATE below is load-bearing: handler.upgrade() does not write to
+-- dbinfo, and no database.sql since 1.3.34 has either (1.5.1, 1.6.0
+-- shipped a regression where database.sql was reduced to SELECT 1 + a
+-- comment). Without this UPDATE the migration loop re-runs every boot
+-- until something else advances the version, which on the 2026-05-18
+-- 1.6.1 rollout meant the (broken) deferred SQL parser fired every
+-- restart and crash-looped 6 fillers for half an hour. Fixed by 1.6.2.
+UPDATE dbinfo SET "value" = '1.6.1' WHERE name = 'version';
