@@ -110,7 +110,11 @@ export async function runMigrations(database: PostgresConnection): Promise<void>
                     if (fs.existsSync(deferredFilename)) {
                         logger.info(`Running deferred SQL for ${handlerName} v${version}...`);
                         const sql = fs.readFileSync(deferredFilename, { encoding: 'utf8' });
-                        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
+                        // Strip SQL line comments before splitting on `;` so prose
+                        // semicolons inside `-- ...` don't fragment statements.
+                        // (1.6.1 shipped without this and crash-looped 6 fillers.)
+                        const stripped = sql.replace(/--[^\n]*/g, '');
+                        const statements = stripped.split(';').map(s => s.trim()).filter(s => s.length > 0);
                         for (const stmt of statements) {
                             logger.info(`Executing deferred: ${stmt.substring(0, 80)}...`);
                             await deferredPool.query(stmt);

@@ -1,0 +1,18 @@
+-- 1.6.2: hotfix release, no schema changes.
+--
+-- 1.6.1 shipped a parser bug in src/filler/upgrade-db.ts: the deferred-SQL
+-- pipeline split on raw `;` without stripping `-- ...` line comments, so a
+-- semicolon inside a prose comment fragmented the CREATE INDEX statements
+-- and crashed all 6 eosio-contract-api fillers at upgrade time.
+--
+-- This release ships:
+--  1. src/filler/upgrade-db.ts strips line comments before splitting on `;`
+--  2. definitions/migrations/1.6.1/{atomicassets,atomicmarket}-deferred.sql
+--     have all prose `;` rewritten to periods/commas (defense in depth in
+--     case the parser fix is ever reverted)
+--
+-- Chains already at schema 1.6.1 (committed transactionally before the
+-- deferred crash on 2026-05-18) will skip 1.6.1 migration entirely on
+-- bump to 1.6.2 -- they just apply this no-op and continue. Chains that
+-- somehow rolled back below 1.6.1 will re-run the now-fixed 1.6.1 deferred.
+SELECT 1;

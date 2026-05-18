@@ -10,7 +10,7 @@
 -- The marketplace listing query at e.g.
 --   https://wax.atomichub.io/market?blockchain=wax-mainnet&order=asc&sort=template_mint&symbol=WAX
 -- (handler: src/api/namespaces/atomicmarket/handlers/sales2.ts — the v2
--- handler, which queries the partitioned atomicmarket_sales_filters table;
+-- handler, which queries the partitioned atomicmarket_sales_filters table.
 -- v1 sales.ts queries atomicmarket_sales/atomicmarket_sales_master and
 -- does NOT touch this index) runs roughly:
 --

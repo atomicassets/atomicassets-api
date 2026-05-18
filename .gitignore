@@ -25,3 +25,4 @@ config/server.config.json
 .env
 .env.local
 .env.*.local
+.worktrees/

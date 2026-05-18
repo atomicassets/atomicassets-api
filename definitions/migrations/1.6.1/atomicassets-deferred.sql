@@ -3,12 +3,12 @@
 -- These statements run outside the migration transaction via the deferred
 -- pipeline in src/filler/upgrade-db.ts (statement_timeout: 1h, dedicated pool),
 -- so CONCURRENTLY is legal here. On existing populated clusters the indexes
--- build in the background without taking ACCESS EXCLUSIVE on the table; on
+-- build in the background without taking ACCESS EXCLUSIVE on the table. On
 -- new deployments the tables are empty so the builds are effectively instant.
 --
 -- Operator note: no manual pre-create step is required. If a build fails
 -- partway (e.g., disk pressure, statement_timeout exceeded), Postgres marks
--- the index INVALID; check pg_class.relfilenode + pg_index.indisvalid, drop
+-- the index INVALID. Check pg_class.relfilenode + pg_index.indisvalid, drop
 -- the invalid index, and re-run the filler. Re-runs are idempotent via
 -- IF NOT EXISTS.
 --
@@ -61,9 +61,9 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_burned_part
 --   SELECT collection_name, schema_name, template_id, COUNT(*)
 --   FROM atomicassets_assets
 --   WHERE contract = $1 AND owner = $2
---   GROUP BY contract, collection_name, schema_name, template_id;
+--   GROUP BY contract, collection_name, schema_name, template_id
 --
---   SELECT COUNT(*) FROM (SELECT asset_id FROM atomicassets_assets WHERE contract = $1 AND owner = $2 ...);
+--   SELECT COUNT(*) FROM (SELECT asset_id FROM atomicassets_assets WHERE contract = $1 AND owner = $2 ...)
 --
 -- All of these power the user profile / inventory pages.
 --
@@ -111,13 +111,13 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_owner_parti
 -- Adding the GROUP BY columns via INCLUDE makes the query an
 -- Index-Only Scan when the visibility map is fresh, eliminating heap
 -- fetches entirely. The b-tree key stays (contract, owner) so range
--- scans by owner are unaffected; the leaf pages just carry three extra
+-- scans by owner are unaffected, and the leaf pages just carry three extra
 -- columns each. Cost on WAX-mainnet: roughly 3-4x the existing partial
 -- (2.2 GB -> ~7-8 GB), which is worth it because this query is one of
 -- the hottest profile-page paths and the value of consistent cold-cache
 -- latency outweighs the storage.
 --
--- This index is a strict superset of Index 2 for this query shape only;
+-- This index is a strict superset of Index 2 for this query shape only,
 -- it does NOT supersede Index 2 for the bare `WHERE contract = $1 AND
 -- owner = $2` shape (e.g., the inventory list query in
 -- src/api/namespaces/atomicassets/handlers/assets.ts), where the smaller
