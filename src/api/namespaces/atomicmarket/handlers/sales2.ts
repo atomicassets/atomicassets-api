@@ -82,14 +82,10 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
     };
 
     if (args.sort === 'template_mint') {
+        // Implies the partial-index predicate of
+        // atomicmarket_sales_filters_listed_mkt_settle_mint_partial
+        // (migration 1.6.1) so the planner can pick it for both asc and desc.
         query.addCondition('LOWER(listing.template_mint) IS NOT NULL');
-
-        if (args.order === 'asc' && !search.strongFilters.length) {
-            // TODO find a better solution. when no strong (collection) filter is set, and the result is ordered by
-            //  template_mint in ascending order, it always takes longer than 10 seconds. I think it's due to lack
-            //  of listings matching whitelisted/blacklisted listings at the lower end of the mints
-            search.strongFilters.push('template_mint_asc_block');
-        }
     }
 
     const preventIndexUsage = search.strongFilters.length > 0 && sortMapping[args.sort].numericIndex;

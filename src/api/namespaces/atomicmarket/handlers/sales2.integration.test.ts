@@ -801,6 +801,19 @@ describe('AtomicMarket Sales API', () => {
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
+        txit('orders by template_mint asc', async () => {
+            // Pins asc result-set order so a future re-introduction of the
+            // ' + 0' planner workaround (removed in this change because the
+            // 1.6.1 partial composite serves asc directly) can't silently
+            // flip ordering.
+            const { sale_id: sale_id1 } = await client.createFullSale({}, { template_mint: 1 });
+
+            const { sale_id: sale_id2 } = await client.createFullSale({}, { template_mint: 2 });
+
+            expect(await getSalesIds({ sort: 'template_mint', order: 'asc' }))
+                .to.deep.equal([sale_id1, sale_id2]);
+        });
+
         txit('orders by asset name', async () => {
             const { sale_id: sale_id1 } = await client.createFullSale({}, {
                 immutable_data: JSON.stringify({ name: 'b' }),
