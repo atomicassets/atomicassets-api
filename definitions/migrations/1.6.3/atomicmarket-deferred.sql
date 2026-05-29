@@ -1,0 +1,20 @@
+-- 1.6.3 deferred - reclaim accumulated index bloat on the sales-filters work
+-- queue. Runs outside the migration transaction (CREATE/REINDEX CONCURRENTLY
+-- cannot run in a transaction); the deferred runner strips line comments and
+-- splits on the semicolons below.
+--
+-- atomicmarket_sales_filters_updates is a high-churn queue (INSERT by triggers,
+-- DELETE by update_atomicmarket_sales_filters). autovacuum reclaims dead tuples
+-- but does not return empty index pages to the OS, so the partial indexes
+-- accumulate bloat (observed ~44 MB against a sub-1 MB live heap on WAX). Bloated
+-- partial indexes slow the asset_ids overlap probes the drain function runs.
+-- REINDEX CONCURRENTLY rebuilds them with no long lock. One-shot at the
+-- 1.6.2 -> 1.6.3 crossing; cheap on every chain given the tiny live row count.
+--
+-- REINDEX TABLE (not per-index): rebuilds every index on the queue table in one
+-- statement, so it does not depend on the exact partial-index names (which could
+-- drift across chains/versions) and cannot fail on a renamed/missing index. This
+-- matters because the deferred runner (upgrade-db.ts) runs each statement
+-- un-try-caught AFTER dbinfo is already bumped to 1.6.3 -- a failure here would
+-- crash filler startup once and then be skipped (never retried) on the next boot.
+REINDEX TABLE CONCURRENTLY atomicmarket_sales_filters_updates;

@@ -22,6 +22,45 @@ import { templateBuyofferProcessor } from './processors/template-buyoffers';
 
 export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, DELPHIORACLE_BASE_PRIORITY) + 1000;
 
+// Bounded sales-filters drain (see definitions/migrations/1.6.3). Each
+// update_atomicmarket_sales_filters() call consumes at most BATCH_SIZE queue
+// rows of each type in a short transaction; the job loops until the queue is
+// drained or the per-tick time budget elapses. Env-tunable so ops can retune
+// under load without a redeploy. Defaults: 5000 rows/batch, 30 s budget.
+const SALES_FILTERS_BATCH_SIZE =
+    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_BATCH_SIZE ?? '', 10) || 5000;
+const SALES_FILTERS_DRAIN_BUDGET_MS =
+    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS ?? '', 10) || 30_000;
+
+interface QueryablePool {
+    query(sql: string, params?: any[]): Promise<{ rows: Array<{ consumed?: number | string }> }>;
+}
+
+/**
+ * Drain atomicmarket_sales_filters_updates in bounded batches. Each
+ * update_atomicmarket_sales_filters($1) call consumes at most batchSize queue
+ * rows of each type in its own short transaction (via the pool) and returns the
+ * number of queue rows consumed; we loop until the queue is empty (consumed=0)
+ * or the time budget elapses. Returns total rows consumed across the loop.
+ * `now` is injectable for tests.
+ */
+export async function drainAtomicmarketSalesFilters(
+    pool: QueryablePool,
+    batchSize: number,
+    budgetMs: number,
+    now: () => number = Date.now,
+): Promise<number> {
+    const deadline = now() + budgetMs;
+    let total = 0;
+    let consumed: number;
+    do {
+        const res = await pool.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
+        consumed = Number(res.rows[0]?.consumed ?? 0);
+        total += consumed;
+    } while (consumed > 0 && now() < deadline);
+    return total;
+}
+
 export type AtomicMarketArgs = {
     atomicmarket_account: string,
     atomicassets_account: string,
@@ -360,17 +399,30 @@ export default class AtomicMarketHandler extends ContractHandler {
         // insertion between probe and call just falls through to the proc,
         // which returns quickly if the queue is drained by then.
         this.filler.jobs.add('update_atomicmarket_sales_filters', 60, JobQueuePriority.HIGH, async () => {
-            // Skip while the filler is catching up — the proc holds long
-            // statement-timeout transactions that contend with block writes
-            // on the same hot rows. See Filler.isFallingBehind for context.
-            if (this.filler.isFallingBehind()) {
-                return;
-            }
+            // Drain the queue in bounded batches. update_atomicmarket_sales_filters
+            // ($1) consumes at most $1 queue rows of each type per call in a SHORT
+            // transaction and returns the number of queue rows consumed; we loop
+            // (each call its own txn via the pool, so locks release between
+            // batches) until the queue is empty or the time budget elapses.
+            //
+            // No isFallingBehind() gate any more: pre-1.6.3 the proc drained the
+            // whole queue in one long transaction, so it was gated off during
+            // catchup to avoid contending with block writes — but that let the
+            // queue grow unbounded during high-mint events (rustveil 2026-05-28,
+            // 13k-18k backlog -> 106 s runs -> reader knocked >200 blocks behind
+            // -> gated off -> queue grows -> worse: a doom-loop that tripped the
+            // reader watchdog). Bounded batches make concurrent draining safe, so
+            // draining MUST continue while catching up to keep the queue bounded.
             const probe = await longRunningPool.query(
                 'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
             );
             if (!probe.rows[0]?.has_work) return;
-            await longRunningPool.query('SELECT update_atomicmarket_sales_filters()');
+
+            await drainAtomicmarketSalesFilters(
+                longRunningPool,
+                SALES_FILTERS_BATCH_SIZE,
+                SALES_FILTERS_DRAIN_BUDGET_MS,
+            );
         });
 
         this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
