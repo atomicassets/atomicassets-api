@@ -31,31 +31,81 @@ const SALES_FILTERS_BATCH_SIZE =
     parseInt(process.env.ATOMICMARKET_SALES_FILTERS_BATCH_SIZE ?? '', 10) || 5000;
 const SALES_FILTERS_DRAIN_BUDGET_MS =
     parseInt(process.env.ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS ?? '', 10) || 30_000;
+// Per-batch statement_timeout for the drain query. This is the EFFECTIVE cap on
+// a single update_atomicmarket_sales_filters() call. It is applied via
+// `SET LOCAL` inside each batch's transaction (see below) — NOT via the pool's
+// connection-level statement_timeout, which does not survive PgBouncer
+// transaction pooling (the server backend is shared between transactions, so a
+// connection-level SET is silently dropped). 2026-05-29 incident: the drain
+// was effectively capped at the role's 30 s, timed out (57014) on heavy batches
+// during a mint storm, and the queue grew to 9.3M rows. Default 5 min.
+const SALES_FILTERS_STATEMENT_TIMEOUT_MS =
+    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS ?? '', 10) || 300_000;
 
-interface QueryablePool {
+interface DrainClient {
     query(sql: string, params?: any[]): Promise<{ rows: Array<{ consumed?: number | string }> }>;
+    release(): void;
+}
+interface DrainPool {
+    connect(): Promise<DrainClient>;
+}
+
+/**
+ * Run one bounded drain batch in its own transaction, with statement_timeout
+ * raised via `SET LOCAL` BEFORE the drain query.
+ *
+ * Why the transaction + SET LOCAL (and not the pool's statement_timeout):
+ *  - Through PgBouncer transaction pooling, a connection-level statement_timeout
+ *    does not stick — so the drain inherited the role default (30 s) and timed
+ *    out under load (2026-05-29 incident).
+ *  - statement_timeout is armed when the outer statement starts, so raising it
+ *    from INSIDE update_atomicmarket_sales_filters() cannot extend the running
+ *    call. It must be SET as a separate statement before the drain query.
+ *  - PgBouncer keeps one server backend for a transaction's whole lifetime, so
+ *    `SET LOCAL` inside BEGIN…COMMIT reliably applies, then reverts at COMMIT.
+ */
+async function drainOneBatch(
+    pool: DrainPool,
+    batchSize: number,
+    statementTimeoutMs: number,
+): Promise<number> {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        try {
+            await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs)}`);
+            const res = await client.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
+            await client.query('COMMIT');
+            return Number(res.rows[0]?.consumed ?? 0);
+        } catch (e) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw e;
+        }
+    } finally {
+        client.release();
+    }
 }
 
 /**
  * Drain atomicmarket_sales_filters_updates in bounded batches. Each
- * update_atomicmarket_sales_filters($1) call consumes at most batchSize queue
- * rows of each type in its own short transaction (via the pool) and returns the
- * number of queue rows consumed; we loop until the queue is empty (consumed=0)
- * or the time budget elapses. Returns total rows consumed across the loop.
+ * drainOneBatch() consumes at most batchSize queue rows of each type in its own
+ * short transaction (so locks release between batches) and returns the number
+ * of queue rows consumed; we loop until the queue is empty (consumed=0) or the
+ * time budget elapses. Returns total rows consumed across the loop.
  * `now` is injectable for tests.
  */
 export async function drainAtomicmarketSalesFilters(
-    pool: QueryablePool,
+    pool: DrainPool,
     batchSize: number,
     budgetMs: number,
+    statementTimeoutMs: number,
     now: () => number = Date.now,
 ): Promise<number> {
     const deadline = now() + budgetMs;
     let total = 0;
     let consumed: number;
     do {
-        const res = await pool.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
-        consumed = Number(res.rows[0]?.consumed ?? 0);
+        consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs);
         total += consumed;
     } while (consumed > 0 && now() < deadline);
     return total;
@@ -422,6 +472,7 @@ export default class AtomicMarketHandler extends ContractHandler {
                 longRunningPool,
                 SALES_FILTERS_BATCH_SIZE,
                 SALES_FILTERS_DRAIN_BUDGET_MS,
+                SALES_FILTERS_STATEMENT_TIMEOUT_MS,
             );
         });
 
