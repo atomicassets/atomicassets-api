@@ -42,6 +42,18 @@ const SALES_FILTERS_DRAIN_BUDGET_MS =
 const SALES_FILTERS_STATEMENT_TIMEOUT_MS =
     parseInt(process.env.ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS ?? '', 10) || 300_000;
 
+// Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
+// Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
+// and returns the rows resolved; the job loops until a batch resolves 0 rows or
+// the budget elapses. Small batches keep each call well under the default pool's
+// 30s statement_timeout (these are FUNCTIONs as of migration 1.6.5; before that
+// they were procedures that timed out on a 50k-row-per-call loop). Budget stays
+// under 30s so the per-tick loop bows out before any single call risks the cap.
+const MINTS_BATCH_SIZE =
+    parseInt(process.env.ATOMICMARKET_MINTS_BATCH_SIZE ?? '', 10) || 2000;
+const MINTS_DRAIN_BUDGET_MS =
+    parseInt(process.env.ATOMICMARKET_MINTS_DRAIN_BUDGET_MS ?? '', 10) || 25_000;
+
 interface DrainClient {
     query(sql: string, params?: any[]): Promise<{ rows: Array<{ consumed?: number | string }> }>;
     release(): void;
@@ -108,6 +120,62 @@ export async function drainAtomicmarketSalesFilters(
         consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs);
         total += consumed;
     } while (consumed > 0 && now() < deadline);
+    return total;
+}
+
+interface MintsPool {
+    query(sql: string, params?: any[]): Promise<{ rows: Array<{ updated?: number | string }> }>;
+}
+
+// fnName is interpolated into the SQL (identifier context — can't be a bind
+// param), so it MUST come from this fixed allowlist. The call sites pass
+// constants; the guard in drainAtomicmarketMints makes that safe-by-construction
+// and rejects any accidental/untrusted value rather than risk SQL injection.
+const MINT_BACKFILL_FUNCTIONS = new Set([
+    'update_atomicmarket_sale_mints',
+    'update_atomicmarket_buyoffer_mints',
+    'update_atomicmarket_auction_mints',
+]);
+
+/**
+ * Backfill template_mint via the bounded mint FUNCTIONs in small batches.
+ *
+ * Each `SELECT <fnName>($1,$2,$3)` runs one set-based UPDATE over at most
+ * batchSize unmint-ed rows (autocommit — the function is not wrapped in an
+ * explicit txn, and unlike the sales-filter drain it needs no SET LOCAL because
+ * small batches finish well under the statement_timeout) and returns the rows
+ * resolved. We loop until a batch resolves 0 rows or the budget elapses.
+ *
+ * Stop on `updated === 0`, NOT on `updated < batchSize`: the function's HAVING
+ * guard skips rows whose assets aren't minted yet, so a batch can resolve fewer
+ * than batchSize while resolvable work remains — but when it resolves 0, nothing
+ * is currently resolvable and the next 60s tick re-probes. `fnName` is checked
+ * against MINT_BACKFILL_FUNCTIONS because it is interpolated into the SQL.
+ * `now` is injectable for tests.
+ */
+export async function drainAtomicmarketMints(
+    pool: MintsPool,
+    fnName: string,
+    contract: string,
+    lastIrreversibleBlock: number,
+    batchSize: number,
+    budgetMs: number,
+    now: () => number = Date.now,
+): Promise<number> {
+    if (!MINT_BACKFILL_FUNCTIONS.has(fnName)) {
+        throw new Error(`drainAtomicmarketMints: refusing to call unknown function "${fnName}"`);
+    }
+    const deadline = now() + budgetMs;
+    let total = 0;
+    let updated: number;
+    do {
+        const res = await pool.query(
+            `SELECT ${fnName}($1, $2, $3) AS updated`,
+            [contract, lastIrreversibleBlock, batchSize],
+        );
+        updated = Number(res.rows[0]?.updated ?? 0);
+        total += updated;
+    } while (updated > 0 && now() < deadline);
     return total;
 }
 
@@ -420,23 +488,71 @@ export default class AtomicMarketHandler extends ContractHandler {
         }
 
         this.filler.jobs.add('update_atomicmarket_sale_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            await this.connection.database.query(
-                'CALL update_atomicmarket_sale_mints($1, $2)',
+            const probe = await this.connection.database.query(
+                `SELECT EXISTS(
+                    SELECT 1 FROM atomicmarket_sales
+                    WHERE template_mint IS NULL
+                        AND market_contract = $1
+                        AND created_at_block <= $2
+                    LIMIT 1
+                ) AS has_work`,
                 [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
+            );
+            if (!probe.rows[0]?.has_work) return;
+
+            await drainAtomicmarketMints(
+                this.connection.database,
+                'update_atomicmarket_sale_mints',
+                this.args.atomicmarket_account,
+                this.filler.reader.lastIrreversibleBlock,
+                MINTS_BATCH_SIZE,
+                MINTS_DRAIN_BUDGET_MS,
             );
         });
 
         this.filler.jobs.add('update_atomicmarket_buyoffer_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            await this.connection.database.query(
-                'CALL update_atomicmarket_buyoffer_mints($1, $2)',
+            const probe = await this.connection.database.query(
+                `SELECT EXISTS(
+                    SELECT 1 FROM atomicmarket_buyoffers
+                    WHERE template_mint IS NULL
+                        AND market_contract = $1
+                        AND created_at_block <= $2
+                    LIMIT 1
+                ) AS has_work`,
                 [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
+            );
+            if (!probe.rows[0]?.has_work) return;
+
+            await drainAtomicmarketMints(
+                this.connection.database,
+                'update_atomicmarket_buyoffer_mints',
+                this.args.atomicmarket_account,
+                this.filler.reader.lastIrreversibleBlock,
+                MINTS_BATCH_SIZE,
+                MINTS_DRAIN_BUDGET_MS,
             );
         });
 
         this.filler.jobs.add('update_atomicmarket_auction_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            await this.connection.database.query(
-                'CALL update_atomicmarket_auction_mints($1, $2)',
+            const probe = await this.connection.database.query(
+                `SELECT EXISTS(
+                    SELECT 1 FROM atomicmarket_auctions
+                    WHERE template_mint IS NULL
+                        AND market_contract = $1
+                        AND created_at_block <= $2
+                    LIMIT 1
+                ) AS has_work`,
                 [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
+            );
+            if (!probe.rows[0]?.has_work) return;
+
+            await drainAtomicmarketMints(
+                this.connection.database,
+                'update_atomicmarket_auction_mints',
+                this.args.atomicmarket_account,
+                this.filler.reader.lastIrreversibleBlock,
+                MINTS_BATCH_SIZE,
+                MINTS_DRAIN_BUDGET_MS,
             );
         });
 
