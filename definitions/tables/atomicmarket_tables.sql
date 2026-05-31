@@ -433,7 +433,7 @@ CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_price ON atomicmarket
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_collection_name ON atomicmarket_template_buyoffers USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_template_id ON atomicmarket_template_buyoffers USING btree (template_id);
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_state ON atomicmarket_template_buyoffers USING btree (state);
-CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_updated_at_time ON atomicmarket_template_buyoffers USING btree (updated_at_time);
+-- atomicmarket_template_buyoffers_updated_at_time dropped in migration 1.7.0 (unused, replica-verified)
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_created_at_time ON atomicmarket_template_buyoffers USING btree (created_at_time);
 
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_assets_asset_id ON atomicmarket_template_buyoffers_assets USING btree (asset_id);
@@ -448,7 +448,7 @@ CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_missing_mint ON atomi
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_collection_name ON atomicmarket_stats_markets USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_buyer ON atomicmarket_stats_markets USING btree (buyer);
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_seller ON atomicmarket_stats_markets USING btree (seller);
-CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_price ON atomicmarket_stats_markets USING btree (price);
+-- atomicmarket_stats_markets_price dropped in migration 1.7.0 (unused, replica-verified)
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_time ON atomicmarket_stats_markets USING btree ("time");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_asset_id ON atomicmarket_stats_markets USING btree ("asset_id");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_schema_name ON atomicmarket_stats_markets USING btree ("schema_name");
@@ -457,7 +457,7 @@ CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_template_id_time ON atomic
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_time ON atomicmarket_stats_markets (market_contract, symbol, "time");
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_contract_symbol_collection_time ON atomicmarket_stats_markets (market_contract, symbol, collection_name, "time") INCLUDE (buyer, seller, price);
 CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_maker_mp ON atomicmarket_stats_markets (maker_marketplace) WHERE maker_marketplace IS NOT NULL;
-CREATE INDEX IF NOT EXISTS atomicmarket_stats_markets_taker_mp ON atomicmarket_stats_markets (taker_marketplace) WHERE taker_marketplace IS NOT NULL;
+-- atomicmarket_stats_markets_taker_mp dropped in migration 1.7.0 (unused, replica-verified)
 
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_mc_state_created ON atomicmarket_sales (market_contract, state, created_at_time DESC, sale_id) WHERE state IN (1, 3);
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_sold_stats ON atomicmarket_sales (market_contract, settlement_symbol, collection_name) INCLUDE (final_price) WHERE state = 3;
