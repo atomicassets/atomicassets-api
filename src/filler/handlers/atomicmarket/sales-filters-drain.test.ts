@@ -95,6 +95,7 @@ describe('drainAtomicmarketSalesFilters', () => {
         expect(queries).to.deep.equal([
             'BEGIN',
             `SET LOCAL statement_timeout = ${STMT_TIMEOUT_MS}`,
+            "SET LOCAL work_mem = '2048MB'",
             'SELECT update_atomicmarket_sales_filters($1) AS consumed',
             'COMMIT',
         ]);

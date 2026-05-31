@@ -319,8 +319,10 @@ export default class AtomicAssetsHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicassets_mints', 30, JobQueuePriority.MEDIUM, async () => {
-            // Skip while the filler is catching up — see Filler.isFallingBehind.
-            if (this.filler.isFallingBehind()) {
+            // Skip while the reader is catching up — reader-priority gate with
+            // hysteresis, shared with the atomicmarket drains (see
+            // Filler.shouldDeferDrain).
+            if (this.filler.shouldDeferDrain()) {
                 return;
             }
             await longRunningPool.query(

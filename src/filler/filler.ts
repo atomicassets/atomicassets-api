@@ -8,6 +8,29 @@ import { ContractHandler } from './handlers/interfaces';
 import { ModuleLoader } from './modules';
 import { JobQueue } from './jobqueue';
 import ListPoller from './list-poller';
+import { positiveIntEnv } from '../utils/env';
+
+// Watchdog stall timeouts (env-tunable; previously hardcoded 6h/10m/4m). The 6h
+// initial was far too long: a reader wedged from startup (e.g. drain contention
+// during post-restart catch-up) would not self-restart for hours. Cap it low so
+// a wedge auto-recovers in minutes; the maintenance drain-gate below lets the
+// restarted reader catch up unimpeded so it doesn't re-wedge. positiveIntEnv
+// rejects non-positive overrides (a negative timeout would fire instantly).
+const READER_STALL_TIMEOUT_MS = positiveIntEnv('READER_STALL_TIMEOUT_MS', 15 * 60 * 1000);
+const READER_CATCHUP_STALL_TIMEOUT_MS = positiveIntEnv('READER_CATCHUP_STALL_TIMEOUT_MS', 10 * 60 * 1000);
+const READER_CAUGHTUP_STALL_TIMEOUT_MS = positiveIntEnv('READER_CAUGHTUP_STALL_TIMEOUT_MS', 4 * 60 * 1000);
+
+// Maintenance drain-gate hysteresis (blocks behind chain head). Aggregator drains
+// defer while the reader is catching up so it keeps block-write priority during
+// bursts and post-restart catch-up, then resume once nearly caught up. Safe to
+// gate (no unbounded-queue doom-loop) since 1.6.4 dedup caps
+// atomicmarket_sales_filters_updates at distinct changed keys.
+const DRAIN_GATE_STOP_BLOCKS = positiveIntEnv('ATOMICMARKET_DRAIN_GATE_STOP_BLOCKS', 200);
+const DRAIN_GATE_RESUME_RAW = positiveIntEnv('ATOMICMARKET_DRAIN_GATE_RESUME_BLOCKS', 60);
+// Hysteresis requires resume < stop; a misconfigured resume >= stop would
+// collapse the band (flap or never resume), so fall back to half the stop.
+const DRAIN_GATE_RESUME_BLOCKS =
+    DRAIN_GATE_RESUME_RAW < DRAIN_GATE_STOP_BLOCKS ? DRAIN_GATE_RESUME_RAW : Math.max(1, Math.floor(DRAIN_GATE_STOP_BLOCKS / 2));
 
 function estimateSeconds(blocks: number, speed: number, depth: number = 0): number {
     if (blocks <= 2) {
@@ -37,6 +60,8 @@ export default class Filler {
     private readonly handlers: ContractHandler[];
 
     private readonly listPollers: ListPoller[] = [];
+
+    private maintenanceDeferred = false;
 
     constructor(private readonly config: IReaderConfig, readonly connection: ConnectionManager) {
         this.handlers = getHandlers(config.contracts, this);
@@ -73,6 +98,33 @@ export default class Filler {
      */
     public isFallingBehind(thresholdBlocks: number = 200): boolean {
         return this.reader.blocksUntilHead > thresholdBlocks;
+    }
+
+    /**
+     * Reader-priority gate with hysteresis for scheduled aggregator drains
+     * (sales filters, mints). Returns true while the reader is catching up so
+     * those jobs defer and the reader keeps DB/block-write priority during
+     * bursts and post-restart catch-up. Gates ON above DRAIN_GATE_STOP_BLOCKS,
+     * OFF below DRAIN_GATE_RESUME_BLOCKS — the hysteresis band avoids flapping
+     * the drain on/off while the reader hovers near a single threshold.
+     *
+     * Re-introduces the pre-1.6.3 gate (removed in bdebfd2a). Safe again because
+     * 1.6.4 made the queue dedup at the source (unique partial indexes), so the
+     * backlog stays bounded at distinct changed keys while gated, instead of the
+     * unbounded growth that previously turned the gate into a doom-loop.
+     */
+    public shouldDeferDrain(): boolean {
+        const behind = this.reader.blocksUntilHead;
+
+        if (this.maintenanceDeferred) {
+            if (behind < DRAIN_GATE_RESUME_BLOCKS) {
+                this.maintenanceDeferred = false;
+            }
+        } else if (behind > DRAIN_GATE_STOP_BLOCKS) {
+            this.maintenanceDeferred = true;
+        }
+
+        return this.maintenanceDeferred === true;
     }
 
     async deleteDB(): Promise<void> {
@@ -137,7 +189,7 @@ export default class Filler {
         let lastBlockNum = 0;
         let lastOperations = 0;
 
-        let timeout = 6 * 3600 * 1000;
+        let timeout = READER_STALL_TIMEOUT_MS;
 
         const interval = setInterval(async () => {
             if (!this.running) {
@@ -182,7 +234,7 @@ export default class Filler {
                 );
             } else if (this.reader.blocksUntilHead > 60) {
                 lastBlockTime = Date.now();
-                timeout = 10 * 60 * 1000;
+                timeout = READER_CATCHUP_STALL_TIMEOUT_MS;
 
                 if (blockRange === 0) {
                     blockRange = this.reader.blocksUntilHead;
@@ -202,7 +254,7 @@ export default class Filler {
             } else {
                 lastBlockTime = Date.now();
                 blockRange = 0;
-                timeout = 4 * 60 * 1000;
+                timeout = READER_CAUGHTUP_STALL_TIMEOUT_MS;
 
                 logger.info(
                     'Reader ' + this.config.name + ' - ' +

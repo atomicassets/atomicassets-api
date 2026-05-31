@@ -39,4 +39,38 @@ describe('Filler', () => {
             expect(stub(150).isFallingBehind(500)).to.equal(false);
         });
     });
+
+    describe('shouldDeferDrain (hysteresis)', () => {
+        const stub = (): { filler: Filler; setBehind: (n: number) => void } => {
+            const filler = Object.create(Filler.prototype) as Filler;
+            const reader = {blocksUntilHead: 0};
+            (filler as any).reader = reader;
+            return {filler, setBehind: (n: number): void => { reader.blocksUntilHead = n; }};
+        };
+
+        it('does not defer when caught up', () => {
+            expect(stub().filler.shouldDeferDrain()).to.equal(false);
+        });
+
+        it('defers once the reader passes the stop threshold (>200)', () => {
+            const {filler, setBehind} = stub();
+            setBehind(201);
+            expect(filler.shouldDeferDrain()).to.equal(true);
+        });
+
+        it('keeps deferring in the hysteresis band until below the resume threshold (<60)', () => {
+            const {filler, setBehind} = stub();
+            setBehind(250); expect(filler.shouldDeferDrain()).to.equal(true);  // gate on
+            setBehind(100); expect(filler.shouldDeferDrain()).to.equal(true);  // still on (band: 60..200)
+            setBehind(59);  expect(filler.shouldDeferDrain()).to.equal(false); // resume
+        });
+
+        it('stays off in the band after resuming until it exceeds the stop threshold again', () => {
+            const {filler, setBehind} = stub();
+            setBehind(250); filler.shouldDeferDrain(); // on
+            setBehind(50);  filler.shouldDeferDrain(); // off
+            setBehind(150); expect(filler.shouldDeferDrain()).to.equal(false); // band, stays off
+            setBehind(201); expect(filler.shouldDeferDrain()).to.equal(true);  // exceeds stop, on again
+        });
+    });
 });

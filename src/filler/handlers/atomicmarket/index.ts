@@ -3,6 +3,7 @@ import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
 import logger from '../../../utils/winston';
+import { positiveIntEnv } from '../../../utils/env';
 import { ConfigTableRow } from './types/tables';
 import Filler  from '../../filler';
 import { DELPHIORACLE_BASE_PRIORITY } from '../delphioracle';
@@ -27,10 +28,8 @@ export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, D
 // rows of each type in a short transaction; the job loops until the queue is
 // drained or the per-tick time budget elapses. Env-tunable so ops can retune
 // under load without a redeploy. Defaults: 5000 rows/batch, 30 s budget.
-const SALES_FILTERS_BATCH_SIZE =
-    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_BATCH_SIZE ?? '', 10) || 5000;
-const SALES_FILTERS_DRAIN_BUDGET_MS =
-    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS ?? '', 10) || 30_000;
+const SALES_FILTERS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_BATCH_SIZE', 5000);
+const SALES_FILTERS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS', 30_000);
 // Per-batch statement_timeout for the drain query. This is the EFFECTIVE cap on
 // a single update_atomicmarket_sales_filters() call. It is applied via
 // `SET LOCAL` inside each batch's transaction (see below) — NOT via the pool's
@@ -39,8 +38,15 @@ const SALES_FILTERS_DRAIN_BUDGET_MS =
 // connection-level SET is silently dropped). 2026-05-29 incident: the drain
 // was effectively capped at the role's 30 s, timed out (57014) on heavy batches
 // during a mint storm, and the queue grew to 9.3M rows. Default 5 min.
-const SALES_FILTERS_STATEMENT_TIMEOUT_MS =
-    parseInt(process.env.ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS ?? '', 10) || 300_000;
+const SALES_FILTERS_STATEMENT_TIMEOUT_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS', 300_000);
+// Per-batch work_mem (MB) for the drain. The recompute (MATERIALIZED CTEs +
+// jsonb_each aggregation + sorts) spills to temp files at the default 128MB on
+// real batches (measured ~1 GB/call, ~16-20s, dominated by IO/BuffileWrite) and
+// starves the reader's block writes. Raising it keeps the recompute in memory so
+// each call is ~1s. Applied via `SET LOCAL` (same PgBouncer-safe, txn-scoped
+// reason as statement_timeout) on the drain's single longRunningPool connection
+// only, so memory use is bounded. Default 2048 MB.
+const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 2048);
 
 // Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
 // Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
@@ -49,10 +55,8 @@ const SALES_FILTERS_STATEMENT_TIMEOUT_MS =
 // 30s statement_timeout (these are FUNCTIONs as of migration 1.6.5; before that
 // they were procedures that timed out on a 50k-row-per-call loop). Budget stays
 // under 30s so the per-tick loop bows out before any single call risks the cap.
-const MINTS_BATCH_SIZE =
-    parseInt(process.env.ATOMICMARKET_MINTS_BATCH_SIZE ?? '', 10) || 2000;
-const MINTS_DRAIN_BUDGET_MS =
-    parseInt(process.env.ATOMICMARKET_MINTS_DRAIN_BUDGET_MS ?? '', 10) || 25_000;
+const MINTS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_MINTS_BATCH_SIZE', 2000);
+const MINTS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_MINTS_DRAIN_BUDGET_MS', 25_000);
 
 interface DrainClient {
     query(sql: string, params?: any[]): Promise<{ rows: Array<{ consumed?: number | string }> }>;
@@ -86,6 +90,7 @@ async function drainOneBatch(
         await client.query('BEGIN');
         try {
             await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs)}`);
+            await client.query(`SET LOCAL work_mem = '${Number(SALES_FILTERS_WORK_MEM_MB)}MB'`);
             const res = await client.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
             await client.query('COMMIT');
             return Number(res.rows[0]?.consumed ?? 0);
@@ -488,6 +493,11 @@ export default class AtomicMarketHandler extends ContractHandler {
         }
 
         this.filler.jobs.add('update_atomicmarket_sale_mints', 60, JobQueuePriority.MEDIUM, async () => {
+            // Defer while the reader is catching up so it keeps block-write
+            // priority during bursts / post-restart catch-up (see
+            // Filler.shouldDeferDrain). The deduped queue stays bounded meanwhile.
+            if (this.filler.shouldDeferDrain()) return;
+
             const probe = await this.connection.database.query(
                 `SELECT EXISTS(
                     SELECT 1 FROM atomicmarket_sales
@@ -511,6 +521,8 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_buyoffer_mints', 60, JobQueuePriority.MEDIUM, async () => {
+            if (this.filler.shouldDeferDrain()) return; // reader-priority gate (see Filler.shouldDeferDrain)
+
             const probe = await this.connection.database.query(
                 `SELECT EXISTS(
                     SELECT 1 FROM atomicmarket_buyoffers
@@ -534,6 +546,8 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_auction_mints', 60, JobQueuePriority.MEDIUM, async () => {
+            if (this.filler.shouldDeferDrain()) return; // reader-priority gate (see Filler.shouldDeferDrain)
+
             const probe = await this.connection.database.query(
                 `SELECT EXISTS(
                     SELECT 1 FROM atomicmarket_auctions
@@ -571,14 +585,18 @@ export default class AtomicMarketHandler extends ContractHandler {
             // (each call its own txn via the pool, so locks release between
             // batches) until the queue is empty or the time budget elapses.
             //
-            // No isFallingBehind() gate any more: pre-1.6.3 the proc drained the
-            // whole queue in one long transaction, so it was gated off during
-            // catchup to avoid contending with block writes — but that let the
-            // queue grow unbounded during high-mint events (rustveil 2026-05-28,
-            // 13k-18k backlog -> 106 s runs -> reader knocked >200 blocks behind
-            // -> gated off -> queue grows -> worse: a doom-loop that tripped the
-            // reader watchdog). Bounded batches make concurrent draining safe, so
-            // draining MUST continue while catching up to keep the queue bounded.
+            // Reader-priority gate (re-added 1.6.6): defer the drain while the
+            // reader is catching up so it keeps block-write priority during bursts
+            // and post-restart catch-up — the contention that repeatedly knocked
+            // the reader behind and wedged it. The gate was REMOVED in 1.6.3
+            // because the then-unbounded drain + gate doom-looped (queue grew
+            // unbounded while gated). 1.6.4 dedup (unique partial indexes) now
+            // caps atomicmarket_sales_filters_updates at distinct changed keys, so
+            // gating is safe again: the backlog stays bounded while deferred and
+            // drains quickly (1.6.6 work_mem keeps each call in memory) once the
+            // reader is caught up.
+            if (this.filler.shouldDeferDrain()) return;
+
             const probe = await longRunningPool.query(
                 'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
             );
