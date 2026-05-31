@@ -84,13 +84,14 @@ async function drainOneBatch(
     pool: DrainPool,
     batchSize: number,
     statementTimeoutMs: number,
+    workMemMb: number,
 ): Promise<number> {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         try {
             await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs)}`);
-            await client.query(`SET LOCAL work_mem = '${Number(SALES_FILTERS_WORK_MEM_MB)}MB'`);
+            await client.query(`SET LOCAL work_mem = '${Number(workMemMb)}MB'`);
             const res = await client.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
             await client.query('COMMIT');
             return Number(res.rows[0]?.consumed ?? 0);
@@ -116,13 +117,14 @@ export async function drainAtomicmarketSalesFilters(
     batchSize: number,
     budgetMs: number,
     statementTimeoutMs: number,
+    workMemMb: number,
     now: () => number = Date.now,
 ): Promise<number> {
     const deadline = now() + budgetMs;
     let total = 0;
     let consumed: number;
     do {
-        consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs);
+        consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs, workMemMb);
         total += consumed;
     } while (consumed > 0 && now() < deadline);
     return total;
@@ -182,6 +184,33 @@ export async function drainAtomicmarketMints(
         total += updated;
     } while (updated > 0 && now() < deadline);
     return total;
+}
+
+/**
+ * Shared reader-priority wrapper for the maintenance drain jobs (sales filters +
+ * the 3 mint backfills). Enforces the ordering the robustness fix depends on:
+ *
+ *   1. defer if the reader is catching up  (Filler.shouldDeferDrain — Layer 1)
+ *   2. else skip if there's nothing queued  (cheap EXISTS probe)
+ *   3. else run the bounded drain
+ *
+ * A deferred reader touches NEITHER the probe NOR the drain, so the gate gives
+ * block-writes absolute priority during bursts / post-restart catch-up. Returns
+ * a status purely so the wiring is unit-testable without a live Filler/DB; the
+ * JobQueue callback ignores the return value.
+ */
+export async function runGatedDrain(
+    filler: { shouldDeferDrain(): boolean },
+    hasWork: () => Promise<boolean>,
+    drain: () => Promise<number>,
+): Promise<'deferred' | 'no-work' | number> {
+    if (filler.shouldDeferDrain()) {
+        return 'deferred';
+    }
+    if (!(await hasWork())) {
+        return 'no-work';
+    }
+    return drain();
 }
 
 export type AtomicMarketArgs = {
@@ -492,15 +521,18 @@ export default class AtomicMarketHandler extends ContractHandler {
             destructors.push(logProcessor(this, processor));
         }
 
-        this.filler.jobs.add('update_atomicmarket_sale_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            // Defer while the reader is catching up so it keeps block-write
-            // priority during bursts / post-restart catch-up (see
-            // Filler.shouldDeferDrain). The deduped queue stays bounded meanwhile.
-            if (this.filler.shouldDeferDrain()) return;
-
+        // Reader-priority gate + EXISTS probe + bounded drain are sequenced by
+        // runGatedDrain (defer while the reader is catching up so it keeps
+        // block-write priority during bursts / post-restart catch-up; the deduped
+        // queue stays bounded meanwhile — see Filler.shouldDeferDrain).
+        // `table` is a closed string-literal union, so it can only ever be one of
+        // these three constants — the interpolation cannot carry untrusted input.
+        const mintsHasWork = (
+            table: 'atomicmarket_sales' | 'atomicmarket_buyoffers' | 'atomicmarket_auctions',
+        ) => async (): Promise<boolean> => {
             const probe = await this.connection.database.query(
                 `SELECT EXISTS(
-                    SELECT 1 FROM atomicmarket_sales
+                    SELECT 1 FROM ${table}
                     WHERE template_mint IS NULL
                         AND market_contract = $1
                         AND created_at_block <= $2
@@ -508,67 +540,37 @@ export default class AtomicMarketHandler extends ContractHandler {
                 ) AS has_work`,
                 [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
             );
-            if (!probe.rows[0]?.has_work) return;
+            return probe.rows[0]?.has_work === true;
+        };
+        const drainMints = (fnName: string) => (): Promise<number> => drainAtomicmarketMints(
+            this.connection.database,
+            fnName,
+            this.args.atomicmarket_account,
+            this.filler.reader.lastIrreversibleBlock,
+            MINTS_BATCH_SIZE,
+            MINTS_DRAIN_BUDGET_MS,
+        );
 
-            await drainAtomicmarketMints(
-                this.connection.database,
-                'update_atomicmarket_sale_mints',
-                this.args.atomicmarket_account,
-                this.filler.reader.lastIrreversibleBlock,
-                MINTS_BATCH_SIZE,
-                MINTS_DRAIN_BUDGET_MS,
-            );
-        });
+        this.filler.jobs.add('update_atomicmarket_sale_mints', 60, JobQueuePriority.MEDIUM, () =>
+            runGatedDrain(
+                this.filler,
+                mintsHasWork('atomicmarket_sales'),
+                drainMints('update_atomicmarket_sale_mints'),
+            ));
 
-        this.filler.jobs.add('update_atomicmarket_buyoffer_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            if (this.filler.shouldDeferDrain()) return; // reader-priority gate (see Filler.shouldDeferDrain)
+        this.filler.jobs.add('update_atomicmarket_buyoffer_mints', 60, JobQueuePriority.MEDIUM, () =>
+            runGatedDrain(
+                this.filler,
+                mintsHasWork('atomicmarket_buyoffers'),
+                drainMints('update_atomicmarket_buyoffer_mints'),
+            ));
 
-            const probe = await this.connection.database.query(
-                `SELECT EXISTS(
-                    SELECT 1 FROM atomicmarket_buyoffers
-                    WHERE template_mint IS NULL
-                        AND market_contract = $1
-                        AND created_at_block <= $2
-                    LIMIT 1
-                ) AS has_work`,
-                [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
-            );
-            if (!probe.rows[0]?.has_work) return;
-
-            await drainAtomicmarketMints(
-                this.connection.database,
-                'update_atomicmarket_buyoffer_mints',
-                this.args.atomicmarket_account,
-                this.filler.reader.lastIrreversibleBlock,
-                MINTS_BATCH_SIZE,
-                MINTS_DRAIN_BUDGET_MS,
-            );
-        });
-
-        this.filler.jobs.add('update_atomicmarket_auction_mints', 60, JobQueuePriority.MEDIUM, async () => {
-            if (this.filler.shouldDeferDrain()) return; // reader-priority gate (see Filler.shouldDeferDrain)
-
-            const probe = await this.connection.database.query(
-                `SELECT EXISTS(
-                    SELECT 1 FROM atomicmarket_auctions
-                    WHERE template_mint IS NULL
-                        AND market_contract = $1
-                        AND created_at_block <= $2
-                    LIMIT 1
-                ) AS has_work`,
-                [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
-            );
-            if (!probe.rows[0]?.has_work) return;
-
-            await drainAtomicmarketMints(
-                this.connection.database,
-                'update_atomicmarket_auction_mints',
-                this.args.atomicmarket_account,
-                this.filler.reader.lastIrreversibleBlock,
-                MINTS_BATCH_SIZE,
-                MINTS_DRAIN_BUDGET_MS,
-            );
-        });
+        this.filler.jobs.add('update_atomicmarket_auction_mints', 60, JobQueuePriority.MEDIUM, () =>
+            runGatedDrain(
+                this.filler,
+                mintsHasWork('atomicmarket_auctions'),
+                drainMints('update_atomicmarket_auction_mints'),
+            ));
 
         // Cadence bumped 20s → 60s and gated by a cheap EXISTS probe after the
         // 2026-04-24 00:01 UTC cliff where cold-cache joins across atomicassets_*
@@ -578,37 +580,35 @@ export default class AtomicMarketHandler extends ContractHandler {
         // races harmlessly with the proc's own DELETE on the queue — a late
         // insertion between probe and call just falls through to the proc,
         // which returns quickly if the queue is drained by then.
-        this.filler.jobs.add('update_atomicmarket_sales_filters', 60, JobQueuePriority.HIGH, async () => {
-            // Drain the queue in bounded batches. update_atomicmarket_sales_filters
-            // ($1) consumes at most $1 queue rows of each type per call in a SHORT
-            // transaction and returns the number of queue rows consumed; we loop
-            // (each call its own txn via the pool, so locks release between
-            // batches) until the queue is empty or the time budget elapses.
-            //
-            // Reader-priority gate (re-added 1.6.6): defer the drain while the
-            // reader is catching up so it keeps block-write priority during bursts
-            // and post-restart catch-up — the contention that repeatedly knocked
-            // the reader behind and wedged it. The gate was REMOVED in 1.6.3
-            // because the then-unbounded drain + gate doom-looped (queue grew
-            // unbounded while gated). 1.6.4 dedup (unique partial indexes) now
-            // caps atomicmarket_sales_filters_updates at distinct changed keys, so
-            // gating is safe again: the backlog stays bounded while deferred and
-            // drains quickly (1.6.6 work_mem keeps each call in memory) once the
-            // reader is caught up.
-            if (this.filler.shouldDeferDrain()) return;
-
-            const probe = await longRunningPool.query(
-                'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
-            );
-            if (!probe.rows[0]?.has_work) return;
-
-            await drainAtomicmarketSalesFilters(
-                longRunningPool,
-                SALES_FILTERS_BATCH_SIZE,
-                SALES_FILTERS_DRAIN_BUDGET_MS,
-                SALES_FILTERS_STATEMENT_TIMEOUT_MS,
-            );
-        });
+        // Drain the queue in bounded batches. update_atomicmarket_sales_filters
+        // ($1) consumes at most $1 queue rows of each type per call in a SHORT
+        // transaction and returns the number consumed; the drain loops (each call
+        // its own txn, so locks release between batches) until the queue is empty
+        // or the time budget elapses.
+        //
+        // Reader-priority gate (re-added 1.6.6, via runGatedDrain): defer the drain
+        // while the reader is catching up so it keeps block-write priority during
+        // bursts and post-restart catch-up — the contention that repeatedly knocked
+        // the reader behind and wedged it. The gate was REMOVED in 1.6.3 because the
+        // then-unbounded drain + gate doom-looped (queue grew unbounded while
+        // gated). 1.6.4 dedup (unique partial indexes) now caps
+        // atomicmarket_sales_filters_updates at distinct changed keys, so gating is
+        // safe again: the backlog stays bounded while deferred and drains quickly
+        // (1.6.6 work_mem keeps each call in memory) once the reader is caught up.
+        this.filler.jobs.add('update_atomicmarket_sales_filters', 60, JobQueuePriority.HIGH, () =>
+            runGatedDrain(
+                this.filler,
+                async () => (await longRunningPool.query(
+                    'SELECT EXISTS(SELECT 1 FROM atomicmarket_sales_filters_updates LIMIT 1) AS has_work'
+                )).rows[0]?.has_work === true,
+                () => drainAtomicmarketSalesFilters(
+                    longRunningPool,
+                    SALES_FILTERS_BATCH_SIZE,
+                    SALES_FILTERS_DRAIN_BUDGET_MS,
+                    SALES_FILTERS_STATEMENT_TIMEOUT_MS,
+                    SALES_FILTERS_WORK_MEM_MB,
+                ),
+            ));
 
         this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
             await longRunningPool.query('SELECT refresh_atomicmarket_sales_filters_price()');

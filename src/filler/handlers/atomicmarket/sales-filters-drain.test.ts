@@ -4,6 +4,7 @@ import { expect } from 'chai';
 import { drainAtomicmarketSalesFilters } from './index';
 
 const STMT_TIMEOUT_MS = 300_000;
+const WORK_MEM_MB = 2048;
 
 /**
  * Minimal pool/client stub. connect() hands back a client that records every
@@ -43,7 +44,7 @@ function makePool(consumedSequence: Array<number | string>): {
 describe('drainAtomicmarketSalesFilters', () => {
     it('loops until a call consumes 0 rows, summing total consumed', async () => {
         const { pool, drainCalls } = makePool([5000, 5000, 1200, 0]);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
 
         expect(total).to.equal(11_200);
         // 3 non-empty batches + 1 terminating empty batch
@@ -52,7 +53,7 @@ describe('drainAtomicmarketSalesFilters', () => {
 
     it('makes exactly one call when the queue is already empty', async () => {
         const { pool, drainCalls } = makePool([0]);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
 
         expect(total).to.equal(0);
         expect(drainCalls()).to.equal(1);
@@ -73,14 +74,14 @@ describe('drainAtomicmarketSalesFilters', () => {
         };
         // deadline = now() (=0) + 25_000. loop-check reads 20_000 (<25_000 -> continue),
         // next read 40_000 (stop). Exactly 2 batches before the budget tripped.
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 25_000, STMT_TIMEOUT_MS, now);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 25_000, STMT_TIMEOUT_MS, WORK_MEM_MB, now);
 
         expect(total).to.equal(10_000);
     });
 
     it('coerces string consumed counts (pg may return bigint/numeric as string)', async () => {
         const { pool } = makePool(['5000', '0']);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
         expect(total).to.equal(5000);
     });
 
@@ -90,7 +91,7 @@ describe('drainAtomicmarketSalesFilters', () => {
         // timeout MUST be SET LOCAL inside each batch's transaction, before the
         // drain query (statement_timeout is armed when the statement begins).
         const { pool, queries } = makePool([0]);
-        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, () => 0);
+        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
 
         expect(queries).to.deep.equal([
             'BEGIN',
@@ -103,6 +104,17 @@ describe('drainAtomicmarketSalesFilters', () => {
         const drainIdx = queries.findIndex(q => q.startsWith('SELECT update_atomicmarket_sales_filters'));
         expect(setLocalIdx).to.be.greaterThan(-1);
         expect(setLocalIdx).to.be.lessThan(drainIdx); // SET LOCAL precedes the drain query
+    });
+
+    it('threads a non-default work_mem through to the SET LOCAL (env-override path)', async () => {
+        // The operator retuning lever (ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB) is
+        // passed as the workMemMb argument; assert a non-default value actually
+        // reaches the emitted SQL rather than being pinned at the 2048MB default.
+        const { pool, queries } = makePool([0]);
+        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, 512, () => 0);
+
+        expect(queries).to.include("SET LOCAL work_mem = '512MB'");
+        expect(queries).to.not.include("SET LOCAL work_mem = '2048MB'");
     });
 
     it('rolls back and rethrows when the drain query errors, and always releases the client', async () => {
