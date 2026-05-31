@@ -108,9 +108,20 @@ async function drainOneBatch(
  * Drain atomicmarket_sales_filters_updates in bounded batches. Each
  * drainOneBatch() consumes at most batchSize queue rows of each type in its own
  * short transaction (so locks release between batches) and returns the number
- * of queue rows consumed; we loop until the queue is empty (consumed=0) or the
- * time budget elapses. Returns total rows consumed across the loop.
- * `now` is injectable for tests.
+ * of queue rows consumed; we loop until the queue is empty (consumed=0), the
+ * time budget elapses, OR `shouldYield()` returns true. Returns total rows
+ * consumed across the loop.
+ *
+ * `shouldYield` is checked BETWEEN batches (not just at the start) so a reader
+ * that falls behind mid-budget reclaims priority immediately instead of waiting
+ * out the whole budget. This matters because a live (committed) batch is ~36s on
+ * WAX (WAL + GIN index maintenance on the 46M-row filter table), and the gate
+ * was previously only evaluated at tick start (runGatedDrain) — so a large budget
+ * starved the block reader 1:1 for its whole window and tripped the watchdog
+ * (2026-05-31). Checking it per batch lets the budget be large (fast draining
+ * while the reader is idle) AND reader-safe (yield the instant blocksUntilHead
+ * climbs). Wiring passes `() => filler.shouldDeferDrain()`.
+ * `shouldYield` and `now` are injectable for tests.
  */
 export async function drainAtomicmarketSalesFilters(
     pool: DrainPool,
@@ -118,6 +129,7 @@ export async function drainAtomicmarketSalesFilters(
     budgetMs: number,
     statementTimeoutMs: number,
     workMemMb: number,
+    shouldYield: () => boolean = () => false,
     now: () => number = Date.now,
 ): Promise<number> {
     const deadline = now() + budgetMs;
@@ -126,7 +138,7 @@ export async function drainAtomicmarketSalesFilters(
     do {
         consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs, workMemMb);
         total += consumed;
-    } while (consumed > 0 && now() < deadline);
+    } while (consumed > 0 && now() < deadline && !shouldYield());
     return total;
 }
 
@@ -158,7 +170,8 @@ const MINT_BACKFILL_FUNCTIONS = new Set([
  * than batchSize while resolvable work remains — but when it resolves 0, nothing
  * is currently resolvable and the next 60s tick re-probes. `fnName` is checked
  * against MINT_BACKFILL_FUNCTIONS because it is interpolated into the SQL.
- * `now` is injectable for tests.
+ * `shouldYield` is checked between batches (same reader-priority rationale as
+ * drainAtomicmarketSalesFilters). `shouldYield` and `now` are injectable for tests.
  */
 export async function drainAtomicmarketMints(
     pool: MintsPool,
@@ -167,6 +180,7 @@ export async function drainAtomicmarketMints(
     lastIrreversibleBlock: number,
     batchSize: number,
     budgetMs: number,
+    shouldYield: () => boolean = () => false,
     now: () => number = Date.now,
 ): Promise<number> {
     if (!MINT_BACKFILL_FUNCTIONS.has(fnName)) {
@@ -182,7 +196,7 @@ export async function drainAtomicmarketMints(
         );
         updated = Number(res.rows[0]?.updated ?? 0);
         total += updated;
-    } while (updated > 0 && now() < deadline);
+    } while (updated > 0 && now() < deadline && !shouldYield());
     return total;
 }
 
@@ -549,6 +563,9 @@ export default class AtomicMarketHandler extends ContractHandler {
             this.filler.reader.lastIrreversibleBlock,
             MINTS_BATCH_SIZE,
             MINTS_DRAIN_BUDGET_MS,
+            // yield between batches the moment the reader falls behind (not just
+            // at tick start) so the drain never starves block-writes for a full budget
+            () => this.filler.shouldDeferDrain(),
         );
 
         this.filler.jobs.add('update_atomicmarket_sale_mints', 60, JobQueuePriority.MEDIUM, () =>
@@ -607,6 +624,10 @@ export default class AtomicMarketHandler extends ContractHandler {
                     SALES_FILTERS_DRAIN_BUDGET_MS,
                     SALES_FILTERS_STATEMENT_TIMEOUT_MS,
                     SALES_FILTERS_WORK_MEM_MB,
+                    // yield between batches the moment the reader falls behind (not just
+                    // at tick start) so a large budget stays reader-safe — the drain
+                    // releases priority instantly instead of running out its whole window
+                    () => this.filler.shouldDeferDrain(),
                 ),
             ));
 
