@@ -44,16 +44,35 @@ function makePool(consumedSequence: Array<number | string>): {
 describe('drainAtomicmarketSalesFilters', () => {
     it('loops until a call consumes 0 rows, summing total consumed', async () => {
         const { pool, drainCalls } = makePool([5000, 5000, 1200, 0]);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB);
 
         expect(total).to.equal(11_200);
         // 3 non-empty batches + 1 terminating empty batch
         expect(drainCalls()).to.equal(4);
     });
 
+    it('yields between batches when shouldYield() turns true, even with budget + rows remaining', async () => {
+        // Reader-priority: a live batch is ~36s, so the gate must be re-checked
+        // BETWEEN batches (not only at tick start). Queue never drains and the
+        // budget is huge; shouldYield flips true after the 2nd batch -> the loop
+        // must stop at 2 batches, not run out the budget.
+        const { pool, drainCalls } = makePool([5000, 5000, 5000, 5000, 5000]);
+        let calls = 0;
+        const shouldYield = (): boolean => {
+            calls += 1;
+            return calls >= 2; // false after batch 1, true after batch 2
+        };
+        const total = await drainAtomicmarketSalesFilters(
+            pool, 5000, 10 * 60_000, STMT_TIMEOUT_MS, WORK_MEM_MB, shouldYield,
+        );
+
+        expect(total).to.equal(10_000); // exactly 2 batches before yielding
+        expect(drainCalls()).to.equal(2);
+    });
+
     it('makes exactly one call when the queue is already empty', async () => {
         const { pool, drainCalls } = makePool([0]);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB);
 
         expect(total).to.equal(0);
         expect(drainCalls()).to.equal(1);
@@ -74,14 +93,14 @@ describe('drainAtomicmarketSalesFilters', () => {
         };
         // deadline = now() (=0) + 25_000. loop-check reads 20_000 (<25_000 -> continue),
         // next read 40_000 (stop). Exactly 2 batches before the budget tripped.
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 25_000, STMT_TIMEOUT_MS, WORK_MEM_MB, now);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 25_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => false, now);
 
         expect(total).to.equal(10_000);
     });
 
     it('coerces string consumed counts (pg may return bigint/numeric as string)', async () => {
         const { pool } = makePool(['5000', '0']);
-        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
+        const total = await drainAtomicmarketSalesFilters(pool, 5000, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB);
         expect(total).to.equal(5000);
     });
 
@@ -91,7 +110,7 @@ describe('drainAtomicmarketSalesFilters', () => {
         // timeout MUST be SET LOCAL inside each batch's transaction, before the
         // drain query (statement_timeout is armed when the statement begins).
         const { pool, queries } = makePool([0]);
-        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB, () => 0);
+        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB);
 
         expect(queries).to.deep.equal([
             'BEGIN',
@@ -111,7 +130,7 @@ describe('drainAtomicmarketSalesFilters', () => {
         // passed as the workMemMb argument; assert a non-default value actually
         // reaches the emitted SQL rather than being pinned at the 2048MB default.
         const { pool, queries } = makePool([0]);
-        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, 512, () => 0);
+        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, 512);
 
         expect(queries).to.include("SET LOCAL work_mem = '512MB'");
         expect(queries).to.not.include("SET LOCAL work_mem = '2048MB'");
@@ -133,7 +152,7 @@ describe('drainAtomicmarketSalesFilters', () => {
         const pool = { connect: async () => client };
 
         await expect(
-            drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, () => 0),
+            drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB),
         ).to.be.rejectedWith(/statement timeout/);
 
         expect(queries).to.include('ROLLBACK');

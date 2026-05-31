@@ -33,16 +33,29 @@ function makePool(updatedSequence: Array<number | string>): {
 describe('drainAtomicmarketMints', () => {
     it('loops until a batch resolves 0 rows, summing total updated', async () => {
         const { pool, calls } = makePool([2000, 2000, 350, 0]);
-        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000, () => 0);
+        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000);
 
         expect(total).to.equal(4350);
         // 3 non-empty batches + 1 terminating empty batch
         expect(calls()).to.equal(4);
     });
 
+    it('yields between batches when shouldYield() turns true, even with budget + rows remaining', async () => {
+        const { pool, calls } = makePool([2000, 2000, 2000, 2000]);
+        let n = 0;
+        const shouldYield = (): boolean => {
+            n += 1;
+            return n >= 2; // false after batch 1, true after batch 2
+        };
+        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 10 * 60_000, shouldYield);
+
+        expect(total).to.equal(4000); // 2 batches before yielding
+        expect(calls()).to.equal(2);
+    });
+
     it('makes exactly one call when nothing is resolvable (first batch 0)', async () => {
         const { pool, calls } = makePool([0]);
-        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000, () => 0);
+        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000);
 
         expect(total).to.equal(0);
         expect(calls()).to.equal(1);
@@ -58,20 +71,20 @@ describe('drainAtomicmarketMints', () => {
         };
         // deadline = now()(=0) + 25_000. loop-check reads 20_000 (<25_000 -> continue),
         // next read 40_000 (stop). Exactly 2 batches before the budget tripped.
-        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 25_000, now);
+        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 25_000, () => false, now);
 
         expect(total).to.equal(4000);
     });
 
     it('coerces string counts (pg may return bigint/numeric as string)', async () => {
         const { pool } = makePool(['2000', '0']);
-        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000, () => 0);
+        const total = await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000);
         expect(total).to.equal(2000);
     });
 
     it('calls the named function with (contract, lib, batchSize) bound params', async () => {
         const { pool, queries } = makePool([0]);
-        await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000, () => 0);
+        await drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000);
 
         expect(queries[0].sql).to.equal(`SELECT ${FN}($1, $2, $3) AS updated`);
         expect(queries[0].params).to.deep.equal([CONTRACT, LIB, BATCH]);
@@ -82,7 +95,7 @@ describe('drainAtomicmarketMints', () => {
             query: async () => { throw new Error('canceling statement due to statement timeout'); },
         };
         await expect(
-            drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000, () => 0),
+            drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000),
         ).to.be.rejectedWith(/statement timeout/);
     });
 
@@ -90,7 +103,7 @@ describe('drainAtomicmarketMints', () => {
         let called = false;
         const pool = { query: async () => { called = true; return { rows: [{ updated: 0 }] }; } };
         await expect(
-            drainAtomicmarketMints(pool, 'evil(); DROP TABLE atomicmarket_sales; --', CONTRACT, LIB, BATCH, 30_000, () => 0),
+            drainAtomicmarketMints(pool, 'evil(); DROP TABLE atomicmarket_sales; --', CONTRACT, LIB, BATCH, 30_000),
         ).to.be.rejectedWith(/unknown function/);
         expect(called).to.equal(false);
     });
