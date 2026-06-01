@@ -196,6 +196,22 @@ export default class Filler {
                 clearInterval(interval);
             }
 
+            // Fast self-heal: if the consumer queue died on a non-recoverable
+            // error it will never process another block, so don't wait out the
+            // multi-minute stall timer below — restart the pod immediately. Uses
+            // the same failure channel as the stall path (process.send → master
+            // → exit → K8s restart; CrashLoopBackOff throttles a persistent
+            // failure). Cuts recovery from up to ~10 min to ~5s + restart.
+            if (this.reader.queueStopped) {
+                logger.error('Reader ' + this.config.name + ' - consumer queue is dead, exiting immediately for restart');
+
+                process.send({msg: 'failure'});
+
+                await new Promise(resolve => setTimeout(resolve, logInterval / 2 * 1000));
+
+                process.exit(1);
+            }
+
             if (lastBlockNum === 0) {
                 if (this.reader.currentBlock) {
                     blockRange = this.reader.blocksUntilHead;

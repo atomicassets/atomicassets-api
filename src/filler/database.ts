@@ -7,9 +7,32 @@ import ConnectionManager from '../connections/manager';
 import { ShipBlock } from '../types/ship';
 import { eosioTimestampToDate } from '../utils/eosio';
 import { arrayChunk, arraysEqual } from '../utils';
+import { positiveIntEnv } from '../utils/env';
 import logger from '../utils/winston';
 import { EosioActionTrace, EosioTransaction } from '../types/eosio';
 import { encodeDatabaseJson } from './utils';
+
+// Per-transaction statement_timeout for the block WRITER, raised via `SET LOCAL`
+// inside each writer transaction (see ContractDBTransaction.begin()).
+//
+// Why this exists: the `atomichub` role default is statement_timeout=30s (an
+// API/query safety cap declared in the CNPG cluster manifest). The block writer
+// groups up to db_group_blocks blocks (500 on WAX) into one transaction during
+// catch-up; each buffered updateBatch flush is ~500 rows and fires the
+// update_atomicmarket_sales_filters_by_asset() trigger + GIN inserts per row, and
+// the COMMIT runs the DEFERRED FK checks. After a CNPG restart (cold cache + stale
+// stats) a single chunk or the COMMIT can exceed 30s → 57014 → the consumer queue
+// stops → the reader wedges → watchdog restart loop (2026-06-01 incident). The
+// drain already raises its own statement_timeout for the same reason; the writer
+// never did. Raising it lets fast catch-up batches actually commit WITHOUT
+// shrinking db_group_blocks (fast replay is the goal, not the problem).
+//
+// 5 min default matches the drain's ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS
+// and stays under READER_CATCHUP_STALL_TIMEOUT_MS (10m), so a genuinely stuck
+// writer still surfaces via the reader watchdog rather than hanging forever.
+// MUST go through positiveIntEnv: a raw 0 would emit `SET LOCAL statement_timeout
+// = 0` which DISABLES the timeout (hang-forever) — the exact bug this prevents.
+const WRITER_STATEMENT_TIMEOUT_MS = positiveIntEnv('FILLER_WRITER_STATEMENT_TIMEOUT_MS', 300_000);
 
 export type Condition = {
     str: string,
@@ -450,6 +473,10 @@ export class ContractDBTransaction {
         await this.clientQuery('BEGIN');
         await this.clientQuery('SET LOCAL synchronous_commit = off');
         await this.clientQuery('SET CONSTRAINTS ALL DEFERRED');
+        // Raise statement_timeout above the role's 30s default so a large
+        // catch-up batch (and its deferred-FK COMMIT) can finish. SET LOCAL is
+        // pgbouncer-safe and reverts at COMMIT. See WRITER_STATEMENT_TIMEOUT_MS.
+        await this.clientQuery('SET LOCAL statement_timeout = ' + Number(WRITER_STATEMENT_TIMEOUT_MS));
 
         ContractDB.transactions.push(this);
     }

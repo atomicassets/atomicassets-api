@@ -28,6 +28,8 @@ function createReceiverStub(opts: {
     const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
     (receiver as any).dsLock = dsLock;
     (receiver as any).dsQueue = dsQueue;
+    // Object.create skips instance field initializers; mirror the real default.
+    (receiver as any).queueStopped = false;
     (receiver as any).config = {
         name: 'test-reader',
         ship_prefetch_blocks: 50,
@@ -104,6 +106,32 @@ describe('StateReceiver', () => {
                 setTimeout(() => reject(new Error('dsLock leaked — release() missing on error path')), 200)
             );
             await Promise.race([allAcquired, timeout]);
+        });
+
+        it('sets queueStopped on a non-recoverable error so the watchdog restarts fast', async () => {
+            const { receiver, dsQueue } = createReceiverStub({
+                processResult: () => Promise.reject(new Error('DB connection lost')),
+            });
+
+            expect((receiver as any).queueStopped).to.equal(false);
+
+            await (receiver as any).consumer(makeBlockResponse(2500));
+            await dsQueue.onIdle();
+
+            // The fatal-stop branch flips queueStopped so filler.ts exits the pod
+            // immediately instead of waiting out the multi-minute stall timer.
+            expect((receiver as any).queueStopped).to.equal(true);
+        });
+
+        it('does NOT set queueStopped when a block processes cleanly', async () => {
+            const { receiver, dsQueue } = createReceiverStub({
+                processResult: () => Promise.resolve(),
+            });
+
+            await (receiver as any).consumer(makeBlockResponse(2501));
+            await dsQueue.onIdle();
+
+            expect((receiver as any).queueStopped).to.equal(false);
         });
 
         it('exhausts semaphore if release is missing on repeated errors', async () => {
