@@ -48,6 +48,14 @@ export default class StateReceiver {
     lastDatabaseTransaction?: ContractDBTransaction;
     handlerDestructors: Array<() => void> = [];
 
+    // Set true when the consumer queue stops on a non-recoverable block error
+    // (see consumer()). It's a known-dead state: the queue is cleared+paused and
+    // no blocks will ever process again. The filler watchdog polls this and exits
+    // immediately for a pod restart, instead of waiting out the multi-minute
+    // "No blocks processed" stall timer (2026-06-01 incident — recovery took
+    // ~10 min because the dead queue only surfaced via the time-based watchdog).
+    queueStopped = false;
+
     readonly name: string;
 
     readonly dsLock: Semaphore;
@@ -161,6 +169,14 @@ export default class StateReceiver {
         logger.info('Reader stopped at block #' + this.currentBlock);
     }
 
+    // Codes worth retrying because they're contention-/connection-transient: the
+    // same block can succeed on a retry. Deliberately EXCLUDES 57014 (statement
+    // timeout): a timeout is a resource/time verdict, not contention — retrying
+    // the same batch with the same budget just times out again (wasted attempts).
+    // The real lever for 57014 is the writer's raised statement_timeout (see
+    // database.ts WRITER_STATEMENT_TIMEOUT_MS); a 57014 that still reaches the
+    // terminal path means something is genuinely wrong (cold cache / bad plan /
+    // bloat) and should fast-fail into a restart (queueStopped), not silently retry.
     private static readonly TRANSIENT_PG_CODES = new Set([
         '23505', // duplicate key (fork replay)
         '40001', // serialization failure
@@ -210,6 +226,12 @@ export default class StateReceiver {
                     this.dsLock.purge();
                     this.dsQueue.clear();
                     this.dsQueue.pause();
+
+                    // Known-dead state: signal the watchdog to restart the pod NOW
+                    // instead of waiting out the multi-minute stall timer. Recovery
+                    // is a clean restart (the failed block's txn is already aborted;
+                    // we replay from the durable contract_readers checkpoint).
+                    this.queueStopped = true;
 
                     logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
 

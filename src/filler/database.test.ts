@@ -108,6 +108,24 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
+        it('raises statement_timeout above the role default after begin', async () => {
+            const transaction = await contract.startTransaction(105);
+
+            // begin() issues `SET LOCAL statement_timeout = WRITER_STATEMENT_TIMEOUT_MS`
+            // so a large catch-up batch can commit instead of hitting the role's 30s
+            // cap (57014). Default is 300000ms; assert it's well above 30s and never 0
+            // (0 would DISABLE the timeout — the hang-forever footgun).
+            const {rows} = await transaction.query('SHOW statement_timeout', []);
+            // pg returns a human string like '5min'; convert via the setting's ms.
+            const ms = (await transaction.query(
+                "SELECT setting::bigint AS ms FROM pg_settings WHERE name = 'statement_timeout'", []
+            )).rows[0].ms;
+            expect(Number(ms)).to.be.greaterThan(30000);
+            expect(rows[0].statement_timeout).to.not.equal('0');
+
+            await transaction.abort();
+        });
+
         it('begin is idempotent — second call is a no-op', async () => {
             const transaction = await contract.startTransaction(102);
 
