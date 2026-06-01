@@ -116,6 +116,7 @@ describe('drainAtomicmarketSalesFilters', () => {
             'BEGIN',
             `SET LOCAL statement_timeout = ${STMT_TIMEOUT_MS}`,
             "SET LOCAL work_mem = '2048MB'",
+            'SET LOCAL synchronous_commit = off',
             'SELECT update_atomicmarket_sales_filters($1) AS consumed',
             'COMMIT',
         ]);
@@ -123,6 +124,21 @@ describe('drainAtomicmarketSalesFilters', () => {
         const drainIdx = queries.findIndex(q => q.startsWith('SELECT update_atomicmarket_sales_filters'));
         expect(setLocalIdx).to.be.greaterThan(-1);
         expect(setLocalIdx).to.be.lessThan(drainIdx); // SET LOCAL precedes the drain query
+    });
+
+    it('sets synchronous_commit = off inside the batch txn, before the drain query', async () => {
+        // The drain is derived-data maintenance: a lost just-committed batch simply
+        // re-drains (idempotent recompute), so async commit is safe and drops the
+        // per-batch WAL fsync off the critical path. The block reader already runs
+        // synchronous_commit=off; the drain uses its own raw BEGIN…COMMIT and would
+        // otherwise inherit the server default (`on`).
+        const { pool, queries } = makePool([0]);
+        await drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB);
+
+        const syncIdx = queries.indexOf('SET LOCAL synchronous_commit = off');
+        const drainIdx = queries.findIndex(q => q.startsWith('SELECT update_atomicmarket_sales_filters'));
+        expect(syncIdx).to.be.greaterThan(-1); // emitted
+        expect(syncIdx).to.be.lessThan(drainIdx); // before the drain query (SET LOCAL is txn-scoped)
     });
 
     it('threads a non-default work_mem through to the SET LOCAL (env-override path)', async () => {

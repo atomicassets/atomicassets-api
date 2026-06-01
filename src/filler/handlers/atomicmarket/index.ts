@@ -92,6 +92,17 @@ async function drainOneBatch(
         try {
             await client.query(`SET LOCAL statement_timeout = ${Number(statementTimeoutMs)}`);
             await client.query(`SET LOCAL work_mem = '${Number(workMemMb)}MB'`);
+            // Drop this batch's WAL fsync off the critical path. The drain is
+            // derived-data maintenance, not source-of-truth ingestion: if a crash
+            // loses a just-committed batch, the queue rows it consumed simply
+            // re-drain on the next tick (the recompute is idempotent), so async
+            // commit is safe here. The block reader already runs synchronous_commit
+            // = off (src/filler/database.ts), but the drain uses its own raw
+            // BEGIN…COMMIT on longRunningPool and inherits the server default
+            // (`on`) — so every batch was paying an fsync the reader does not.
+            // Removing it cuts per-batch commit cost and the WAL-flush contention
+            // the drain imposed on the shared volume during a burst.
+            await client.query('SET LOCAL synchronous_commit = off');
             const res = await client.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
             await client.query('COMMIT');
             return Number(res.rows[0]?.consumed ?? 0);
