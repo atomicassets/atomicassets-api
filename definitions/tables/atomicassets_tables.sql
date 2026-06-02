@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS atomicassets_assets (
     schema_name character varying(12) NOT NULL,
     template_id bigint,
     owner character varying(12),
+    holder character varying(12),
     mutable_data jsonb,
     immutable_data jsonb,
     template_mint INT,
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS atomicassets_collections (
     notify_accounts character varying(12)[] NOT NULL,
     market_fee double precision NOT NULL,
     data jsonb,
+    new_author_name character varying(12),
+    new_author_date bigint,
     created_at_block bigint NOT NULL,
     created_at_time bigint NOT NULL,
     CONSTRAINT atomicassets_collections_pkey PRIMARY KEY (contract, collection_name)
@@ -104,8 +107,11 @@ CREATE TABLE IF NOT EXISTS atomicassets_templates (
     max_supply bigint NOT NULL,
     issued_supply bigint NOT NULL,
     immutable_data jsonb,
+    mutable_data jsonb,
     created_at_time bigint NOT NULL,
     created_at_block bigint NOT NULL,
+    deleted_at_block bigint,
+    deleted_at_time bigint,
     CONSTRAINT atomicassets_templates_pkey PRIMARY KEY (contract, template_id)
 );
 
@@ -114,6 +120,7 @@ CREATE TABLE IF NOT EXISTS atomicassets_schemas (
     collection_name character varying(12) NOT NULL,
     schema_name character varying(12) NOT NULL,
     format jsonb[] NOT NULL,
+    types jsonb[] NOT NULL DEFAULT ARRAY[]::jsonb[],
     created_at_block bigint NOT NULL,
     created_at_time bigint NOT NULL,
     CONSTRAINT atomicassets_schemas_pkey PRIMARY KEY (contract, collection_name, schema_name)
@@ -145,6 +152,27 @@ CREATE TABLE IF NOT EXISTS atomicassets_transfers_assets (
     "index" integer NOT NULL,
     asset_id bigint NOT NULL,
     CONSTRAINT atomicassets_transfers_assets_pkey PRIMARY KEY (transfer_id, contract, asset_id)
+);
+
+-- v2: asset moves (rental holder changes via the `move`/`logmove` action) --
+CREATE TABLE IF NOT EXISTS atomicassets_moves (
+    move_id bigint NOT NULL,
+    contract character varying(12) NOT NULL,
+    "sender" character varying(12) NOT NULL,
+    "recipient" character varying(12) NOT NULL,
+    memo character varying(256) NOT NULL,
+    txid bytea NOT NULL,
+    created_at_block bigint NOT NULL,
+    created_at_time bigint NOT NULL,
+    CONSTRAINT atomicassets_moves_pkey PRIMARY KEY (contract, move_id)
+);
+
+CREATE TABLE IF NOT EXISTS atomicassets_moves_assets (
+    move_id bigint NOT NULL,
+    contract character varying(12) NOT NULL,
+    "index" integer NOT NULL,
+    asset_id bigint NOT NULL,
+    CONSTRAINT atomicassets_moves_assets_pkey PRIMARY KEY (move_id, contract, asset_id)
 );
 
 -- FOREIGN KEYS --
@@ -242,6 +270,7 @@ CREATE INDEX IF NOT EXISTS atomicassets_assets_collection_name_btree ON atomicas
 CREATE INDEX IF NOT EXISTS atomicassets_assets_template_id_asset_id ON atomicassets_assets (template_id, asset_id);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_schema_name ON atomicassets_assets USING btree (schema_name);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_owner_btree ON atomicassets_assets USING btree (owner);
+CREATE INDEX IF NOT EXISTS atomicassets_assets_holder_btree ON atomicassets_assets USING btree (holder);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_mutable_data ON atomicassets_assets USING gin (mutable_data);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_immutable_data ON atomicassets_assets USING gin (immutable_data);
 CREATE INDEX IF NOT EXISTS atomicassets_assets_template_mint ON atomicassets_assets USING btree (template_mint);
@@ -299,3 +328,9 @@ CREATE INDEX IF NOT EXISTS atomicassets_transfers_recipient ON atomicassets_tran
 CREATE INDEX IF NOT EXISTS atomicassets_transfers_created_at_time ON atomicassets_transfers USING btree (created_at_time);
 
 CREATE INDEX IF NOT EXISTS atomicassets_transfers_assets_asset_id ON atomicassets_transfers_assets USING btree (asset_id);
+
+CREATE INDEX IF NOT EXISTS atomicassets_moves_sender ON atomicassets_moves USING btree (sender);
+CREATE INDEX IF NOT EXISTS atomicassets_moves_recipient ON atomicassets_moves USING btree (recipient);
+CREATE INDEX IF NOT EXISTS atomicassets_moves_created_at_time ON atomicassets_moves USING btree (created_at_time);
+
+CREATE INDEX IF NOT EXISTS atomicassets_moves_assets_asset_id ON atomicassets_moves_assets USING btree (asset_id);

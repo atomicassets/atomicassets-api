@@ -1,8 +1,17 @@
-export type AttributeMap = Array<{key: string, value: [string, any]}>;
+export type AttributeMap = Array<{key: string, value: [string, any]} | {first: string, second: [string, any]}>;
 export type Format = {name: string, type: string};
 
 export type LogTransferActionData = {
     collection_name: string,
+    'from': string,
+    to: string,
+    asset_ids: string[],
+    memo: string
+};
+
+export type LogMoveActionData = {
+    collection_name: string,
+    owner: string,
     'from': string,
     to: string,
     asset_ids: string[],
@@ -141,4 +150,46 @@ export type LogNewOfferActionData = {
     sender_asset_ids: string[],
     recipient_asset_ids: string[],
     memo: string
+};
+
+export type CreateAuthorSwapActionData = {
+    collection_name: string,
+    new_author: string,
+    owner: boolean,
+};
+
+export type AcceptAuthorSwapActionData = {
+    collection_name: string,
+};
+
+export type RejectAuthorSwapActionData = {
+    collection_name: string,
+};
+
+export type DeleteTemplateActionData = {
+    authorized_editor: string,
+    collection_name: string,
+    template_id: number,
+};
+
+export type ReduceTemplateMaxSupplyActionData = {
+    authorized_editor: string,
+    collection_name: string,
+    template_id: number,
+    new_max_supply: number
+};
+
+export type LogSetTemplateDataActionData = {
+    authorized_editor: string,
+    collection_name: string,
+    template_id: number,
+    old_data: AttributeMap,
+    new_data: AttributeMap
+};
+
+export type LogSetSchemaTypeActionData = {
+    authorized_editor: string,
+    collection_name: string,
+    schema_name: number,
+    schema_format_type: any
 };

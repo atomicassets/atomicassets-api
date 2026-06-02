@@ -24,6 +24,7 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         json_build_object(
             'schema_name', "schema".schema_name,
             'format', "schema".format,
+            'types', "schema".types,
             'created_at_block', "schema".created_at_block::text,
             'created_at_time', "schema".created_at_time::text
         ) "schema",
@@ -63,7 +64,8 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         asset.burned_by_account, asset.burned_at_block, asset.burned_at_time,
         asset.updated_at_block, asset.updated_at_time,
         asset.transferred_at_block, asset.transferred_at_time,
-        asset.minted_at_block, asset.minted_at_time
+        asset.minted_at_block, asset.minted_at_time,
+        asset.holder
     FROM
         atomicassets_assets asset
         LEFT JOIN atomicassets_templates "template" ON (

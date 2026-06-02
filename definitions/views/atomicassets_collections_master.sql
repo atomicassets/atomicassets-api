@@ -6,5 +6,6 @@ CREATE OR REPLACE VIEW atomicassets_collections_master AS
         collection.author, collection.allow_notify,
         collection.authorized_accounts, collection.notify_accounts,
         collection.market_fee, collection.data,
-        collection.created_at_time, collection.created_at_block
+        collection.created_at_time, collection.created_at_block,
+        collection.new_author_name, collection.new_author_date
     FROM atomicassets_collections collection

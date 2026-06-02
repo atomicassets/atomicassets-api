@@ -21,11 +21,14 @@ CREATE OR REPLACE VIEW atomicassets_templates_master AS
         json_build_object(
             'schema_name', "schema".schema_name,
             'format', "schema".format,
+            'types', "schema".types,
             'created_at_block', "schema".created_at_block::text,
             'created_at_time', "schema".created_at_time::text
         ) "schema",
         "template".immutable_data,
-        "template".created_at_time, "template".created_at_block
+        "template".created_at_time, "template".created_at_block,
+        "template".mutable_data,
+        "template".deleted_at_time, "template".deleted_at_block
     FROM
         atomicassets_templates "template"
         JOIN atomicassets_collections collection ON (collection.contract = "template".contract AND collection.collection_name = "template".collection_name)

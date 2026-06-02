@@ -6,6 +6,7 @@ import {
     LogBackAssetActionData,
     LogBurnAssetActionData,
     LogMintAssetActionData,
+    LogMoveActionData,
     LogSetDataActionData,
     LogTransferActionData
 } from '../types/actions';
@@ -35,6 +36,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 schema_name: trace.act.data.schema_name,
                 template_id: trace.act.data.template_id === -1 ? null : trace.act.data.template_id,
                 owner: trace.act.data.new_asset_owner,
+                holder: trace.act.data.new_asset_owner,
                 mutable_data: encodeDatabaseJson(convertAttributeMapToObject(trace.act.data.mutable_data)),
                 immutable_data: encodeDatabaseJson(convertAttributeMapToObject(trace.act.data.immutable_data)),
                 burned_by_account: null,
@@ -193,6 +195,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
 
             const updateValues = {
                 owner: trace.act.data.to,
+                holder: trace.act.data.to,
                 transferred_at_block: block.block_num,
                 transferred_at_time: blockTime,
                 updated_at_block: block.block_num,
@@ -231,6 +234,70 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
             }
 
             notifier.sendActionTrace('transfers', block, tx, trace);
+        }, AtomicAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'logmove',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogMoveActionData>): Promise<void> => {
+            const assetIds = trace.act.data.asset_ids;
+
+            if (assetIds.length === 0) {
+                notifier.sendActionTrace('moves', block, tx, trace);
+                return;
+            }
+
+            const blockTime = eosioTimestampToDate(block.timestamp).getTime();
+
+            // A move only changes the holder (rental), not the real owner. Bound
+            // per-statement work exactly like logtransfer above — a move action can
+            // in principle carry a large asset_ids array.
+            const ASSET_CHUNK_SIZE = 100;
+            const MOVE_INSERT_CHUNK_SIZE = 1000;
+
+            await db.query("SET LOCAL statement_timeout = '300s'");
+
+            const updateValues = {
+                owner: trace.act.data.owner,
+                holder: trace.act.data.to,
+                transferred_at_block: block.block_num,
+                transferred_at_time: blockTime,
+                updated_at_block: block.block_num,
+                updated_at_time: blockTime,
+            };
+
+            for (const chunk of arrayChunk(assetIds, ASSET_CHUNK_SIZE)) {
+                await db.update('atomicassets_assets', updateValues, {
+                    str: 'contract = $1 AND asset_id = ANY ($2)',
+                    values: [contract, chunk]
+                }, ['contract', 'asset_id']);
+            }
+
+            if (core.args.store_transfers) {
+                await db.insert('atomicassets_moves', {
+                    contract: contract,
+                    move_id: trace.global_sequence,
+                    sender: trace.act.data.from,
+                    recipient: trace.act.data.to,
+                    memo: String(trace.act.data.memo).substr(0, 256),
+                    txid: Buffer.from(tx.id, 'hex'),
+                    created_at_block: block.block_num,
+                    created_at_time: blockTime
+                }, ['contract', 'move_id'], true, true, 'update');
+
+                const moveAssetRows = assetIds.map((assetID, index) => ({
+                    move_id: trace.global_sequence,
+                    contract: contract,
+                    index: index + 1,
+                    asset_id: assetID
+                }));
+
+                for (const insertChunk of arrayChunk(moveAssetRows, MOVE_INSERT_CHUNK_SIZE)) {
+                    await db.insert('atomicassets_moves_assets', insertChunk, ['contract', 'move_id', 'asset_id'], true, true, 'update');
+                }
+            }
+
+            notifier.sendActionTrace('moves', block, tx, trace);
         }, AtomicAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
 

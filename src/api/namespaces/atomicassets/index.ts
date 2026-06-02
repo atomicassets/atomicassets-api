@@ -8,8 +8,9 @@ import { configEndpoints } from './routes/config';
 import { schemasEndpoints } from './routes/schemas';
 import { templatesEndpoints } from './routes/templates';
 import { atomicassetsComponents } from './openapi';
-import { formatAsset, formatOffer, formatTransfer } from './format';
+import { formatAsset, formatMove, formatOffer, formatTransfer } from './format';
 import { TransferApi } from './routes/transfers';
+import { MoveApi } from './routes/moves';
 import { OfferApi } from './routes/offers';
 import { accountsEndpoints } from './routes/accounts';
 import ApiNotificationReceiver from '../../notification';
@@ -68,6 +69,11 @@ export class AtomicAssetsNamespace extends ApiNamespace {
             'atomicassets_transfers_master', formatTransfer,
             'atomicassets_assets_master', formatAsset
         );
+        const moveApi = new MoveApi(
+            this, server, 'Move',
+            'atomicassets_moves_master', formatMove,
+            'atomicassets_assets_master', formatAsset
+        );
         const offerApi = new OfferApi(
             this, server, 'Offer',
             'atomicassets_offers_master', formatOffer,
@@ -82,6 +88,7 @@ export class AtomicAssetsNamespace extends ApiNamespace {
 
         endpointsDocs.push(offerApi.endpoints(router));
         endpointsDocs.push(transferApi.endpoints(router));
+        endpointsDocs.push(moveApi.endpoints(router));
         endpointsDocs.push(accountsEndpoints(this, server, router));
         endpointsDocs.push(burnEndpoints(this, server, router));
         endpointsDocs.push(configEndpoints(this, server, router));
@@ -119,6 +126,11 @@ export class AtomicAssetsNamespace extends ApiNamespace {
             'atomicassets_transfers_master', formatTransfer,
             'atomicassets_assets_master', formatAsset
         );
+        const moveApi = new MoveApi(
+            this, server, 'Move',
+            'atomicassets_moves_master', formatMove,
+            'atomicassets_assets_master', formatAsset
+        );
         const offerApi = new OfferApi(
             this, server, 'Offer',
             'atomicassets_offers_master', formatOffer,
@@ -127,6 +139,7 @@ export class AtomicAssetsNamespace extends ApiNamespace {
 
         assetApi.sockets(notification);
         transferApi.sockets(notification);
+        moveApi.sockets(notification);
         offerApi.sockets(notification);
     }
 }

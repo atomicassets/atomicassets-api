@@ -23,6 +23,7 @@ export async function getTemplatesAction(params: RequestValues, ctx: AtomicAsset
         min_issued_supply: {type: 'int', min: 0},
         max_issued_supply: {type: 'int', min: 0},
         has_assets: {type: 'bool'},
+        include_deleted: {type: 'bool'},
 
         max_supply: {type: 'int', min: 0},
         is_transferable: {type: 'bool'},
@@ -64,6 +65,10 @@ export async function getTemplatesAction(params: RequestValues, ctx: AtomicAsset
             'WHERE template.contract = asset.contract AND template.template_id = asset.template_id AND owner || \'\' IS NOT NULL' +
             ')'
         );
+    }
+
+    if (!args.include_deleted) {
+        query.isNull('template.deleted_at_block');
     }
 
     if (typeof args.max_supply === 'number') {

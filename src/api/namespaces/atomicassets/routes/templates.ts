@@ -106,6 +106,13 @@ export function templatesEndpoints(core: AtomicAssetsNamespace, server: HTTPServ
                             schema: {type: 'boolean'}
                         },
                         {
+                            name: 'include_deleted',
+                            in: 'query',
+                            description: 'Include deleted templates (default: false)',
+                            required: false,
+                            schema: {type: 'boolean'}
+                        },
+                        {
                             name: 'authorized_account',
                             in: 'query',
                             description: 'Filter for templates the provided account can use',

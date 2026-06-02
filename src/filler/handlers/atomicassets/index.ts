@@ -65,7 +65,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         const views = [
             'atomicassets_asset_mints_master', 'atomicassets_templates_master',
             'atomicassets_schemas_master', 'atomicassets_collections_master', 'atomicassets_offers_master',
-            'atomicassets_transfers_master'
+            'atomicassets_transfers_master', 'atomicassets_moves_master'
         ];
 
         if (!existsQuery.rows[0].exists) {
@@ -110,6 +110,18 @@ export default class AtomicAssetsHandler extends ContractHandler {
             await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+        }
+
+        if (version === '2.0.0') {
+            // v2 added columns to these masters (appended at the end), so
+            // CREATE OR REPLACE works without DROP ... CASCADE of dependent
+            // atomicmarket views. The 2.0.0 migration SQL already added the
+            // underlying table columns before this runs.
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_collections_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_moves_master.sql', {encoding: 'utf8'}));
         }
     }
 
