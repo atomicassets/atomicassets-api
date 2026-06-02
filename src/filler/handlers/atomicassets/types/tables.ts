@@ -31,6 +31,14 @@ export type AuthorSwapsTableRow = {
     acceptance_date: number,
 };
 
+// v2 renting: global `holders` table (scope = contract). A row exists only while
+// holder != owner (asset is rented out). pk = asset_id.
+export type HoldersTableRow = {
+    asset_id: string,
+    holder: string,
+    owner: string,
+};
+
 export type ConfigTableRow = {
     asset_counter: number,
     offer_counter: number,

@@ -37,6 +37,10 @@ export enum AtomicAssetsUpdatePriority {
     TABLE_TEMPLATES = ATOMICASSETS_BASE_PRIORITY + 40,
     ACTION_MINT_ASSET = ATOMICASSETS_BASE_PRIORITY + 50,
     ACTION_UPDATE_ASSET = ATOMICASSETS_BASE_PRIORITY + 60,
+    // v2: the `holders` table delta is the AUTHORITATIVE holder source and must
+    // run AFTER the asset action handlers (mint/transfer/move/burn) so it
+    // reconciles `holder` for rented assets after they optimistically set it.
+    TABLE_HOLDERS = ATOMICASSETS_BASE_PRIORITY + 70,
     ACTION_CREATE_OFFER = ATOMICASSETS_BASE_PRIORITY + 80,
     ACTION_UPDATE_OFFER = ATOMICASSETS_BASE_PRIORITY + 90,
     LOGS = 0

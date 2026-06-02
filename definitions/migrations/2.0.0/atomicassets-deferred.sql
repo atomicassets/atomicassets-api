@@ -1,0 +1,11 @@
+-- Deferred (post-commit, outside transaction) DDL for ECA 2.0.0.
+-- Run by upgrade-db.ts via a dedicated pool with statement_timeout=1h.
+-- CREATE INDEX CONCURRENTLY cannot run inside a transaction and can take a long
+-- time on WAX mainnet's ~475M-row / ~211GB atomicassets_assets table.
+--
+-- Runbook ordering for an existing (non-fresh) deployment:
+--   1. 2.0.0/atomicassets.sql ALTERs (instant, in-txn) add the nullable `holder`.
+--   2. Batched out-of-band `holder = owner` backfill (see 2.0.0/README.md).
+--   3. This concurrent index build.
+-- IF NOT EXISTS keeps it idempotent across filler restarts / partial builds.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_holder_btree ON atomicassets_assets USING btree (holder);

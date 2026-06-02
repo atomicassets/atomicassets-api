@@ -35,6 +35,13 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                     values: [contract, delta.value.template_id]
                 }, ['contract', 'template_id']);
             } else {
+                // A delete (deltemplate) delta for a template we never indexed has
+                // nothing to mark deleted — skip rather than insert a deleted
+                // placeholder row.
+                if (!delta.present) {
+                    return;
+                }
+
                 const schemaQuery = await db.query(
                     'SELECT format FROM atomicassets_schemas WHERE contract = $1 AND collection_name = $2 AND schema_name = $3',
                     [contract, delta.scope, delta.value.schema_name]
@@ -72,11 +79,27 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
         }, AtomicAssetsUpdatePriority.TABLE_TEMPLATES.valueOf()
     ));
 
-    // v2: mutable template data lives in the contract's `tmplmutables` table,
-    // serialized against the template's schema format.
+    // v2: mutable template data lives in the contract's `templates2` table
+    // (template_mutables; see include/atomicassets.hpp:405 + atomicassets.abi).
+    // NOTE: the on-chain table is `templates2`, NOT `tmplmutables` (the upstream
+    // OIG branch subscribed to a non-existent name, which silently dropped the
+    // whole feature). A non-present delta = the row was cleared (settempldata to
+    // empty) or the template was deleted (deltemplate erases the templates2 row)
+    // -> NULL the mutable_data instead of re-writing stale data.
     destructors.push(processor.onContractRow(
-        contract, 'tmplmutables',
+        contract, 'templates2',
         async (db: ContractDBTransaction, block: ShipBlock, delta: EosioContractRow<MutableTemplatesTableRow>): Promise<void> => {
+            if (!delta.present) {
+                await db.update('atomicassets_templates', {
+                    mutable_data: null,
+                }, {
+                    str: 'contract = $1 AND template_id = $2',
+                    values: [contract, delta.value.template_id]
+                }, ['contract', 'template_id']);
+
+                return;
+            }
+
             const schemaQuery = await db.query(
                 'SELECT format FROM atomicassets_schemas WHERE contract = $1 AND collection_name = $2 AND schema_name = $3',
                 [contract, delta.scope, delta.value.schema_name]

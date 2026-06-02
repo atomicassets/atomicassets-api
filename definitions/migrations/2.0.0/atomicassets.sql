@@ -53,8 +53,11 @@ CREATE TABLE IF NOT EXISTS atomicassets_moves_assets (
     CONSTRAINT atomicassets_moves_assets_pkey PRIMARY KEY (move_id, contract, asset_id)
 );
 
--- Indexes (mirror the equivalents on atomicassets_transfers / _assets and owner).
-CREATE INDEX IF NOT EXISTS atomicassets_assets_holder_btree ON atomicassets_assets USING btree (holder);
+-- Indexes for the NEW (empty) moves tables only — these are instant. The
+-- holder index on the existing ~475M-row atomicassets_assets is built
+-- CONCURRENTLY in 2.0.0/atomicassets-deferred.sql (a non-CONCURRENTLY build
+-- here would lock + bust statement_timeout inside the migration txn and
+-- crash-loop the filler).
 CREATE INDEX IF NOT EXISTS atomicassets_moves_sender ON atomicassets_moves USING btree (sender);
 CREATE INDEX IF NOT EXISTS atomicassets_moves_recipient ON atomicassets_moves USING btree (recipient);
 CREATE INDEX IF NOT EXISTS atomicassets_moves_created_at_time ON atomicassets_moves USING btree (created_at_time);

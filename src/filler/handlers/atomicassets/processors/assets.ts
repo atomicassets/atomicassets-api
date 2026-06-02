@@ -1,7 +1,7 @@
 import AtomicAssetsHandler, { AtomicAssetsUpdatePriority } from '../index';
 import DataProcessor from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { EosioActionTrace, EosioTransaction } from '../../../../types/eosio';
+import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../../../../types/eosio';
 import {
     LogBackAssetActionData,
     LogBurnAssetActionData,
@@ -10,6 +10,7 @@ import {
     LogSetDataActionData,
     LogTransferActionData
 } from '../types/actions';
+import { HoldersTableRow } from '../types/tables';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate, splitEosioToken } from '../../../../utils/eosio';
 import { convertAttributeMapToObject } from '../utils';
@@ -125,6 +126,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogBurnAssetActionData>): Promise<void> => {
             await db.update('atomicassets_assets', {
                 owner: null,
+                holder: null,
                 burned_by_account: trace.act.data.asset_owner,
                 burned_at_block: block.block_num,
                 burned_at_time: eosioTimestampToDate(block.timestamp).getTime(),
@@ -299,6 +301,53 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
 
             notifier.sendActionTrace('moves', block, tx, trace);
         }, AtomicAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
+    ));
+
+    // v2: the global `holders` table is the AUTHORITATIVE source for `holder`. A
+    // row exists only while holder != owner (asset rented out). This runs at
+    // TABLE_HOLDERS priority (after the asset action handlers), so it reconciles
+    // `holder` for rented assets after logmint/logtransfer/logmove optimistically
+    // set it (those keep `holder` correct for the common non-rented case, which
+    // produces no holders-table delta):
+    //   - present  -> holder := holders.holder (asset is rented out)
+    //   - !present -> holder := owner (lease ended / asset returned, transferred
+    //                 to the holder, or burned -> owner is the new/cleared owner)
+    destructors.push(processor.onContractRow(
+        contract, 'holders',
+        async (db: ContractDBTransaction, block: ShipBlock, delta: EosioContractRow<HoldersTableRow>): Promise<void> => {
+            if (delta.present) {
+                await db.update('atomicassets_assets', {
+                    holder: delta.value.holder,
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
+                }, {
+                    str: 'contract = $1 AND asset_id = $2',
+                    values: [contract, delta.value.asset_id]
+                }, ['contract', 'asset_id']);
+            } else {
+                // Holders row removed -> holder reverts to the legal owner. Read
+                // the asset's CURRENT owner (the burn/transfer action handlers run
+                // at lower priority, so owner is already updated and db.query
+                // flushes the write buffer before reading). delta.value.owner is
+                // the pre-deletion holders-row owner and is NOT reliable here (it
+                // is stale after a transfer-to-holder or a burn).
+                const assetRow = await db.query(
+                    'SELECT owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                    [contract, delta.value.asset_id]
+                );
+
+                if (assetRow.rowCount > 0) {
+                    await db.update('atomicassets_assets', {
+                        holder: assetRow.rows[0].owner,
+                        updated_at_block: block.block_num,
+                        updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
+                    }, {
+                        str: 'contract = $1 AND asset_id = $2',
+                        values: [contract, delta.value.asset_id]
+                    }, ['contract', 'asset_id']);
+                }
+            }
+        }, AtomicAssetsUpdatePriority.TABLE_HOLDERS.valueOf()
     ));
 
     return (): any => destructors.map(fn => fn());
