@@ -7,7 +7,9 @@ import {
     createBlock,
     createTx,
     createActionTrace,
+    createContractRow,
     processActionTrace,
+    processContractRow,
     createTestTransaction,
 } from '../../test-helper';
 import { assetProcessor } from './assets';
@@ -19,7 +21,9 @@ import {
     LogSetDataActionData,
     LogTransferActionData,
     LogBackAssetActionData,
+    LogMoveActionData,
 } from '../types/actions';
+import { HoldersTableRow } from '../types/tables';
 import { ModuleLoader } from '../../../modules';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 
@@ -677,6 +681,379 @@ describe('assetProcessor', () => {
             expect(result.rowCount).to.equal(1);
             // 50000 + 30000 = 80000
             expect(result.rows[0].amount).to.equal('80000');
+        });
+    });
+
+    // -----------------------------------------------------------------------
+    // Shared helper: mint an asset with a known owner so move/holder handlers
+    // have a target row to update. Mirrors the chunking-block helper but is
+    // available to all the move/holder describe blocks below.
+    // -----------------------------------------------------------------------
+    async function mintAsset(assetId: string, owner: string): Promise<void> {
+        const mintTrace = createActionTrace(CONTRACT, 'logmint', {
+            asset_id: assetId,
+            authorized_minter: 'minter1',
+            collection_name: 'testcol11111',
+            schema_name: 'testschema11',
+            template_id: 1,
+            new_asset_owner: owner,
+            immutable_data: [],
+            mutable_data: [],
+            backed_tokens: [],
+            immutable_template_data: [],
+        } as LogMintAssetActionData);
+        await processActionTrace(processor, db, createBlock(), createTx(), mintTrace);
+    }
+
+    /**
+     * Process a logmove action for the given asset_ids and return the move trace
+     * (move_id === trace.global_sequence). `block` lets callers pin the timestamp.
+     */
+    async function moveAssets(
+        from: string,
+        to: string,
+        assetIds: string[],
+        memo: string,
+        block = createBlock()
+    ): Promise<ReturnType<typeof createActionTrace>> {
+        const moveTrace = createActionTrace(CONTRACT, 'logmove', {
+            collection_name: 'testcol11111',
+            owner: from,
+            from,
+            to,
+            asset_ids: assetIds,
+            memo,
+        } as LogMoveActionData);
+        await processActionTrace(processor, db, block, createTx(), moveTrace);
+        return moveTrace;
+    }
+
+    /**
+     * Process a `holders` table delta for an asset. `present` toggles the row's
+     * presence (rental start vs. lease end). `block` lets callers pin the timestamp.
+     */
+    async function processHoldersDelta(
+        assetId: string,
+        holder: string,
+        owner: string,
+        present: boolean,
+        block = createBlock()
+    ): Promise<void> {
+        const delta = createContractRow(
+            CONTRACT,
+            'holders',
+            { asset_id: assetId, holder, owner } as HoldersTableRow,
+            present
+        );
+        await processContractRow(processor, db, block, delta);
+    }
+
+    describe('logmove', () => {
+        it('inserts a move row and move-asset rows and updates holder=to for each asset', async () => {
+            const assetIds = ['9100000000001', '9100000000002', '9100000000003'];
+            for (const id of assetIds) {
+                await mintAsset(id, 'owner1111111');
+            }
+
+            const moveBlock = createBlock({ timestamp: '2023-08-01T09:00:00.000' });
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', assetIds, 'lease out', moveBlock);
+
+            // One move row, move_id === global_sequence.
+            const moveResult = await client.query(
+                'SELECT * FROM atomicassets_moves WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveResult.rowCount).to.equal(1);
+            const move = moveResult.rows[0];
+            expect(String(move.move_id)).to.equal(String(moveTrace.global_sequence));
+            expect(move.sender).to.equal('owner1111111');
+            expect(move.recipient).to.equal('renter111111');
+            expect(move.memo).to.equal('lease out');
+            expect(Number(move.created_at_block)).to.equal(moveBlock.block_num);
+
+            // N move-asset rows with 1-based index.
+            const moveAssetsResult = await client.query(
+                'SELECT asset_id, index FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2 ORDER BY index',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveAssetsResult.rowCount).to.equal(3);
+            expect(moveAssetsResult.rows.map(r => String(r.asset_id))).to.deep.equal(assetIds);
+            expect(moveAssetsResult.rows.map(r => r.index)).to.deep.equal([1, 2, 3]);
+
+            // Every asset's holder reflects the recipient; owner is unchanged.
+            const assetResult = await client.query(
+                'SELECT asset_id, owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = ANY($2)',
+                [CONTRACT, assetIds]
+            );
+            expect(assetResult.rowCount).to.equal(3);
+            for (const row of assetResult.rows) {
+                expect(row.holder).to.equal('renter111111');
+                expect(row.owner).to.equal('owner1111111');
+            }
+        });
+
+        it('truncates memo to 256 chars', async () => {
+            await mintAsset('9100000000010', 'owner1111111');
+
+            const longMemo = 'x'.repeat(300);
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', ['9100000000010'], longMemo);
+
+            const moveResult = await client.query(
+                'SELECT memo FROM atomicassets_moves WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveResult.rows[0].memo).to.have.lengthOf(256);
+            expect(moveResult.rows[0].memo).to.equal('x'.repeat(256));
+        });
+
+        it('does no DB work and does not throw on empty asset_ids', async () => {
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', [], 'empty move');
+
+            const moveResult = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveResult.rows[0].n).to.equal(0);
+
+            const moveAssetsResult = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveAssetsResult.rows[0].n).to.equal(0);
+        });
+
+        it('updates EVERY asset holder when asset_ids exceed ASSET_CHUNK_SIZE (>100)', async () => {
+            // 250 ids -> 3 UPDATE chunks; assert all 250 holders updated.
+            const assetIds = Array.from({ length: 250 }, (_, i) => String(9_200_000_000 + i));
+            for (const id of assetIds) {
+                await mintAsset(id, 'owner1111111');
+            }
+
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', assetIds, 'big lease');
+
+            const holders = await client.query(
+                'SELECT DISTINCT holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = ANY($2)',
+                [CONTRACT, assetIds]
+            );
+            expect(holders.rowCount).to.equal(1);
+            expect(holders.rows[0].holder).to.equal('renter111111');
+
+            // every move-asset row persisted
+            const moveAssetCount = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveAssetCount.rows[0].n).to.equal(250);
+        });
+
+        it('inserts EVERY move-asset row when count exceeds MOVE_INSERT_CHUNK_SIZE (>1000)', async () => {
+            // 1500 ids -> 2 INSERT chunks (1000 + 500); assert all 1500 rows present.
+            const assetIds = Array.from({ length: 1500 }, (_, i) => String(9_300_000_000 + i));
+            for (const id of assetIds) {
+                await mintAsset(id, 'owner1111111');
+            }
+
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', assetIds, 'huge lease');
+
+            const moveAssetCount = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveAssetCount.rows[0].n).to.equal(1500);
+
+            // index range is contiguous 1..1500
+            const idxResult = await client.query(
+                'SELECT MIN(index) AS lo, MAX(index) AS hi FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(idxResult.rows[0].lo).to.equal(1);
+            expect(idxResult.rows[0].hi).to.equal(1500);
+        });
+
+        it('updates holder but writes no moves rows when store_transfers is false', async () => {
+            // Re-create processor with store_transfers = false.
+            if (destroyProcessor) {
+                destroyProcessor();
+            }
+            processor = new DataProcessor(ProcessingState.HEAD, createMockModuleLoader());
+            db = createTestTransaction(client);
+            const core = createMockCore({ store_transfers: false });
+            destroyProcessor = assetProcessor(core as any, processor, createMockNotifier());
+
+            await mintAsset('9100000000020', 'owner1111111');
+
+            const moveTrace = await moveAssets('owner1111111', 'renter111111', ['9100000000020'], 'silent lease');
+
+            // holder still updated
+            const assetResult = await client.query(
+                'SELECT holder, owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '9100000000020']
+            );
+            expect(assetResult.rows[0].holder).to.equal('renter111111');
+            expect(assetResult.rows[0].owner).to.equal('owner1111111');
+
+            // but no moves bookkeeping rows
+            const moveResult = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveResult.rows[0].n).to.equal(0);
+            const moveAssetsResult = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_moves_assets WHERE contract = $1 AND move_id = $2',
+                [CONTRACT, moveTrace.global_sequence]
+            );
+            expect(moveAssetsResult.rows[0].n).to.equal(0);
+        });
+    });
+
+    describe('holders table delta', () => {
+        it('present -> sets holder = delta.value.holder', async () => {
+            await mintAsset('9400000000001', 'owner1111111');
+
+            const block = createBlock({ timestamp: '2023-09-01T00:00:00.000' });
+            await processHoldersDelta('9400000000001', 'renter111111', 'owner1111111', true, block);
+
+            const result = await client.query(
+                'SELECT holder, owner, updated_at_block FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '9400000000001']
+            );
+            expect(result.rows[0].holder).to.equal('renter111111');
+            // owner must NOT be touched by the holders handler
+            expect(result.rows[0].owner).to.equal('owner1111111');
+            expect(Number(result.rows[0].updated_at_block)).to.equal(block.block_num);
+        });
+
+        it('!present -> holder reverts to the asset current owner (not the stale holders-row owner)', async () => {
+            await mintAsset('9400000000002', 'owner1111111');
+
+            // First rent it out: holder = renter.
+            await processHoldersDelta('9400000000002', 'renter111111', 'owner1111111', true);
+
+            // sanity: holder is the renter now
+            const mid = await client.query(
+                'SELECT holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '9400000000002']
+            );
+            expect(mid.rows[0].holder).to.equal('renter111111');
+
+            // Lease ends: holders row removed. delta.value.owner is intentionally a
+            // STALE value to prove the handler reads the asset's current owner, not
+            // delta.value.owner.
+            await processHoldersDelta('9400000000002', 'renter111111', 'staleowner11', false);
+
+            const result = await client.query(
+                'SELECT holder, owner FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '9400000000002']
+            );
+            // reverts to the real owner read from the asset row, NOT delta.value.owner
+            expect(result.rows[0].holder).to.equal('owner1111111');
+            expect(result.rows[0].owner).to.equal('owner1111111');
+        });
+
+        it('!present for an unknown asset is a no-op (no row, no throw)', async () => {
+            await processHoldersDelta('9499999999999', 'renter111111', 'owner1111111', false);
+
+            const result = await client.query(
+                'SELECT COUNT(*)::int AS n FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '9499999999999']
+            );
+            expect(result.rows[0].n).to.equal(0);
+        });
+    });
+
+    describe('rental lifecycle (lockstep holder reconciliation)', () => {
+        it('mint -> move -> holders present -> holders !present reconciles holder in lockstep', async () => {
+            const assetId = '9500000000001';
+
+            // 1. Mint: holder === owner.
+            await mintAsset(assetId, 'owner1111111');
+            let row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.equal('owner1111111');
+            expect(row.holder).to.equal('owner1111111');
+
+            // 2. logmove: holder becomes the recipient, owner unchanged.
+            await moveAssets('owner1111111', 'renter111111', [assetId], 'lease');
+            row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.equal('owner1111111');
+            expect(row.holder).to.equal('renter111111');
+
+            // 3. holders present delta confirms the rental (authoritative source).
+            await processHoldersDelta(assetId, 'renter111111', 'owner1111111', true);
+            row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.equal('owner1111111');
+            expect(row.holder).to.equal('renter111111');
+
+            // 4. logtransfer to a new owner while still rented (changes owner+holder),
+            //    then holders !present (lease ends) -> holder reconciles to the new owner.
+            const transferTrace = createActionTrace(CONTRACT, 'logtransfer', {
+                collection_name: 'testcol11111',
+                from: 'owner1111111',
+                to: 'newowner1111',
+                asset_ids: [assetId],
+                memo: 'sale',
+            } as LogTransferActionData);
+            await processActionTrace(processor, db, createBlock(), createTx(), transferTrace);
+            row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            // logtransfer optimistically sets both owner and holder to the recipient
+            expect(row.owner).to.equal('newowner1111');
+            expect(row.holder).to.equal('newowner1111');
+
+            // 5. holders !present -> holder reverts to the CURRENT owner.
+            await processHoldersDelta(assetId, 'renter111111', 'owner1111111', false);
+            row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.equal('newowner1111');
+            expect(row.holder).to.equal('newowner1111');
+        });
+
+        it('burn then holders !present clears holder to null in lockstep with owner', async () => {
+            const assetId = '9500000000002';
+            await mintAsset(assetId, 'owner1111111');
+
+            // burn: owner and holder both cleared to null
+            const burnTrace = createActionTrace(CONTRACT, 'logburnasset', {
+                asset_owner: 'owner1111111',
+                asset_id: assetId,
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: 1,
+                backed_tokens: [],
+                asset_ram_payer: 'minter1',
+                old_immutable_data: [],
+                old_mutable_data: [],
+            } as LogBurnAssetActionData);
+            await processActionTrace(processor, db, createBlock(), createTx(), burnTrace);
+
+            let row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.be.null;
+            expect(row.holder).to.be.null;
+
+            // holders !present after burn -> reads current owner (null) -> holder stays null
+            await processHoldersDelta(assetId, 'renter111111', 'owner1111111', false);
+
+            row = (await client.query(
+                'SELECT owner, holder FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, assetId]
+            )).rows[0];
+            expect(row.owner).to.be.null;
+            expect(row.holder).to.be.null;
         });
     });
 });

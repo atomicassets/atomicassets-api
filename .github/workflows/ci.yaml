@@ -46,7 +46,9 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:16
+        # Match the live eca-small-chains CNPG cluster (PostgreSQL 18). Bumped
+        # from 16 so CI exercises the same major we run in production.
+        image: postgres:18
         env:
           POSTGRES_USER: root
           POSTGRES_PASSWORD: testpassword
