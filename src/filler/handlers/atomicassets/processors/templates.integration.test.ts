@@ -97,7 +97,7 @@ describe('templateProcessor', () => {
         await client.query(
             `INSERT INTO atomicassets_schemas
                 (contract, collection_name, schema_name, format, created_at_block, created_at_time)
-             VALUES ($1, $2, $3, $4, 1, 1)`,
+             VALUES ($1, $2, $3, $4::jsonb[], 1, 1)`,
             [CONTRACT, COLLECTION, SCHEMA, SCHEMA_FORMAT.map(r => JSON.stringify(r))]
         );
     });
