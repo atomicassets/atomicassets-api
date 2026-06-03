@@ -90,13 +90,25 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
     destructors.push(processor.onActionTrace(
         contract, 'setdroplimit',
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<SetDropLimitActionData>): Promise<void> => {
-            await db.update('atomicdropsx_drops', {
+            // WAX's `setdroplimit` carries only the account limits — `max_claimable`
+            // is absent (it is owned by `setdropmax`; see SetDropLimitActionData).
+            // Writing it unconditionally pushed `undefined`/`null` into the batched
+            // UPDATE, yielding an all-null column that updateBatch typed as `text[]`
+            // and could not assign to the `bigint` column (PG 42804) — wedging the
+            // reader. Only touch `max_claimable` when the action actually provides
+            // it: chains that DO include it still update, WAX keeps its drop's value.
+            const updateData: Record<string, unknown> = {
                 account_limit: trace.act.data.account_limit,
                 account_limit_cooldown: trace.act.data.account_limit_cooldown,
-                max_claimable: trace.act.data.max_claimable,
                 updated_at_block: block.block_num,
                 updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
+            };
+
+            if (trace.act.data.max_claimable !== undefined && trace.act.data.max_claimable !== null) {
+                updateData.max_claimable = trace.act.data.max_claimable;
+            }
+
+            await db.update('atomicdropsx_drops', updateData, {
                 str: 'contract = $1 AND drop_id = $2',
                 values: [contract, trace.act.data.drop_id],
             }, ['contract', 'drop_id']);
