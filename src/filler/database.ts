@@ -143,54 +143,61 @@ function buildPrimaryCondition(values: {[key: string]: any}, primaryKey: string[
     return { str: conditionStr, values: conditionValues };
 }
 
-export function inferPgType(values: any[]): string {
-    for (const val of values) {
-        if (val === null || val === undefined) continue;
-        if (val instanceof Buffer || val instanceof Uint8Array || ArrayBuffer.isView(val)) return 'bytea';
-        if (typeof val === 'boolean') return 'boolean';
-        if (typeof val === 'number') return Number.isInteger(val) ? 'bigint' : 'double precision';
-        if (Array.isArray(val)) return 'jsonb';
-        if (typeof val === 'object') return 'jsonb';
-        if (typeof val === 'string') {
-            const trimmed = val.trim();
-            if (trimmed.length >= 2) {
-                const first = trimmed[0];
-                const last = trimmed[trimmed.length - 1];
-                if ((first === '{' && last === '}') || (first === '[' && last === ']')) {
-                    return 'jsonb';
-                }
-            }
-            const integerRe = /^-?\d+$/;
-            const decimalRe = /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/;
-            if (integerRe.test(trimmed)) {
-                // Verify ALL non-null string values are numeric before inferring a
-                // numeric pgType; mixed values would cause unnest($n::T[]) cast failures.
-                const allInteger = values.every(v =>
-                    v === null || v === undefined ||
-                    (typeof v === 'string' && integerRe.test(v.trim()))
-                );
-                if (allInteger) return 'bigint';
-                const allNumeric = values.every(v =>
-                    v === null || v === undefined ||
-                    (typeof v === 'string' && decimalRe.test(v.trim()))
-                );
-                return allNumeric ? 'double precision' : 'text';
-            }
-            if (decimalRe.test(trimmed)) {
-                // Decimal-looking string (e.g. "0.01" market fee, "1.3" version-as-fee).
-                // Columns like atomicmarket_config.maker_market_fee are double precision;
-                // unnest($::text[]) → assignment fails with 42804 ("expression is of type
-                // text"). Pick double precision when every value parses as decimal.
-                const allNumeric = values.every(v =>
-                    v === null || v === undefined ||
-                    (typeof v === 'string' && decimalRe.test(v.trim()))
-                );
-                return allNumeric ? 'double precision' : 'text';
-            }
-            return 'text';
-        }
+export interface ColumnMeta {
+    pgType: string;   // format_type() output — directly usable as a cast target
+    isArray: boolean; // array-typed column (typcategory 'A')
+    notNull: boolean;
+}
+
+// Process-lifetime cache of per-table column metadata read from the live
+// catalog. The filler runs ONE database connection per process (one chain) and
+// table names are unique within it, so keying by bare table name is safe. The
+// lookup runs on the transaction's own client, so search_path — and temp tables
+// — resolve exactly as the write itself does.
+//
+// Why catalog-driven instead of inferring the type from the JS values: value
+// inference cannot know the type of an all-null batch column (it guessed
+// `text`, producing unnest($N::text[]) → 42804 against e.g. a bigint column —
+// the WAX filler stall at block #438032575), and it accreted special cases
+// (empty arrays, decimal strings, mixed numerics) every time it guessed wrong
+// on otherwise-legitimate data. The catalog is the source of truth.
+const columnMetaCache = new Map<string, Promise<Map<string, ColumnMeta>>>();
+
+// Test-only: drop cached metadata so each test reads the catalog fresh.
+export function __resetColumnMetaCache(): void {
+    columnMetaCache.clear();
+}
+
+async function loadColumnMeta(client: PoolClient, table: string): Promise<Map<string, ColumnMeta>> {
+    const res = await client.query(
+        `SELECT a.attname AS name,
+                format_type(a.atttypid, a.atttypmod) AS pg_type,
+                (t.typcategory = 'A') AS is_array,
+                a.attnotnull AS not_null
+           FROM pg_attribute a
+           JOIN pg_type t ON t.oid = a.atttypid
+          WHERE a.attrelid = to_regclass($1)
+            AND a.attnum > 0
+            AND NOT a.attisdropped`,
+        [table],
+    );
+
+    const map = new Map<string, ColumnMeta>();
+    for (const row of res.rows) {
+        map.set(row.name, { pgType: row.pg_type, isArray: row.is_array, notNull: row.not_null });
     }
-    return 'text';
+    return map;
+}
+
+function getColumnMeta(client: PoolClient, table: string): Promise<Map<string, ColumnMeta>> {
+    let cached = columnMetaCache.get(table);
+    if (!cached) {
+        cached = loadColumnMeta(client, table);
+        // A failed lookup must not poison the cache.
+        cached.catch(() => columnMetaCache.delete(table));
+        columnMetaCache.set(table, cached);
+    }
+    return cached;
 }
 
 export function isPkCondition(condition: Condition, primaryKey: string[]): boolean {
@@ -636,15 +643,41 @@ export class ContractDBTransaction {
                 }
             }
 
-            const pgTypes: string[] = allColumns.map((_, i) => inferPgType(columnArrays[i]));
-            const isArrayColumn: boolean[] = columnArrays.map(arr => arr.some((v: any) => Array.isArray(v)));
-            // PG's unnest($::T[][]) flattens multidim arrays completely, so the
-            // unnest path produces scalar T values that cannot be assigned to
-            // T[] columns (42804 "expression is of type T"). The empty-array
-            // case is one symptom of this, but the deeper truth is that the
-            // unnest path is only safe for scalar columns — any per-row array
-            // value must go through the VALUES-clause path with explicit
-            // per-row $N::T[] casts that preserve row structure.
+            // Cast types come from the live catalog, not from guessing at the
+            // JS values. This also lets us fail loud — at the writer boundary,
+            // with an accurately located message — on the two programming errors
+            // value inference could only surface as a confusing downstream
+            // Postgres error: a NULL for a NOT NULL column, or a key that isn't
+            // a real column.
+            const meta = await getColumnMeta(this.client, table);
+            const at = ' (reader ' + this.name + ', block ' + (this.currentBlock ?? 'N/A') + ')';
+            if (meta.size === 0) {
+                throw new Error('updateBatch: table "' + table + '" not found in the catalog' + at);
+            }
+
+            const pgTypes: string[] = [];
+            const isArrayColumn: boolean[] = [];
+            for (let i = 0; i < allColumns.length; i++) {
+                const col = allColumns[i];
+                const cm = meta.get(col);
+                if (!cm) {
+                    throw new Error('updateBatch: column "' + col + '" does not exist on "' + table + '"' + at);
+                }
+                if (cm.notNull && columnArrays[i].some(v => v === null || v === undefined)) {
+                    throw new Error(
+                        'updateBatch: NULL written to NOT NULL column "' + table + '"."' + col + '"' + at +
+                        ' — a handler passed null/undefined for a required column'
+                    );
+                }
+                pgTypes.push(cm.pgType);
+                isArrayColumn.push(cm.isArray);
+            }
+
+            // PG's unnest($::T[][]) flattens multidim arrays completely, so
+            // array-typed columns can't go through the unnest path — they need
+            // the VALUES-clause path with per-row casts that preserve row
+            // structure. format_type() already yields the full array type
+            // (e.g. `jsonb[]`), so no per-row suffix is appended below.
             const requiresValuesPath = isArrayColumn.some(b => b);
 
             const esc = this.client.escapeIdentifier.bind(this.client);
@@ -659,8 +692,10 @@ export class ContractDBTransaction {
                 const valueRows = rows.map((_, rowIdx) => {
                     const placeholders = allColumns.map((_c, colIdx) => {
                         const paramIdx = rowIdx * allColumns.length + colIdx + 1;
-                        const suffix = isArrayColumn[colIdx] ? '[]' : '';
-                        return '$' + paramIdx + '::' + pgTypes[colIdx] + suffix;
+                        // pgType is the real column type (scalar for non-array
+                        // columns, full `T[]` for array columns) — one value per
+                        // row, so no extra suffix.
+                        return '$' + paramIdx + '::' + pgTypes[colIdx];
                     });
                     return '(' + placeholders.join(', ') + ')';
                 }).join(', ');
