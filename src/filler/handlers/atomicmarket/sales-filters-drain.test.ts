@@ -1,7 +1,7 @@
 import 'mocha';
 import { expect } from 'chai';
 
-import { drainAtomicmarketSalesFilters } from './index';
+import { drainAtomicmarketSalesFilters, runWithWorkMem } from './index';
 
 const STMT_TIMEOUT_MS = 300_000;
 const WORK_MEM_MB = 2048;
@@ -174,5 +174,49 @@ describe('drainAtomicmarketSalesFilters', () => {
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');
         expect(released).to.equal(true); // client returned to the pool even on error
+    });
+});
+
+describe('runWithWorkMem', () => {
+    function makeClient(failOn?: string): { pool: any; queries: string[]; released: () => boolean } {
+        let released = false;
+        const queries: string[] = [];
+        const client = {
+            query: async (sql: string) => {
+                queries.push(sql);
+                if (failOn && sql.includes(failOn)) { throw new Error('boom'); }
+                return { rows: [] };
+            },
+            release: () => { released = true; },
+        };
+        return { pool: { connect: async () => client }, queries, released: () => released };
+    }
+
+    it('wraps the statement in a txn with raised work_mem + async commit, in order, then COMMITs', async () => {
+        const { pool, queries, released } = makeClient();
+        await runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024);
+
+        expect(queries).to.deep.equal([
+            'BEGIN',
+            "SET LOCAL work_mem = '1024MB'",
+            'SET LOCAL synchronous_commit = off',
+            'SELECT update_atomicmarket_template_prices()',
+            'COMMIT',
+        ]);
+        // work_mem + synchronous_commit are SET BEFORE the heavy statement runs
+        expect(queries.indexOf("SET LOCAL work_mem = '1024MB'")).to.be.lessThan(
+            queries.indexOf('SELECT update_atomicmarket_template_prices()'));
+        expect(released()).to.equal(true);
+    });
+
+    it('rolls back and rethrows when the statement errors, and always releases the client', async () => {
+        const { pool, queries, released } = makeClient('template_prices');
+        await expect(
+            runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024),
+        ).to.be.rejectedWith(/boom/);
+
+        expect(queries).to.include('ROLLBACK');
+        expect(queries).to.not.include('COMMIT');
+        expect(released()).to.equal(true);
     });
 });
