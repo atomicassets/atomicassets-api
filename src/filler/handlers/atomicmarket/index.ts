@@ -50,13 +50,21 @@ const SALES_FILTERS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS
 // during a mint storm, and the queue grew to 9.3M rows. Default 5 min.
 const SALES_FILTERS_STATEMENT_TIMEOUT_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_STATEMENT_TIMEOUT_MS', 300_000);
 // Per-batch work_mem (MB) for the drain. The recompute (MATERIALIZED CTEs +
-// jsonb_each aggregation + sorts) spills to temp files at the default 128MB on
-// real batches (measured ~1 GB/call, ~16-20s, dominated by IO/BuffileWrite) and
-// starves the reader's block writes. Raising it keeps the recompute in memory so
-// each call is ~1s. Applied via `SET LOCAL` (same PgBouncer-safe, txn-scoped
-// reason as statement_timeout) on the drain's single longRunningPool connection
-// only, so memory use is bounded. Default 2048 MB.
-const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 2048);
+// jsonb_each aggregation + sorts) spills to temp files and goes IO-bound when it
+// exceeds work_mem, starving the reader's block writes. Raising it keeps the
+// recompute in memory. Applied via `SET LOCAL` (same PgBouncer-safe, txn-scoped
+// reason as statement_timeout) on the drain's single longRunningPool connection.
+//
+// 1.7.7 retune: measured on WAX mainnet at batch=2500 — the recompute's working
+// set is ~3.5 GB, so at the old 2048MB default every call held 2 GB in memory and
+// spilled ~1.5 GB to temp (pgsql_tmp climbing to ~1.5 GB per ~30s call). Raised to
+// 5120 MB to hold it in memory + headroom. Safe to size this large: the recompute
+// runs SINGLE-THREADED (no parallel workers observed) so this is a hard per-call
+// ceiling (no ×workers fan-out), the pool is max:1 (one such query at a time), and
+// the primary's memory is dominated by reclaimable page cache (raising work_mem
+// displaces cache, not anon — no OOM risk). Smaller chains never approach the
+// ceiling (work_mem is a cap, only used if the operation needs it).
+const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 5120);
 
 // Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
 // Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
