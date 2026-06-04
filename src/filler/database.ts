@@ -149,11 +149,20 @@ export interface ColumnMeta {
     notNull: boolean;
 }
 
-// Process-lifetime cache of per-table column metadata read from the live
-// catalog. The filler runs ONE database connection per process (one chain) and
-// table names are unique within it, so keying by bare table name is safe. The
-// lookup runs on the transaction's own client, so search_path — and temp tables
-// — resolve exactly as the write itself does.
+// Process-lifetime cache of per-table column metadata, keyed by bare table
+// name. It is module-level — SHARED across every pooled connection — so an
+// entry populated by one session is reused by all later sessions WITHOUT
+// re-querying. That is sound here because of two invariants:
+//   1. Every pool connection uses the same configured search_path, so a bare
+//      table name resolves to the same relation regardless of which session
+//      first looked it up.
+//   2. updateBatch only ever targets persistent application tables (it is
+//      called from the buffer flush in flushBuffers), whose schema is stable
+//      for the process lifetime. The filler creates no temp tables, so there is
+//      no session-local relation that could shadow a cached name. (Tests, which
+//      do use temp tables, call __resetColumnMetaCache between cases.)
+// If either invariant ever changes (per-session search_path, or temp tables in
+// the write path), switch to a session-scoped cache key.
 //
 // Why catalog-driven instead of inferring the type from the JS values: value
 // inference cannot know the type of an all-null batch column (it guessed
