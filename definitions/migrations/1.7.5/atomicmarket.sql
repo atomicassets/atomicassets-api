@@ -1,12 +1,23 @@
--- Counting FUNCTION (was a per-row-COMMIT PROCEDURE). One bounded, set-based
--- UPDATE per call, returning the rows resolved; the filler loops in small
--- batches within a time budget (drainAtomicmarketMints). Keeps each call well
--- under the 30s statement_timeout. See definitions/migrations/1.6.5 for the
--- sale/buyoffer/auction conversion this mirrors; template_buyoffers was missed
--- by 1.6.5 and was never wired into the drain loop at all — finished in 1.7.5.
--- Only SOLD (state = 2) template_buyoffers ever own an nft, so that is the only
--- state with a mint to resolve (matches the atomicmarket_template_buyoffers_missing_mint
--- partial index).
+/*
+  1.7.5 - Convert update_atomicmarket_template_buyoffer_mints to a counting
+  FUNCTION and let the filler's bounded drain loop backfill it.
+
+  This is the conversion 1.6.5 applied to the other three mint routines but
+  missed for template_buyoffers. The old routine was a per-row-COMMIT PROCEDURE
+  and was never called on a schedule; the filler now registers a 4th drain job
+  (see src/filler/handlers/atomicmarket/index.ts) that loops this FUNCTION in
+  small batches within a time budget under the reader-priority gate.
+
+  DROP ROUTINE (not DROP PROCEDURE): on a fresh DB the proc file runs first and
+  already creates this as a FUNCTION, so a later DROP PROCEDURE would raise 42809
+  ("is not a procedure"); DROP ROUTINE removes whichever kind exists (procedure
+  on upgrade, function on fresh install). CREATE OR REPLACE cannot change a
+  routine's kind, hence the drop.
+
+  Only SOLD (state = 2) template_buyoffers ever own an nft, so that is the only
+  state with a mint to resolve (matches atomicmarket_template_buyoffers_missing_mint).
+*/
+
 DROP ROUTINE IF EXISTS update_atomicmarket_template_buyoffer_mints(TEXT, BIGINT, INT);
 CREATE OR REPLACE FUNCTION update_atomicmarket_template_buyoffer_mints(selected_contract TEXT, last_irreversible_block BIGINT, max_buyoffers_to_update INT DEFAULT 2000) RETURNS INT
 LANGUAGE plpgsql

@@ -165,6 +165,7 @@ const MINT_BACKFILL_FUNCTIONS = new Set([
     'update_atomicmarket_sale_mints',
     'update_atomicmarket_buyoffer_mints',
     'update_atomicmarket_auction_mints',
+    'update_atomicmarket_template_buyoffer_mints',
 ]);
 
 /**
@@ -213,7 +214,7 @@ export async function drainAtomicmarketMints(
 
 /**
  * Shared reader-priority wrapper for the maintenance drain jobs (sales filters +
- * the 3 mint backfills). Enforces the ordering the robustness fix depends on:
+ * the 4 mint backfills). Enforces the ordering the robustness fix depends on:
  *
  *   1. defer if the reader is catching up  (Filler.shouldDeferDrain — Layer 1)
  *   2. else skip if there's nothing queued  (cheap EXISTS probe)
@@ -236,6 +237,37 @@ export async function runGatedDrain(
         return 'no-work';
     }
     return drain();
+}
+
+// Per-drain-table extra WHERE predicate for the mintsHasWork EXISTS probe.
+// `table` is keyof this closed const map and the appended value is a trusted
+// literal from the same map, so neither interpolation in mintsWorkProbeSql can
+// carry untrusted input. template_buyoffers needs `AND state = 2`: only SOLD
+// template_buyoffers ever own an nft, so the probe must match the drain
+// FUNCTION's own state filter — otherwise it matches the millions of
+// never-mintable non-SOLD nulls (the gate would never report no-work) and can't
+// use the atomicmarket_template_buyoffers_missing_mint partial index.
+export const MINTS_WORK_FILTER = {
+    atomicmarket_sales: '',
+    atomicmarket_buyoffers: '',
+    atomicmarket_auctions: '',
+    atomicmarket_template_buyoffers: 'AND state = 2',
+} as const;
+
+export type MintsWorkTable = keyof typeof MINTS_WORK_FILTER;
+
+// Builds the cheap EXISTS probe that gates a mint drain (params: $1 contract,
+// $2 last-irreversible-block). Pure + exported so the per-table predicate is
+// unit-testable without a live DB.
+export function mintsWorkProbeSql(table: MintsWorkTable): string {
+    return `SELECT EXISTS(
+                    SELECT 1 FROM ${table}
+                    WHERE template_mint IS NULL
+                        AND market_contract = $1
+                        AND created_at_block <= $2
+                        ${MINTS_WORK_FILTER[table]}
+                    LIMIT 1
+                ) AS has_work`;
 }
 
 export type AtomicMarketArgs = {
@@ -309,7 +341,7 @@ export default class AtomicMarketHandler extends ContractHandler {
             'atomicmarket_template_buyoffers_master'
         ];
 
-        const procedures = ['atomicmarket_auction_mints', 'atomicmarket_buyoffer_mints', 'atomicmarket_sale_mints'];
+        const procedures = ['atomicmarket_auction_mints', 'atomicmarket_buyoffer_mints', 'atomicmarket_sale_mints', 'atomicmarket_template_buyoffer_mints'];
 
         if (!existsQuery.rows[0].exists) {
             logger.info('Could not find AtomicMarket tables. Create them now...');
@@ -549,20 +581,13 @@ export default class AtomicMarketHandler extends ContractHandler {
         // Reader-priority gate + EXISTS probe + bounded drain are sequenced by
         // runGatedDrain (defer while the reader is catching up so it keeps
         // block-write priority during bursts / post-restart catch-up; the deduped
-        // queue stays bounded meanwhile — see Filler.shouldDeferDrain).
-        // `table` is a closed string-literal union, so it can only ever be one of
-        // these three constants — the interpolation cannot carry untrusted input.
-        const mintsHasWork = (
-            table: 'atomicmarket_sales' | 'atomicmarket_buyoffers' | 'atomicmarket_auctions',
-        ) => async (): Promise<boolean> => {
+        // queue stays bounded meanwhile — see Filler.shouldDeferDrain). The probe
+        // SQL (incl. each table's trusted predicate) is built by the exported,
+        // unit-tested mintsWorkProbeSql — see MINTS_WORK_FILTER for why
+        // template_buyoffers needs `AND state = 2`.
+        const mintsHasWork = (table: MintsWorkTable) => async (): Promise<boolean> => {
             const probe = await this.connection.database.query(
-                `SELECT EXISTS(
-                    SELECT 1 FROM ${table}
-                    WHERE template_mint IS NULL
-                        AND market_contract = $1
-                        AND created_at_block <= $2
-                    LIMIT 1
-                ) AS has_work`,
+                mintsWorkProbeSql(table),
                 [this.args.atomicmarket_account, this.filler.reader.lastIrreversibleBlock]
             );
             return probe.rows[0]?.has_work === true;
@@ -598,6 +623,13 @@ export default class AtomicMarketHandler extends ContractHandler {
                 this.filler,
                 mintsHasWork('atomicmarket_auctions'),
                 drainMints('update_atomicmarket_auction_mints'),
+            ));
+
+        this.filler.jobs.add('update_atomicmarket_template_buyoffer_mints', 60, JobQueuePriority.MEDIUM, () =>
+            runGatedDrain(
+                this.filler,
+                mintsHasWork('atomicmarket_template_buyoffers'),
+                drainMints('update_atomicmarket_template_buyoffer_mints'),
             ));
 
         // Cadence bumped 20s → 60s and gated by a cheap EXISTS probe after the
