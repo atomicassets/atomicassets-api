@@ -65,6 +65,22 @@ const SALES_FILTERS_STATEMENT_TIMEOUT_MS = positiveIntEnv('ATOMICMARKET_SALES_FI
 // displaces cache, not anon — no OOM risk). Smaller chains never approach the
 // ceiling (work_mem is a cap, only used if the operation needs it).
 const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 5120);
+// Per-run work_mem (MB) for the hourly update_atomicmarket_template_prices() recompute.
+// 1.7.8 (DB write-spill audit): its PERCENTILE_DISC sorts + per-template hash-agg over
+// atomicmarket_stats_prices_master spilled ~284 MB to pgsql_tmp every run at the default
+// work_mem (working set ~0.4 GB), going IO-bound against the reader's block-writes. It runs
+// on longRunningPool (max:1) but, unlike sales_filters, had NO SET LOCAL work_mem. 1024 MB
+// holds the working set in memory with headroom; same single-conn + reclaimable-cache
+// safety as SALES_FILTERS_WORK_MEM_MB.
+const TEMPLATE_PRICES_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_WORK_MEM_MB', 1024);
+// Cadence (seconds) of the template-prices recompute. Shortened 1h -> 5min in 1.7.8 so
+// users see updated suggested/aggregate template prices ~12x sooner. Safe at this cadence
+// because: (a) the work_mem fix above keeps each run in memory (no spill), (b) it runs on
+// longRunningPool (max:1, so runs never overlap), and (c) the job is now reader-gated
+// (shouldDeferDrain) so it yields block-write priority while the reader is catching up.
+// The 300s statement_timeout is a worst-case CEILING, not the typical run time, so the gate
+// — not the interval — is what guarantees it can't starve the reader. Env-tunable.
+const TEMPLATE_PRICES_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S', 5 * 60);
 
 // Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
 // Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
@@ -124,6 +140,33 @@ async function drainOneBatch(
             const res = await client.query('SELECT update_atomicmarket_sales_filters($1) AS consumed', [batchSize]);
             await client.query('COMMIT');
             return Number(res.rows[0]?.consumed ?? 0);
+        } catch (e) {
+            await client.query('ROLLBACK').catch(() => undefined);
+            throw e;
+        }
+    } finally {
+        client.release();
+    }
+}
+
+/**
+ * Run a single long-running maintenance statement in its own transaction with a
+ * raised work_mem + async commit, generalizing drainOneBatch's SET LOCAL pattern
+ * (same PgBouncer-safe, txn-scoped rationale; see drainOneBatch). For heavy
+ * aggregations (PERCENTILE_DISC / hash-agg / sorts) this keeps the working set in
+ * memory instead of spilling to pgsql_tmp and going IO-bound against the reader's
+ * block-writes — the failure class found in the 2026-06 DB write-spill audit.
+ * Use on longRunningPool (max:1) so the per-run work_mem ceiling is bounded.
+ */
+export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: number): Promise<void> {
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        try {
+            await client.query(`SET LOCAL work_mem = '${Number(workMemMb)}MB'`);
+            await client.query('SET LOCAL synchronous_commit = off');
+            await client.query(sql);
+            await client.query('COMMIT');
         } catch (e) {
             await client.query('ROLLBACK').catch(() => undefined);
             throw e;
@@ -702,8 +745,18 @@ export default class AtomicMarketHandler extends ContractHandler {
             );
         });
 
-        this.filler.jobs.add('update_atomicmarket_template_prices', 60 * 60, JobQueuePriority.LOW, async () => {
-            await longRunningPool.query('SELECT update_atomicmarket_template_prices()');
+        this.filler.jobs.add('update_atomicmarket_template_prices', TEMPLATE_PRICES_INTERVAL_S, JobQueuePriority.LOW, async () => {
+            // Reader-priority gate: at the shortened 5min cadence, skip this tick while the
+            // reader is catching up so the ungated heavy recompute can't contend with
+            // block-writes during a burst/post-restart. Prices just refresh on the next tick
+            // once the reader is live again.
+            if (this.filler.shouldDeferDrain()) {
+                return;
+            }
+            // Raised work_mem so the PERCENTILE_DISC + per-template hash-agg recompute
+            // stays in memory instead of spilling ~284 MB to pgsql_tmp every run (write-spill audit);
+            // that in-memory speedup + the gate are what let us run it every 5min instead of hourly.
+            await runWithWorkMem(longRunningPool, 'SELECT update_atomicmarket_template_prices()', TEMPLATE_PRICES_WORK_MEM_MB);
         });
 
         // reconcile_atomicmarket_listings disabled 2026-04-15. This job called
