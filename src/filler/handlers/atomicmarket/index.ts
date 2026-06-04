@@ -27,9 +27,19 @@ export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, D
 // update_atomicmarket_sales_filters() call consumes at most BATCH_SIZE queue
 // rows of each type in a short transaction; the job loops until the queue is
 // drained or the per-tick time budget elapses. Env-tunable so ops can retune
-// under load without a redeploy. Defaults: 5000 rows/batch, 30 s budget.
-const SALES_FILTERS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_BATCH_SIZE', 5000);
-const SALES_FILTERS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS', 30_000);
+// under load without a redeploy. Defaults: 2500 rows/batch, 50 s budget.
+//
+// 1.7.6 retune (measured on WAX mainnet): batch 5000 had grown past the 2048MB
+// work_mem (below), so the recompute spilled to temp files (IO/BuffileWrite,
+// ~20-26s/call) instead of running in memory. Sizing the batch to stay WITHIN
+// work_mem keeps each call in memory (the original design intent) — we shrink
+// the batch rather than raise work_mem because work_mem is per-operation and
+// the 6 fillers' DB pods vary in size (a smaller batch lowers memory pressure
+// everywhere; a larger work_mem would raise it). Budget raised 30s->50s to use
+// the idle half of the 60s job tick (it was draining ~30s then sitting idle
+// ~30s); the per-batch shouldDeferDrain() yield keeps a large budget reader-safe.
+const SALES_FILTERS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_BATCH_SIZE', 2500);
+const SALES_FILTERS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS', 50_000);
 // Per-batch statement_timeout for the drain query. This is the EFFECTIVE cap on
 // a single update_atomicmarket_sales_filters() call. It is applied via
 // `SET LOCAL` inside each batch's transaction (see below) — NOT via the pool's
