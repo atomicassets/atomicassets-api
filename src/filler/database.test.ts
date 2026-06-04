@@ -1,7 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 import ConnectionManager from '../connections/manager';
-import {ContractDB, WriteBuffer, UpdateBuffer, isPkCondition, inferPgType} from './database';
+import {ContractDB, WriteBuffer, UpdateBuffer, isPkCondition, __resetColumnMetaCache} from './database';
 import {connectionConfig} from '../utils/test';
 
 const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
@@ -17,6 +17,11 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
         connection = new ConnectionManager(connectionConfig);
         contract = new ContractDB('test', connection);
     });
+
+    // The column-metadata cache is keyed by bare table name and lives for the
+    // process; reset it between tests so reused temp-table names never serve
+    // stale metadata.
+    afterEach(() => __resetColumnMetaCache());
 
     it('Contract DB Transaction Insert', async () => {
         const transaction = await contract.startTransaction(1);
@@ -474,6 +479,102 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
         });
     });
 
+    describe('updateBatch catalog-driven column typing', () => {
+        // The cast type for each column comes from the live catalog
+        // (pg_attribute), not from guessing at the JS values. An all-null batch
+        // column used to be typed `text` and produced unnest($N::text[]) →
+        // 42804 against a non-text column (the WAX filler stall, block
+        // #438032575). With catalog typing it is cast to the real column type,
+        // so writing NULL to a NULLABLE non-text column just works.
+        it('stores NULL into a nullable bigint column instead of raising 42804', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_catalog_nullable (id int PRIMARY KEY, note bigint) ON COMMIT DROP'
+            );
+            await transaction.query('INSERT INTO ub_catalog_nullable (id, note) VALUES (1, 5), (2, 7)');
+
+            // Every row in the batch sets note = NULL → an all-null column.
+            const result = await transaction.updateBatch(
+                'ub_catalog_nullable',
+                ['id'],
+                ['note'],
+                [
+                    { pkValues: { id: 1 }, setValues: { note: null } },
+                    { pkValues: { id: 2 }, setValues: { note: null } },
+                ]
+            );
+
+            expect(result.rowCount).to.equal(2);
+            const check = await transaction.query('SELECT id, note FROM ub_catalog_nullable ORDER BY id');
+            expect(check.rows[0].note).to.equal(null);
+            expect(check.rows[1].note).to.equal(null);
+
+            await transaction.abort();
+        });
+
+        // The real-bug case stays loud — but with an accurate, located message
+        // at the writer boundary instead of a misleading 42804 three layers down.
+        it('rejects NULL for a NOT NULL column with a clear, located error', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_catalog_notnull (id int PRIMARY KEY, amount bigint NOT NULL) ON COMMIT DROP'
+            );
+            await transaction.query('INSERT INTO ub_catalog_notnull (id, amount) VALUES (1, 10)');
+
+            let err: Error | null = null;
+            try {
+                await transaction.updateBatch(
+                    'ub_catalog_notnull',
+                    ['id'],
+                    ['amount'],
+                    [{ pkValues: { id: 1 }, setValues: { amount: null } }]
+                );
+            } catch (e) {
+                err = e as Error;
+            }
+
+            expect(err, 'expected updateBatch to throw on NULL into NOT NULL').to.not.equal(null);
+            expect(err!.message).to.match(/updateBatch/);
+            expect(err!.message).to.match(/NOT NULL/i);
+            expect(err!.message).to.include('amount');
+            expect(err!.message).to.include('ub_catalog_notnull');
+
+            await transaction.abort();
+        });
+
+        // A handler passing a key that is not a real column fails loud at the
+        // writer with a clear message, rather than emitting bad SQL.
+        it('rejects an unknown column with a clear error naming the column and table', async () => {
+            const transaction = await contract.startTransaction();
+
+            await transaction.query(
+                'CREATE TEMP TABLE ub_catalog_cols (id int PRIMARY KEY, a bigint) ON COMMIT DROP'
+            );
+            await transaction.query('INSERT INTO ub_catalog_cols (id, a) VALUES (1, 1)');
+
+            let err: Error | null = null;
+            try {
+                await transaction.updateBatch(
+                    'ub_catalog_cols',
+                    ['id'],
+                    ['nonexistent'],
+                    [{ pkValues: { id: 1 }, setValues: { nonexistent: 5 } }]
+                );
+            } catch (e) {
+                err = e as Error;
+            }
+
+            expect(err, 'expected updateBatch to throw on unknown column').to.not.equal(null);
+            expect(err!.message).to.match(/updateBatch/);
+            expect(err!.message).to.include('nonexistent');
+            expect(err!.message).to.include('ub_catalog_cols');
+
+            await transaction.abort();
+        });
+    });
+
     describe('update buffer', () => {
         it('buffers PK-matched updates in catchup mode', async () => {
             const transaction = await contract.startTransaction();
@@ -669,11 +770,10 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
     });
 
     describe('updateBatch with empty inner array values', () => {
-        // PG 42804 regression guard. inferPgType maps any per-row JS array
-        // value to `jsonb`, so jsonb[] columns hit the empty-array padding
-        // path inside updateBatch. The VALUES-clause fallback emits a
-        // per-row $N::jsonb[] cast, which keeps the array structure intact
-        // even when one of the rows passes [] for that column. Element
+        // PG 42804 regression guard. The catalog reports these columns as
+        // jsonb[], so updateBatch routes them through the VALUES-clause path
+        // with a per-row $N::jsonb[] cast, which keeps the array structure
+        // intact even when one of the rows passes [] for that column. Element
         // values are JSON-encoded scalars because pg-node serializes JS
         // arrays as PG array literals and PG re-parses each element as
         // jsonb (a bare 'x' is not valid JSON; '"x"' is).
@@ -1480,147 +1580,5 @@ describe('isPkCondition', () => {
             {str: 'id = $1', values: [42, 99]},
             ['id']
         )).to.be.false;
-    });
-});
-
-describe('inferPgType', () => {
-    it('returns text for string arrays', () => {
-        expect(inferPgType(['hello', 'world'])).to.equal('text');
-    });
-
-    it('returns bigint for integer arrays', () => {
-        expect(inferPgType([1, 2, 3])).to.equal('bigint');
-    });
-
-    it('returns double precision for float arrays', () => {
-        expect(inferPgType([1.5, 2.7])).to.equal('double precision');
-    });
-
-    it('returns boolean for boolean arrays', () => {
-        expect(inferPgType([true, false])).to.equal('boolean');
-    });
-
-    it('returns bytea for Buffer arrays', () => {
-        expect(inferPgType([Buffer.from([1]), Buffer.from([2])])).to.equal('bytea');
-    });
-
-    it('returns bytea for Uint8Array arrays', () => {
-        expect(inferPgType([new Uint8Array([1]), new Uint8Array([2])])).to.equal('bytea');
-    });
-
-    it('returns jsonb for object arrays', () => {
-        expect(inferPgType([{a: 1}, {b: 2}])).to.equal('jsonb');
-    });
-
-    it('returns text for all-null arrays', () => {
-        expect(inferPgType([null, null, undefined])).to.equal('text');
-    });
-
-    it('skips nulls and infers from first non-null', () => {
-        expect(inferPgType([null, 42, null])).to.equal('bigint');
-    });
-
-    it('returns text for empty array', () => {
-        expect(inferPgType([])).to.equal('text');
-    });
-
-    it('returns bytea for ArrayBuffer.isView types (Int32Array)', () => {
-        expect(inferPgType([new Int32Array([1, 2])])).to.equal('bytea');
-    });
-
-    it('returns bytea for Float64Array', () => {
-        expect(inferPgType([new Float64Array([1.5])])).to.equal('bytea');
-    });
-
-    it('returns bigint for negative integers', () => {
-        expect(inferPgType([-5, -10])).to.equal('bigint');
-    });
-
-    it('returns text for mixed null and string', () => {
-        expect(inferPgType([null, undefined, 'hello'])).to.equal('text');
-    });
-
-    it('returns jsonb for arrays-of-arrays (nested arrays are objects)', () => {
-        expect(inferPgType([[1, 2], [3, 4]])).to.equal('jsonb');
-    });
-
-    it('returns double precision for Infinity', () => {
-        expect(inferPgType([Infinity])).to.equal('double precision');
-    });
-
-    it('returns double precision for NaN', () => {
-        expect(inferPgType([NaN])).to.equal('double precision');
-    });
-
-    it('infers type from first non-null even when subsequent values differ', () => {
-        // inferPgType stops at the first non-null value
-        expect(inferPgType([null, 42, 'hello'])).to.equal('bigint');
-    });
-
-    it('returns jsonb for JSON object strings (encodeDatabaseJson output)', () => {
-        expect(inferPgType(['{"key":"value"}'])).to.equal('jsonb');
-        expect(inferPgType(['{"a":1,"b":2}'])).to.equal('jsonb');
-    });
-
-    it('returns jsonb for JSON array strings', () => {
-        expect(inferPgType(['[1,2,3]'])).to.equal('jsonb');
-        expect(inferPgType(['[{"a":1}]'])).to.equal('jsonb');
-    });
-
-    it('returns text for strings that look like JSON but are too short', () => {
-        expect(inferPgType(['{}'])).to.equal('jsonb'); // valid minimal JSON object
-        expect(inferPgType(['[]'])).to.equal('jsonb'); // valid minimal JSON array
-        expect(inferPgType(['{'])).to.equal('text');   // incomplete
-    });
-
-    it('returns text for non-numeric strings', () => {
-        expect(inferPgType(['hello world'])).to.equal('text');
-        expect(inferPgType(['pink.gg'])).to.equal('text');
-        expect(inferPgType(['abc123'])).to.equal('text');
-    });
-
-    it('returns bigint for numeric string values (EOSIO uint64)', () => {
-        expect(inferPgType(['76682324'])).to.equal('bigint');
-        expect(inferPgType(['12345'])).to.equal('bigint');
-        expect(inferPgType(['-999'])).to.equal('bigint');
-        expect(inferPgType([null, '100000000000'])).to.equal('bigint');
-    });
-
-    it('returns double precision for decimal string values (atomicmarket fees, ratios)', () => {
-        // Real-world values from atomicmarket_config: maker_market_fee, taker_market_fee
-        expect(inferPgType(['0.01'])).to.equal('double precision');
-        expect(inferPgType(['0.1'])).to.equal('double precision');
-        expect(inferPgType(['-0.5'])).to.equal('double precision');
-        expect(inferPgType([null, '1.234'])).to.equal('double precision');
-    });
-
-    it('returns double precision for scientific-notation strings', () => {
-        expect(inferPgType(['1e10'])).to.equal('double precision');
-        expect(inferPgType(['1.5e-3'])).to.equal('double precision');
-    });
-
-    it('returns double precision when integer + decimal strings are mixed', () => {
-        // Both must succeed under double precision; only "all integer" picks bigint.
-        expect(inferPgType(['120', '0.01'])).to.equal('double precision');
-        expect(inferPgType(['0.5', '120'])).to.equal('double precision');
-    });
-
-    it('falls back to text when numeric and non-numeric strings are mixed', () => {
-        expect(inferPgType(['123', 'abc', '456'])).to.equal('text');
-        expect(inferPgType([null, '99', 'not_a_number'])).to.equal('text');
-        expect(inferPgType(['0', '1', 'hello'])).to.equal('text');
-    });
-
-    it('returns bigint only when all non-null string values are numeric', () => {
-        expect(inferPgType([null, '123', null, '456', null])).to.equal('bigint');
-    });
-
-    it('returns jsonb for null-prefixed JSON string arrays', () => {
-        expect(inferPgType([null, '{"x":1}'])).to.equal('jsonb');
-    });
-
-    it('returns jsonb for JS arrays (Array.isArray)', () => {
-        // JS arrays are detected before typeof object check
-        expect(inferPgType([['a', 'b']])).to.equal('jsonb');
     });
 });
