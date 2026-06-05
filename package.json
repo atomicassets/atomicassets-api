@@ -1,6 +1,6 @@
 {
   "name": "atomicassets-api",
-  "version": "1.7.8",
+  "version": "1.7.9",
   "description": "AtomicAssets API: indexer and HTTP API for AtomicAssets, AtomicMarket, AtomicTools, and related contracts on Antelope (EOSIO) chains.",
   "license": "MIT",
   "author": "FACINGS INC.",
