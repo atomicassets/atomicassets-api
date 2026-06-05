@@ -11,6 +11,7 @@ import { upgradeDb } from '../filler/upgrade-db';
 import { MetricsCollectorHandler } from '../metrics/handler';
 import { Registry } from 'prom-client';
 import { setAutoVacSettings } from '../filler/set-autovac-settings';
+import { retryTransient } from '../utils/retry';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
@@ -36,6 +37,18 @@ if (!readerConfigs || readerConfigs.length === 0) {
     process.exit(-1);
 }
 
+// Safety net mirroring bin/server.ts. Without these, a single stray rejected
+// promise — e.g. an in-flight chain HTTP fetch losing its connection while the
+// node pod restarts — terminates the process (Node's default for unhandled
+// rejections), crash-looping the reader. Log and stay up instead.
+process.on('unhandledRejection', error => {
+    logger.error('Unhandled Rejection', error);
+});
+
+process.on('uncaughtException', error => {
+    logger.error('Uncaught Exception', error);
+});
+
 // @ts-ignore
 if (cluster.isPrimary || cluster.isMaster) {
     logger.info('Starting workers...');
@@ -43,9 +56,27 @@ if (cluster.isPrimary || cluster.isMaster) {
     const connection = new ConnectionManager(connectionConfig);
 
     (async (): Promise<void> => {
-        await connection.connect();
+        // The node (and DB/redis) can be transiently unreachable at boot — the
+        // SHIP/RPC pod may be mid-restart even after the wait-for-ship init gate.
+        // Wait it out with bounded backoff (~5 min) instead of letting an
+        // ECONNREFUSED crash-loop the whole filler.
+        const startupRetry = { retries: 30, maxDelayMs: 10_000 } as const;
 
-        if (!(await connection.chain.checkChainId())) {
+        await retryTransient(() => connection.connect(), { label: 'connect()', ...startupRetry });
+
+        let chainIdMatches: boolean;
+        try {
+            chainIdMatches = await retryTransient(
+                () => connection.chain.checkChainId(),
+                { label: 'checkChainId', ...startupRetry }
+            );
+        } catch (error) {
+            logger.error('Unable to reach chain node to verify chain id after retries', error);
+
+            process.exit(1);
+        }
+
+        if (!chainIdMatches) {
             logger.error('Chain Id in config mismatches node chain id');
 
             process.exit(1);
@@ -74,7 +105,11 @@ if (cluster.isPrimary || cluster.isMaster) {
                 }
             });
         }
-    })();
+    })().catch(error => {
+        logger.error('Fatal error during filler startup', error);
+
+        process.exit(1);
+    });
 
     const app = express();
 
