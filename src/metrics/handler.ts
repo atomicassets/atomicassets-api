@@ -94,14 +94,14 @@ export class MetricsCollectorHandler {
         }
 
         if (this.collectFrom.sales_filters_backlog !== false) {
+            // Authoritative sales-filter drain-health signal: a sustained upward trend means the
+            // drain is falling behind chain churn. The reader catch-up watchdog cannot see this
+            // (it resets on any block advance). No series is emitted on chains without the table.
             this.metrics.sales_filters_updates_pending_count = new Gauge({
                 name: 'eos_contract_api_sales_filters_updates_pending_count',
                 registers: [registry],
                 labelNames: ['process', 'hostname'],
-                help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue). '
-                    + 'A sustained upward trend means the drain is falling behind chain churn — the reader '
-                    + 'catch-up watchdog cannot see this (it resets on any block advance), so this is the '
-                    + 'authoritative drain-health signal. No series is emitted on chains without the table.'
+                help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue)'
             });
         }
 
@@ -192,8 +192,12 @@ export class MetricsCollectorHandler {
             const res = await this.connections.database.query<{ pending: string }>(
                 'SELECT count(*)::bigint AS pending FROM atomicmarket_sales_filters_updates'
             );
+            // count(*)::bigint comes back as a string; clamp to MAX_SAFE_INTEGER so a
+            // pathological backlog can't silently lose precision in the Number() conversion.
+            const pending = Number(res.rows[0].pending);
             this.metrics.sales_filters_updates_pending_count
-                .labels(this.process, this.hostname).set(Number(res.rows[0].pending));
+                .labels(this.process, this.hostname)
+                .set(Number.isSafeInteger(pending) ? pending : Number.MAX_SAFE_INTEGER);
         } catch (e) {
             logger.debug('Error reading the sales-filter backlog', e);
         }
