@@ -10,6 +10,7 @@ interface IMetrics {
     psql_pool_clients_waiting_count?: Gauge<any>,
     readers_blocks_behind_count?: Gauge<any>,
     readers_time_behind_chain_sec?: Gauge<any>,
+    sales_filters_updates_pending_count?: Gauge<any>,
 }
 
 export interface ICollectOptions {
@@ -17,6 +18,7 @@ export interface ICollectOptions {
     redis_connection?: boolean;
     psql_pool?: boolean;
     readers?: boolean;
+    sales_filters_backlog?: boolean;
 }
 
 export class MetricsCollectorHandler {
@@ -36,7 +38,8 @@ export class MetricsCollectorHandler {
             this.collectPSQlState(),
             this.collectPoolClientsCount(),
             this.collectRedisState(),
-            this.collectReadersState()
+            this.collectReadersState(),
+            this.collectSalesFiltersBacklog()
         ]);
 
         return registry.metrics();
@@ -87,6 +90,18 @@ export class MetricsCollectorHandler {
                 registers: [registry],
                 labelNames: ['process', 'hostname', 'filler_name'],
                 help: 'Indicates how much time in seconds, is the filler behind the chain'
+            });
+        }
+
+        if (this.collectFrom.sales_filters_backlog !== false) {
+            this.metrics.sales_filters_updates_pending_count = new Gauge({
+                name: 'eos_contract_api_sales_filters_updates_pending_count',
+                registers: [registry],
+                labelNames: ['process', 'hostname'],
+                help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue). '
+                    + 'A sustained upward trend means the drain is falling behind chain churn — the reader '
+                    + 'catch-up watchdog cannot see this (it resets on any block advance), so this is the '
+                    + 'authoritative drain-health signal. No series is emitted on chains without the table.'
             });
         }
 
@@ -158,6 +173,29 @@ export class MetricsCollectorHandler {
             });
         } catch (e) {
             logger.debug('Error reading the readers state', e);
+        }
+    }
+
+    private async collectSalesFiltersBacklog(): Promise<void> {
+        if (this.collectFrom.sales_filters_backlog === false) return Promise.resolve();
+
+        try {
+            // Self-guard on table existence: only atomicmarket-enabled chains have it.
+            // Referencing a missing table in the same statement errors at parse time, so
+            // probe with to_regclass first and skip (emit no series) when absent.
+            const present = await this.connections.database.query<{ present: boolean }>(
+                'SELECT to_regclass(\'atomicmarket_sales_filters_updates\') IS NOT NULL AS present'
+            );
+            if (!present.rows[0]?.present) return;
+
+            // The queue is kept small by the drain (by design), so an exact count is cheap.
+            const res = await this.connections.database.query<{ pending: string }>(
+                'SELECT count(*)::bigint AS pending FROM atomicmarket_sales_filters_updates'
+            );
+            this.metrics.sales_filters_updates_pending_count
+                .labels(this.process, this.hostname).set(Number(res.rows[0].pending));
+        } catch (e) {
+            logger.debug('Error reading the sales-filter backlog', e);
         }
     }
 }
