@@ -34,7 +34,10 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
         );
         expect(before.rows[0].c, 'createFullSale should enqueue work').to.be.greaterThan(0);
 
-        await client.query('SELECT update_atomicmarket_sales_filters(5000)');
+        const removed = await client.query<{ removed: number }>(
+            'SELECT update_atomicmarket_sales_filters(5000) AS removed',
+        );
+        expect(Number(removed.rows[0].removed), 'return value counts rows REMOVED').to.equal(before.rows[0].c);
 
         const queued = await client.query<{ c: number }>(
             'SELECT count(*)::int c FROM atomicmarket_sales_filters_updates',
@@ -124,6 +127,48 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
                 .catch(() => undefined);
             await drain.end().catch(() => undefined);
             await reader.end().catch(() => undefined);
+        }
+    });
+
+    // A second concurrent drain must be a clean no-op (the SELECT-claim no longer mutually
+    // excludes drains the way the old DELETE-claim did; the function takes a txn-scoped
+    // advisory lock to restore that). Models an in-flight drain by holding the lock on one
+    // connection while a real drain call runs on another.
+    it('a second concurrent drain is a clean no-op (advisory lock)', async () => {
+        const cfg = getTestPostgresConfig();
+        const holder = new Client(cfg);
+        const drainer = new Client(cfg);
+        const K = 987654322;
+        const where = `asset_contract = '${CONTRACT}' AND asset_id = $1`;
+        try {
+            await holder.connect();
+            await drainer.connect();
+            await drainer.query(`DELETE FROM atomicmarket_sales_filters_updates WHERE ${where}`, [K]);
+            await drainer.query(ENQUEUE_ASSET, [K]); // seed a queued row
+
+            // An "in-flight drain" holds the advisory lock.
+            await holder.query('BEGIN');
+            await holder.query("SELECT pg_advisory_xact_lock(hashtext('update_atomicmarket_sales_filters'))");
+
+            // A real drain call while the lock is held must short-circuit to 0 and leave the
+            // queue untouched (not claim/recompute/delete).
+            const res = await drainer.query<{ removed: number }>(
+                'SELECT update_atomicmarket_sales_filters(5000) AS removed',
+            );
+            expect(Number(res.rows[0].removed), 'locked-out drain returns 0').to.equal(0);
+            const still = await drainer.query<{ c: number }>(
+                `SELECT count(*)::int c FROM atomicmarket_sales_filters_updates WHERE ${where}`,
+                [K],
+            );
+            expect(still.rows[0].c, 'queue row untouched by the no-op drain').to.equal(1);
+
+            await holder.query('ROLLBACK'); // release the lock
+        } finally {
+            await drainer
+                .query(`DELETE FROM atomicmarket_sales_filters_updates WHERE ${where}`, [K])
+                .catch(() => undefined);
+            await holder.end().catch(() => undefined);
+            await drainer.end().catch(() => undefined);
         }
     });
 });

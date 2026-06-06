@@ -96,9 +96,19 @@ LANGUAGE plpgsql
 AS $$
 DECLARE
     r RECORD;
-    consumed INT := 0;
+    deleted INT := 0;
     n INT;
 BEGIN
+    -- Serialize drains: only one may run at a time. The filler already uses a max=1 drain
+    -- pool, but the SELECT-claim (unlike the old DELETE-claim) no longer mutually excludes
+    -- a second drain, so a stray/manual concurrent burn-down would redo the (idempotent)
+    -- recompute and risk filter-table deadlock. A txn-scoped advisory lock (auto-released at
+    -- COMMIT) makes any concurrent drain a clean no-op. It is re-entrant within a transaction,
+    -- so calling the function twice in one transaction (e.g. tests) still works.
+    IF NOT pg_try_advisory_xact_lock(hashtext('update_atomicmarket_sales_filters')) THEN
+        RETURN 0;
+    END IF;
+
     -- Temp tables now carry the per-row seq captured at claim time (for the guarded
     -- end-DELETE). Plain temp tables (not ON COMMIT DROP) — explicitly dropped before
     -- RETURN — so the function is safe to call repeatedly on the reused longRunningPool
@@ -108,18 +118,18 @@ BEGIN
     CREATE TEMPORARY TABLE _del_offers (asset_contract TEXT, offer_id BIGINT, seq BIGINT);
     CREATE TEMPORARY TABLE sales_to_update (sale_id INT NOT NULL, market_contract TEXT NOT NULL, PRIMARY KEY (sale_id, market_contract));
 
-    -- CLAIM (no lock): snapshot up to batch_size rows of each type. ORDER BY seq drains
-    -- FIFO-ish and makes the batch deterministic; a row re-enqueued mid-batch gets a higher
-    -- seq and is naturally claimed later. `consumed` counts rows claimed this call so the
-    -- caller keeps looping while the queue has work (same contract as 1.6.3).
+    -- CLAIM (no lock): snapshot up to batch_size rows of each type with their seq.
+    -- ORDER BY seq drains FIFO-ish and makes the batch deterministic; a row re-enqueued
+    -- mid-batch gets a higher seq and is naturally claimed later. The function RETURNS rows
+    -- DELETED (not claimed) — see the end-DELETE — so the caller's loop terminates when a
+    -- batch makes no removal progress (e.g. only perpetually-re-touched keys remain),
+    -- rather than spinning on claimed-but-never-deleted rows.
     INSERT INTO _del_assets
         SELECT asset_contract, asset_id, seq
         FROM atomicmarket_sales_filters_updates
         WHERE asset_id IS NOT NULL
         ORDER BY seq
         LIMIT batch_size;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    consumed := consumed + n;
 
     INSERT INTO _del_sales
         SELECT market_contract, sale_id, seq
@@ -127,8 +137,6 @@ BEGIN
         WHERE sale_id IS NOT NULL
         ORDER BY seq
         LIMIT batch_size;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    consumed := consumed + n;
 
     INSERT INTO _del_offers
         SELECT asset_contract, offer_id, seq
@@ -136,8 +144,6 @@ BEGIN
         WHERE offer_id IS NOT NULL
         ORDER BY seq
         LIMIT batch_size;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    consumed := consumed + n;
 
     -- Fan out the consumed asset changes to the sales that reference them, bucketed into
     -- <=50-asset overlap probes (verbatim from 1.3.3 / 1.6.3).
@@ -304,22 +310,32 @@ BEGIN
         WHERE u.asset_id IS NOT NULL
             AND u.asset_contract = d.asset_contract AND u.asset_id = d.asset_id
             AND u.seq = d.seq;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    deleted := deleted + n;
 
     DELETE FROM atomicmarket_sales_filters_updates u
         USING _del_sales d
         WHERE u.sale_id IS NOT NULL
             AND u.market_contract = d.market_contract AND u.sale_id = d.sale_id
             AND u.seq = d.seq;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    deleted := deleted + n;
 
     DELETE FROM atomicmarket_sales_filters_updates u
         USING _del_offers d
         WHERE u.offer_id IS NOT NULL
             AND u.asset_contract = d.asset_contract AND u.offer_id = d.offer_id
             AND u.seq = d.seq;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    deleted := deleted + n;
 
     DROP TABLE _del_assets, _del_sales, _del_offers, sales_to_update;
 
-    -- Return queue rows CONSUMED (claimed) this call so the caller loops until drained.
-    RETURN consumed;
+    -- Return queue rows actually REMOVED this call (not merely claimed): a row re-enqueued
+    -- mid-batch has a bumped seq, survives the guarded end-DELETE, and is NOT counted — so
+    -- the caller's `while (removed > 0)` loop stops making a pass that removed nothing
+    -- (only hot/perpetually-re-touched keys left) instead of spinning a full recompute that
+    -- deletes nothing. Empty queue → 0 → loop stops.
+    RETURN deleted;
 END
 $$;

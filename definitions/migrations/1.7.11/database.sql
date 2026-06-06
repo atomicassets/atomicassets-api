@@ -32,6 +32,23 @@
 SET LOCAL statement_timeout = 0;
 SET LOCAL lock_timeout = '60s';
 
+-- Re-enqueue used to be ON CONFLICT DO NOTHING (zero heap writes when a key was
+-- already queued); 1.7.11 makes it DO UPDATE SET seq=nextval, so every re-enqueue on
+-- the hot asset/sale/offer write path now writes a dead tuple. `seq` is deliberately
+-- NOT indexed (see below), so these are HOT updates — but HOT only stays in-page if
+-- there is free space, and the small live row count means the default autovacuum
+-- scale-factor rarely fires. Set aggressive absolute-threshold autovacuum + a 70%
+-- fillfactor so dead tuples are reclaimed and HOT updates don't migrate pages (which
+-- would spawn index entries and defeat HOT). Set BEFORE the ADD COLUMN rewrite so the
+-- rewrite packs at fillfactor 70.
+ALTER TABLE atomicmarket_sales_filters_updates SET (
+    autovacuum_vacuum_scale_factor = 0.0,
+    autovacuum_vacuum_threshold = 1000,
+    autovacuum_vacuum_insert_scale_factor = 0.0,
+    autovacuum_vacuum_insert_threshold = 1000,
+    fillfactor = 70
+);
+
 -- Monotonic version token. Gaps are fine (a conflicting INSERT still consumes a value).
 CREATE SEQUENCE IF NOT EXISTS atomicmarket_sales_filters_updates_seq;
 
