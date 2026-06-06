@@ -41,4 +41,8 @@ CREATE SEQUENCE IF NOT EXISTS atomicmarket_sales_filters_updates_seq;
 ALTER TABLE atomicmarket_sales_filters_updates
     ADD COLUMN IF NOT EXISTS seq BIGINT NOT NULL DEFAULT nextval('atomicmarket_sales_filters_updates_seq');
 
+-- Tie the sequence lifecycle to the column so it is dropped with the table/column
+-- (no orphaned sequence on a future recreate). OWNED BY does not affect the DEFAULT.
+ALTER SEQUENCE atomicmarket_sales_filters_updates_seq OWNED BY atomicmarket_sales_filters_updates.seq;
+
 UPDATE dbinfo SET "value" = '1.7.11' WHERE name = 'version';

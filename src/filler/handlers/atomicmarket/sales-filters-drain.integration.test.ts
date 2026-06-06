@@ -10,14 +10,20 @@ import { getTestPostgresConfig } from '../../../utils/test';
 // 1.7.11). The headline test is the two-connection concurrency case proving the
 // reader's enqueue is NOT blocked by an in-flight drain and that a change racing
 // the drain is NOT lost.
+//
+// All queue lookups scope to (asset_contract = 'aatest', asset_id): the real queue
+// key is (asset_contract, asset_id), so filtering by asset_id alone could collide
+// with another test's row that shares the asset_id.
 
-const { client, txit } = initAtomicMarketTest();
+const CONTRACT = 'aatest';
 
 const ENQUEUE_ASSET = `
     INSERT INTO atomicmarket_sales_filters_updates(asset_contract, asset_id)
-    VALUES ('aatest', $1)
+    VALUES ('${CONTRACT}', $1)
     ON CONFLICT (asset_contract, asset_id) WHERE asset_id IS NOT NULL
         DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq')`;
+
+const { client, txit } = initAtomicMarketTest();
 
 describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)', () => {
     txit('drains a queued sale: queue emptied, filter row recomputed', async () => {
@@ -52,61 +58,55 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
     });
 
     txit('re-enqueue bumps the seq version token', async () => {
+        const read = `SELECT seq FROM atomicmarket_sales_filters_updates WHERE asset_contract = '${CONTRACT}' AND asset_id = $1`;
         await client.query(ENQUEUE_ASSET, [424242]);
-        const s0 = (
-            await client.query<{ seq: string }>(
-                'SELECT seq FROM atomicmarket_sales_filters_updates WHERE asset_id = $1',
-                [424242],
-            )
-        ).rows[0].seq;
+        const s0 = (await client.query<{ seq: string }>(read, [424242])).rows[0].seq;
         await client.query(ENQUEUE_ASSET, [424242]);
-        const s1 = (
-            await client.query<{ seq: string }>(
-                'SELECT seq FROM atomicmarket_sales_filters_updates WHERE asset_id = $1',
-                [424242],
-            )
-        ).rows[0].seq;
+        const s1 = (await client.query<{ seq: string }>(read, [424242])).rows[0].seq;
         expect(Number(s1)).to.be.greaterThan(Number(s0));
     });
 
-    // Headline correctness test: needs two real connections (txit's single-txn
-    // model cannot represent concurrent backends). Models the drain's three phases
-    // (CLAIM select → [recompute window] → version-guarded end-DELETE) on one
-    // connection while a reader enqueues on the other in the middle.
+    // Headline correctness test: needs two real connections (txit's single-txn model
+    // cannot represent concurrent backends). Models the drain's three phases (CLAIM
+    // select → [recompute window] → version-guarded end-DELETE) on one connection while
+    // a reader enqueues on the other in the middle. The reader sets a small lock_timeout
+    // so that IF its enqueue blocked on the drain txn (the old DELETE-at-start behavior)
+    // it would deterministically ERROR rather than rely on wall-clock timing.
     it('reader enqueue is not blocked by an in-flight drain, and a racing change is not lost', async () => {
         const cfg = getTestPostgresConfig();
         const drain = new Client(cfg);
         const reader = new Client(cfg);
         const K = 987654321; // dedicated asset key, cleaned up in finally
+        const where = `asset_contract = '${CONTRACT}' AND asset_id = $1`;
         try {
             await drain.connect();
             await reader.connect();
-            await reader.query('DELETE FROM atomicmarket_sales_filters_updates WHERE asset_id = $1', [K]);
+            await reader.query(`DELETE FROM atomicmarket_sales_filters_updates WHERE ${where}`, [K]);
 
             // Seed a queued change for key K.
             await reader.query(ENQUEUE_ASSET, [K]);
 
             // DRAIN phase 1 — CLAIM: SELECT (no lock), capture seq, hold the txn open
-            // (this stands in for the ~25s recompute, during which the real function
-            // also holds no queue lock).
+            // (stands in for the ~25s recompute, during which the real function also
+            // holds no queue lock).
             await drain.query('BEGIN');
             const claimed = await drain.query<{ seq: string }>(
-                'SELECT seq FROM atomicmarket_sales_filters_updates WHERE asset_id = $1 ORDER BY seq LIMIT 5000',
+                `SELECT seq FROM atomicmarket_sales_filters_updates WHERE ${where} ORDER BY seq LIMIT 1`,
                 [K],
             );
             const s0 = claimed.rows[0].seq;
 
-            // READER — enqueue the SAME key while the drain txn is open. Under the old
-            // DELETE-at-start design this ON CONFLICT would speculative-wait on the
-            // drain txn (~25s). It must now return effectively immediately.
-            const t0 = Date.now();
-            await reader.query(ENQUEUE_ASSET, [K]);
-            const elapsedMs = Date.now() - t0;
-            expect(elapsedMs, 'reader enqueue must not block on the drain txn').to.be.lessThan(1000);
+            // READER — enqueue the SAME key while the drain txn is open. With a 2s
+            // lock_timeout, the old DELETE-at-start design (ON CONFLICT speculative-wait
+            // on the drain xid) would raise "canceling statement due to lock timeout";
+            // the new SELECT-claim design takes no queue lock so this resolves at once.
+            await reader.query("SET lock_timeout = '2s'");
+            await reader.query(ENQUEUE_ASSET, [K]); // must NOT throw
+            await reader.query('SET lock_timeout = 0');
 
             // DRAIN phase 3 — version-guarded end-DELETE keyed on the captured seq.
             const del = await drain.query(
-                'DELETE FROM atomicmarket_sales_filters_updates WHERE asset_id = $1 AND seq = $2',
+                `DELETE FROM atomicmarket_sales_filters_updates WHERE ${where} AND seq = $2`,
                 [K, s0],
             );
             await drain.query('COMMIT');
@@ -114,12 +114,14 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
 
             // The racing change survives (bumped seq) → it will be reprocessed → not lost.
             const survive = await reader.query<{ c: number }>(
-                'SELECT count(*)::int c FROM atomicmarket_sales_filters_updates WHERE asset_id = $1',
+                `SELECT count(*)::int c FROM atomicmarket_sales_filters_updates WHERE ${where}`,
                 [K],
             );
             expect(survive.rows[0].c, 'racing change must survive (no lost update)').to.equal(1);
         } finally {
-            await reader.query('DELETE FROM atomicmarket_sales_filters_updates WHERE asset_id = $1', [K]).catch(() => undefined);
+            await reader
+                .query(`DELETE FROM atomicmarket_sales_filters_updates WHERE ${where}`, [K])
+                .catch(() => undefined);
             await drain.end().catch(() => undefined);
             await reader.end().catch(() => undefined);
         }
