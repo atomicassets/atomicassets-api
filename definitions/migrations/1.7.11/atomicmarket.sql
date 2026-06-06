@@ -116,7 +116,9 @@ BEGIN
     CREATE TEMPORARY TABLE _del_assets (asset_contract TEXT, asset_id BIGINT, seq BIGINT);
     CREATE TEMPORARY TABLE _del_sales (market_contract TEXT, sale_id BIGINT, seq BIGINT);
     CREATE TEMPORARY TABLE _del_offers (asset_contract TEXT, offer_id BIGINT, seq BIGINT);
-    CREATE TEMPORARY TABLE sales_to_update (sale_id INT NOT NULL, market_contract TEXT NOT NULL, PRIMARY KEY (sale_id, market_contract));
+    -- sale_id is BIGINT upstream (atomicmarket_sales_filters.sale_id); use BIGINT here too
+    -- (1.6.3 declared this INT — latent overflow once a sale_id exceeds 2^31-1).
+    CREATE TEMPORARY TABLE sales_to_update (sale_id BIGINT NOT NULL, market_contract TEXT NOT NULL, PRIMARY KEY (sale_id, market_contract));
 
     -- CLAIM (no lock): snapshot up to batch_size rows of each type with their seq.
     -- ORDER BY seq drains FIFO-ish and makes the batch deterministic; a row re-enqueued
