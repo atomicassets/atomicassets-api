@@ -1,14 +1,17 @@
 atomicassets-api
 ================
 
-This project is a continuation of the `eosio-contract-api` originally
-developed by Pink Network at Spielworks Markets GmbH:
+This project is a continuation of `eosio-contract-api`, originally
+created by Pink Network (pink.gg):
 
     https://github.com/pinknetworkx/eosio-contract-api
 
-The codebase has been carried forward and is now stewarded by FACINGS
-INC. through the AtomicHub team. We thank Pink Network for their
-original work on the AtomicAssets indexer and HTTP API.
+AtomicAssets is an open NFT standard created by Pink Network, who also
+built AtomicHub, the original AtomicAssets marketplace. Ownership of
+AtomicHub and this software passed from Pink Network to Spielworks
+Markets GmbH, and then to FACINGS INC., the current owner and maintainer.
+We thank Pink Network and Spielworks for their work on the AtomicAssets
+indexer and HTTP API.
 
 Copyright notices
 -----------------
