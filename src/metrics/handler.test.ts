@@ -34,6 +34,7 @@ try {
             'eos_contract_api_readers_blocks_behind_count',
             'eos_contract_api_readers_time_behind_chain_sec',
             'eos_contract_api_redis_live',
+            'eos_contract_api_sales_filters_updates_pending_count',
         ];
         const res = await handler.getMetrics(new Registry());
 
@@ -44,7 +45,8 @@ try {
         const handler = new MetricsCollectorHandler(connections, 'filler', os.hostname(), {
             readers: false,
             redis_connection: false,
-            psql_pool: false
+            psql_pool: false,
+            sales_filters_backlog: false
         });
 
         const metrics = [
@@ -54,6 +56,7 @@ try {
             'eos_contract_api_readers_blocks_behind_count',
             'eos_contract_api_readers_time_behind_chain_sec',
             'eos_contract_api_redis_live',
+            'eos_contract_api_sales_filters_updates_pending_count',
         ];
         const res = await handler.getMetrics(new Registry());
 

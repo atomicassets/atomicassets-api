@@ -233,6 +233,41 @@ describe('atomicdropsx dropsProcessor', () => {
         expect(Number(res.rows[0].max_claimable)).to.equal(1000);
     });
 
+    it('setdroplimit without max_claimable (WAX) preserves the existing value and does not crash', async () => {
+        // Regression for the WAX mainnet filler stall (block #438032575): WAX's
+        // setdroplimit omits max_claimable, so the field arrives undefined. The
+        // handler used to write it unconditionally → an all-null batch column that
+        // updateBatch typed as text[], failing assignment to the bigint column
+        // (PG 42804) and wedging the reader on every restart.
+        const block1 = createBlock();
+        await processActionTrace(processor, db, block1, createTx(), createActionTrace(
+            DROPS_CONTRACT, 'lognewdrop',
+            buildLogNewDrop({ drop_id: '9008', account_limit: 1, max_claimable: 100 }),
+        ));
+
+        const block2 = createBlock({ block_num: block1.block_num + 1 });
+        // No max_claimable key — mirrors the WAX setdroplimit ABI.
+        const data: SetDropLimitActionData = {
+            drop_id: '9008',
+            account_limit: 6,
+            account_limit_cooldown: 0,
+        };
+        await processActionTrace(processor, db, block2, createTx(), createActionTrace(
+            DROPS_CONTRACT, 'setdroplimit', data,
+        ));
+
+        const res = await client.query(
+            'SELECT account_limit, account_limit_cooldown, max_claimable FROM atomicdropsx_drops ' +
+            'WHERE contract = $1 AND drop_id = $2',
+            [DROPS_CONTRACT, '9008'],
+        );
+        expect(res.rowCount).to.equal(1);
+        expect(Number(res.rows[0].account_limit)).to.equal(6);
+        expect(Number(res.rows[0].account_limit_cooldown)).to.equal(0);
+        // Preserved from lognewdrop — setdroplimit must NOT clobber it to null/0.
+        expect(Number(res.rows[0].max_claimable)).to.equal(100);
+    });
+
     it('setdroptimes (WAX, plural) updates both start_time and end_time atomically', async () => {
         const block1 = createBlock();
         await processActionTrace(processor, db, block1, createTx(), createActionTrace(
