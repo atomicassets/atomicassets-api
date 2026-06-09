@@ -1,11 +1,11 @@
 # Authors and credits
 
 The `atomicassets-api` (an indexer and HTTP API for AtomicAssets, AtomicMarket,
-AtomicTools, and related contracts) originated as `eosio-contract-api`. AtomicAssets and
-AtomicHub were created by **Pink Network ([pink.gg](https://pink.gg))**, the original
-founders. Ownership later passed to **Spielworks** (Spielworks Markets GmbH) as the second
-owner, and then to **FACINGS** as the third and current owner and maintainer. See `NOTICE`
-and `LICENSE` for copyright.
+AtomicTools, and related contracts) originated as `eosio-contract-api`. AtomicAssets is an
+open NFT standard, created by **Pink Network ([pink.gg](https://pink.gg))**, who also built
+**AtomicHub**, the original AtomicAssets marketplace. Ownership of AtomicHub and this software
+passed from Pink Network to **Spielworks** (Spielworks Markets GmbH), and then to **FACINGS**,
+the current owner and maintainer. See `NOTICE` and `LICENSE` for copyright.
 
 ## AtomicAssets v2
 
