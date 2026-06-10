@@ -1,6 +1,6 @@
 /*
   Partition-parallel drain for a large atomicmarket_sales_filters_updates backlog
-  (see definitions/migrations/1.7.13/atomicmarket.sql for the design and lock protocol).
+  (see definitions/migrations/2.0.1/atomicmarket.sql for the design and lock protocol).
 
   Usage:
     node build/bin/drain-sales-filters.js [--partitions N] [--batch B] [--skip-offers]
