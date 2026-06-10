@@ -5,7 +5,7 @@ import { Client } from 'pg';
 import { initAtomicMarketTest } from '../../../api/namespaces/atomicmarket/test';
 import { getTestPostgresConfig } from '../../../utils/test';
 
-// Integration coverage for the 1.7.13 partition-parallel drain
+// Integration coverage for the 2.0.1 partition-parallel drain (v2 port of main-line 1.7.13)
 // (update_atomicmarket_sales_filters_partition + normalize_atomicmarket_sales_filters_offers).
 //
 // Headline guarantees under test:
@@ -40,7 +40,7 @@ async function queueCounts(): Promise<{ assets: number; sales: number; offers: n
     return r.rows[0];
 }
 
-describe('update_atomicmarket_sales_filters_partition — partition-parallel drain (1.7.13)', () => {
+describe('update_atomicmarket_sales_filters_partition — partition-parallel drain (2.0.1)', () => {
     txit('single-partition drain consumes sale rows, recomputes the filter row, leaves asset/offer rows alone', async () => {
         const { sale_id } = await client.createFullSale();
 

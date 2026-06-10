@@ -1,5 +1,6 @@
 /*
-  1.7.13 - Opt-in partition-parallel drain for large sales-filter backlogs.
+  2.0.1 - Opt-in partition-parallel drain for large sales-filter backlogs.
+  (Port of main-line 1.7.13 / PR #71 onto the v2 line; content unchanged.)
 
   PROBLEM (hit live on WAX after a long catchup): update_atomicmarket_sales_filters()
   is intentionally single-flight (1.7.11 advisory lock), so a large queue backlog
