@@ -68,9 +68,18 @@ SET LOCAL statement_timeout = 0;
 SET LOCAL lock_timeout = '60s';
 
 -- Offer->sales resolution: probes instead of per-batch filter-partition scans.
--- (Partitioned parent: builds/attaches per partition. On very large live DBs you
--- may pre-build per-partition CONCURRENTLY under the same names; this then
--- attaches them without rebuilding.)
+-- Partitioned parent: this builds the parent index and one index per partition,
+-- attaching any EQUIVALENT-definition partition index that already exists
+-- instead of rebuilding it. On very large live DBs, avoid the build locks
+-- entirely by pre-building before the upgrade:
+--   CREATE INDEX atomicmarket_sales_filters_offer_id
+--       ON ONLY atomicmarket_sales_filters (assets_contract, offer_id);
+--   CREATE INDEX CONCURRENTLY <part>_offer_id
+--       ON <partition> (assets_contract, offer_id);   -- per partition
+--   ALTER INDEX atomicmarket_sales_filters_offer_id
+--       ATTACH PARTITION <part>_offer_id;             -- per partition
+-- after which the IF NOT EXISTS below is a no-op. (This is the procedure used
+-- for the production validation run.)
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_filters_offer_id
     ON atomicmarket_sales_filters (assets_contract, offer_id);
 
@@ -94,6 +103,13 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- Plain temp table (not ON COMMIT DROP), explicitly dropped before RETURN --
+    -- same rationale as the 1.7.11 drain: safe to call repeatedly on a reused
+    -- pool connection and within a single transaction, with no per-call
+    -- DROP-IF-EXISTS notice spam. The claimed (key, seq) set must survive across
+    -- the enqueue and release statements, so a single-statement CTE chain cannot
+    -- replace it. Per-call DDL overhead is negligible at drain batch cadence
+    -- (a few calls per second per worker, measured).
     CREATE TEMPORARY TABLE _norm_offers (asset_contract TEXT, offer_id BIGINT, seq BIGINT);
 
     -- CLAIM (no queue lock), 1.7.11 protocol.
@@ -157,6 +173,8 @@ BEGIN
         RETURN 0;
     END IF;
 
+    -- Plain temp table, dropped before RETURN (1.7.11 temp-table rationale: see
+    -- normalize_atomicmarket_sales_filters_offers above).
     CREATE TEMPORARY TABLE _part_sales (market_contract TEXT, sale_id BIGINT, seq BIGINT);
 
     -- CLAIM (no queue lock): this partition's sale rows only. Asset/offer rows
