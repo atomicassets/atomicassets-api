@@ -97,11 +97,14 @@ export class MetricsCollectorHandler {
             // Authoritative sales-filter drain-health signal: a sustained upward trend means the
             // drain is falling behind chain churn. The reader catch-up watchdog cannot see this
             // (it resets on any block advance). No series is emitted on chains without the table.
+            // prio label (1.7.13 two-lane queue): '0' = real-time trigger events (must stay
+            // near zero), '1' = bulk price-refresh rows (bounded sawtooth). Sum the label
+            // for the pre-1.7.13 total.
             this.metrics.sales_filters_updates_pending_count = new Gauge({
                 name: 'eos_contract_api_sales_filters_updates_pending_count',
                 registers: [registry],
-                labelNames: ['process', 'hostname'],
-                help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue)'
+                labelNames: ['process', 'hostname', 'prio'],
+                help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue) per priority lane'
             });
         }
 
@@ -189,15 +192,32 @@ export class MetricsCollectorHandler {
             if (!present.rows[0]?.present) return;
 
             // The queue is kept small by the drain (by design), so an exact count is cheap.
-            const res = await this.connections.database.query<{ pending: string }>(
-                'SELECT count(*)::bigint AS pending FROM atomicmarket_sales_filters_updates'
+            // Catalog-probe the prio column first: metrics must keep working during the
+            // pre-1.7.13 window (old schema, e.g. metrics scraped while migrations pend).
+            const hasPrio = await this.connections.database.query<{ present: boolean }>(
+                'SELECT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid = \'atomicmarket_sales_filters_updates\'::regclass AND attname = \'prio\' AND NOT attisdropped) AS present'
             );
-            // count(*)::bigint comes back as a string; clamp to MAX_SAFE_INTEGER so a
-            // pathological backlog can't silently lose precision in the Number() conversion.
-            const pending = Number(res.rows[0].pending);
-            this.metrics.sales_filters_updates_pending_count
-                .labels(this.process, this.hostname)
-                .set(Number.isSafeInteger(pending) ? pending : Number.MAX_SAFE_INTEGER);
+            const res = hasPrio.rows[0]?.present
+                ? await this.connections.database.query<{ prio: number, pending: string }>(
+                    'SELECT prio, count(*)::bigint AS pending FROM atomicmarket_sales_filters_updates GROUP BY prio'
+                )
+                : await this.connections.database.query<{ prio: number, pending: string }>(
+                    'SELECT 0 AS prio, count(*)::bigint AS pending FROM atomicmarket_sales_filters_updates'
+                );
+            // Reset both lane series before setting so an emptied lane drops to 0 instead of
+            // holding its last value (GROUP BY emits no row for an empty lane).
+            for (const lane of ['0', '1']) {
+                this.metrics.sales_filters_updates_pending_count
+                    .labels(this.process, this.hostname, lane).set(0);
+            }
+            for (const row of res.rows) {
+                // count(*)::bigint comes back as a string; clamp to MAX_SAFE_INTEGER so a
+                // pathological backlog can't silently lose precision in the Number() conversion.
+                const pending = Number(row.pending);
+                this.metrics.sales_filters_updates_pending_count
+                    .labels(this.process, this.hostname, String(row.prio))
+                    .set(Number.isSafeInteger(pending) ? pending : Number.MAX_SAFE_INTEGER);
+            }
         } catch (e) {
             logger.debug('Error reading the sales-filter backlog', e);
         }
