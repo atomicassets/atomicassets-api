@@ -1,7 +1,7 @@
 import 'mocha';
 import { expect } from 'chai';
 
-import { drainAtomicmarketSalesFilters, runWithWorkMem } from './index';
+import { drainAtomicmarketSalesFilters, priceRefreshSlice, runWithWorkMem } from './index';
 
 const STMT_TIMEOUT_MS = 300_000;
 const WORK_MEM_MB = 2048;
@@ -218,5 +218,30 @@ describe('runWithWorkMem', () => {
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');
         expect(released()).to.equal(true);
+    });
+});
+
+describe('priceRefreshSlice', () => {
+    const INTERVAL_S = 300;
+    const SLICES = 12;
+
+    it('cycles 0..N-1 over consecutive intervals and repeats', () => {
+        const got = Array.from({ length: SLICES * 2 }, (_, i) =>
+            priceRefreshSlice(i * INTERVAL_S * 1000, INTERVAL_S, SLICES));
+        const oneCycle = Array.from({ length: SLICES }, (_, i) => i);
+        expect(got).to.deep.equal([...oneCycle, ...oneCycle]);
+    });
+
+    it('is stable within an interval', () => {
+        const base = 1_700_000_000_000;
+        const a = priceRefreshSlice(base - (base % (INTERVAL_S * 1000)), INTERVAL_S, SLICES);
+        const b = priceRefreshSlice(base - (base % (INTERVAL_S * 1000)) + INTERVAL_S * 1000 - 1, INTERVAL_S, SLICES);
+        expect(a).to.equal(b);
+    });
+
+    it('honors a non-default slice count', () => {
+        expect(priceRefreshSlice(0, 60, 4)).to.equal(0);
+        expect(priceRefreshSlice(3 * 60_000, 60, 4)).to.equal(3);
+        expect(priceRefreshSlice(4 * 60_000, 60, 4)).to.equal(0);
     });
 });

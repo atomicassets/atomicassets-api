@@ -82,6 +82,16 @@ const TEMPLATE_PRICES_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES
 // — not the interval — is what guarantees it can't starve the reader. Env-tunable.
 const TEMPLATE_PRICES_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S', 5 * 60);
 
+// Sliced cadence for refresh_atomicmarket_sales_filters_price(slice, total_slices).
+// 1.7.13: the former hourly single call bulk-enqueued every variable_price listing
+// (~235k rows on WAX) into the drain queue in one shot — even with the prio-1 bulk
+// lane that's one huge enqueue txn and a WAL/recompute burst that spikes replica
+// replay lag. Spreading it over SLICES calls per cycle (stable sale_id modulo, one
+// slice per INTERVAL_S tick) keeps the bulk lane bounded (~235k/12 ≈ 20k per slice)
+// and flattens the burst, at the same total hourly refresh coverage.
+const SALES_FILTERS_PRICE_REFRESH_SLICES = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_PRICE_REFRESH_SLICES', 12);
+const SALES_FILTERS_PRICE_REFRESH_INTERVAL_S = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_PRICE_REFRESH_INTERVAL_S', 5 * 60);
+
 // Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
 // Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
 // and returns the rows resolved; the job loops until a batch resolves 0 rows or
@@ -271,6 +281,16 @@ export async function drainAtomicmarketMints(
         total += updated;
     } while (updated > 0 && now() < deadline && !shouldYield());
     return total;
+}
+
+/**
+ * Which slice of the sliced bulk price refresh is due now. Clock-derived rather
+ * than a mutable counter: stateless across restarts (no missed/double-slice
+ * bookkeeping), and a tick skipped by the reader-priority gate simply re-enqueues
+ * on the next full cycle — coverage self-heals. Deterministic for tests.
+ */
+export function priceRefreshSlice(nowMs: number, intervalS: number, totalSlices: number): number {
+    return Math.floor(nowMs / (intervalS * 1000)) % totalSlices;
 }
 
 /**
@@ -735,8 +755,19 @@ export default class AtomicMarketHandler extends ContractHandler {
                 ),
             ));
 
-        this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
-            await longRunningPool.query('SELECT refresh_atomicmarket_sales_filters_price()');
+        this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', SALES_FILTERS_PRICE_REFRESH_INTERVAL_S, JobQueuePriority.LOW, async () => {
+            // Reader-priority gate (same rationale as update_atomicmarket_template_prices'
+            // hourly->5min move in 1.7.8): at the shorter cadence, skip the tick while the
+            // reader is catching up. The clock-derived slice means a skipped slice is
+            // simply refreshed on the next full cycle.
+            if (this.filler.shouldDeferDrain()) {
+                return;
+            }
+            const slice = priceRefreshSlice(Date.now(), SALES_FILTERS_PRICE_REFRESH_INTERVAL_S, SALES_FILTERS_PRICE_REFRESH_SLICES);
+            await longRunningPool.query(
+                'SELECT refresh_atomicmarket_sales_filters_price($1, $2)',
+                [slice, SALES_FILTERS_PRICE_REFRESH_SLICES],
+            );
         });
 
         this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {
