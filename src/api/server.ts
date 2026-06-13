@@ -21,7 +21,7 @@ import {expressRedisCache, ExpressRedisCacheHandler} from '../utils/cache';
 import {eosioTimestampToDate} from '../utils/eosio';
 import swagger from 'swagger-ui-express';
 import {getOpenApiDescription, LogSchema} from './docs';
-import {respondApiError} from './utils';
+import {resolveTrustProxy, respondApiError} from './utils';
 import {ActionHandler, ActionHandlerContext} from './actionhandler';
 import {ApiNamespace} from './namespaces/interfaces';
 import {mergeRequestData} from './namespaces/utils';
@@ -139,7 +139,7 @@ export class WebServer {
         this.express = express();
 
         if (this.server.config.trust_proxy) {
-            this.express.set('trust proxy', 1);
+            this.express.set('trust proxy', resolveTrustProxy(this.server.config.trust_proxy));
         }
 
         this.express.set('etag', false);
