@@ -32,7 +32,10 @@ export interface IServerConfig {
     server_port: number;
 
     cache_life: number;
-    trust_proxy: boolean;
+    // true = trust one hop; numbers, named subnets and CIDR lists pass through
+    // to Express's 'trust proxy' (use a CIDR list when behind Cloudflare so
+    // req.ip resolves to the real client, not the CF edge)
+    trust_proxy: boolean | number | string | string[];
 
     rate_limit?: {
         interval: number,

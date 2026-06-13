@@ -1,7 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 
-import {applyActionGreylistFilters, buildJsonbConditionVariants, extractNotificationIdentifiers, respondApiError} from './utils';
+import {applyActionGreylistFilters, buildJsonbConditionVariants, extractNotificationIdentifiers, resolveTrustProxy, respondApiError} from './utils';
 import {NotificationData} from '../filler/notifier';
 import {ApiError} from './error';
 
@@ -165,6 +165,29 @@ describe('utils', () => {
             respondApiError(mockResponse as any, noMessageShow);
             const returnedStatus = mockResponse.statusCalled[0];
             expect(returnedStatus).to.equal(500);
+        });
+    });
+
+    describe('resolveTrustProxy', () => {
+        it('maps true to a single trusted hop (historical behavior)', () => {
+            expect(resolveTrustProxy(true)).to.equal(1);
+        });
+
+        it('passes false through (trust nothing)', () => {
+            expect(resolveTrustProxy(false)).to.equal(false);
+        });
+
+        it('passes hop counts through verbatim', () => {
+            expect(resolveTrustProxy(2)).to.equal(2);
+        });
+
+        it('passes named subnets through verbatim', () => {
+            expect(resolveTrustProxy('loopback')).to.equal('loopback');
+        });
+
+        it('passes CIDR lists through verbatim', () => {
+            const cidrs = ['loopback', '10.0.0.0/8', '172.64.0.0/13'];
+            expect(resolveTrustProxy(cidrs)).to.deep.equal(cidrs);
         });
     });
 });
