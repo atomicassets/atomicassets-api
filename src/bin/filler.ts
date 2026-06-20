@@ -12,9 +12,10 @@ import { MetricsCollectorHandler } from '../metrics/handler';
 import { Registry } from 'prom-client';
 import { setAutoVacSettings } from '../filler/set-autovac-settings';
 import { retryTransient } from '../utils/retry';
+import { configFile } from '../utils/config-path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
+const readerConfigs: IReaderConfig[] = require(configFile('readers.config.json'));
 
 // In-memory block history for computing sync rate per reader.
 // Each /status call appends a {block, time} snapshot; entries older than
@@ -26,7 +27,7 @@ let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} 
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/node/app/config/connections.config.json');
+    connectionConfig = require(configFile('connections.config.json'));
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }

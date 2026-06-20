@@ -1,0 +1,96 @@
+# Full local/self-host stack for atomicassets-api: Postgres, Valkey, the schema
+# initialiser, the filler (writes blocks into Postgres), and the API server.
+#
+# Before `docker compose up`, copy the example configs and point them at the
+# compose service names:
+#   cp config/connections.config.example.json config/connections.config.json
+#   cp config/server.config.example.json      config/server.config.json
+#   cp config/readers.config.example.json     config/readers.config.json
+# In connections.config.json set postgres.host -> "postgres", redis.host ->
+# "valkey", and the chain http/ship endpoints. The Postgres credentials below
+# match the example connections.config.json (user/password/database).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: atomicassets
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U root -d atomicassets']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: create the base schema (dbinfo + base tables) so the server has
+  # something to connect to. The contract-handler tables (atomicmarket_*, …) are
+  # created by the filler's startup migrations (upgradeDb), which is crash-tolerant;
+  # on a fresh stack the server retries (restart: unless-stopped) until those
+  # tables exist, then serves — the same ordering as the production deployment.
+  init:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The app defaults Postgres connections to SSL (PGSSLMODE=prefer), but the
+    # plain postgres image above does not serve SSL — disable it for the local stack.
+    environment:
+      PGSSLMODE: disable
+    command: ['node', 'build/bin/init-schema.js']
+    volumes:
+      - ./config:/home/node/app/config
+    restart: 'no'
+
+  filler:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    environment:
+      PGSSLMODE: disable
+    command: ['node', '--enable-source-maps', 'build/bin/filler.js']
+    volumes:
+      - ./config:/home/node/app/config
+    restart: unless-stopped
+
+  server:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    environment:
+      PGSSLMODE: disable
+    # Default image CMD already runs the server; listed explicitly for clarity.
+    command: ['node', '--enable-source-maps', 'build/bin/server.js']
+    volumes:
+      - ./config:/home/node/app/config
+    ports:
+      - '9000:9000'
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  valkey-data:

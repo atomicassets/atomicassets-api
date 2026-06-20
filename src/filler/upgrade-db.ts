@@ -4,6 +4,7 @@ import { handlers } from './handlers/loader';
 import { compareVersionString } from '../utils';
 import PostgresConnection from '../connections/postgres';
 import { IReaderConfig } from '../types/config';
+import { configFile } from '../utils/config-path';
 
 export async function initBaseTables(database: PostgresConnection): Promise<void> {
     if (!(await database.tableExists('dbinfo'))) {
@@ -25,7 +26,7 @@ export async function runMigrations(database: PostgresConnection): Promise<void>
     // Load reader configs inside function to avoid requiring config at module load time
     // This allows initBaseTables to run without config (for schema-init hooks)
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
+    const readerConfigs: IReaderConfig[] = require(configFile('readers.config.json'));
 
     const client = await database.begin();
     const versionQuery = await client.query('SELECT "value" FROM dbinfo WHERE name = \'version\'');
