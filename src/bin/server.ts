@@ -4,15 +4,16 @@ import { IConnectionsConfig, IServerConfig } from '../types/config';
 import Api from '../api/api';
 import {MetricsServer} from '../metrics/server';
 import {HttpMetrics} from '../api/middlewares/http-metrics';
+import { configFile } from '../utils/config-path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const serverConfig: IServerConfig = require('/home/node/app/config/server.config.json');
+const serverConfig: IServerConfig = require(configFile('server.config.json'));
 
 let connectionConfig: IConnectionsConfig = {postgres: {}, redis: {}, chain: {}} as IConnectionsConfig;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/node/app/config/connections.config.json');
+    connectionConfig = require(configFile('connections.config.json'));
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }
@@ -77,6 +78,12 @@ const connection = new ConnectionManager(connectionConfig);
         }
         await server.listen();
     } catch (e) {
+        // Exit so the orchestrator restarts us. The most common cause on a fresh
+        // deployment is the contract-handler tables not existing yet (the filler
+        // creates them via its startup migrations); restarting lets the server
+        // retry until the schema is ready instead of sitting alive but not
+        // listening. Mirrors the `dbinfo` check above, which also exits.
         logger.error('Failed to start server', e);
+        process.exit(1);
     }
 })();

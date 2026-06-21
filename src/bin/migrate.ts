@@ -2,12 +2,13 @@ import { runMigrations } from '../filler/upgrade-db';
 import ConnectionManager from '../connections/manager';
 import logger from '../utils/winston';
 import { IConnectionsConfig } from '../types/config';
+import { configFile } from '../utils/config-path';
 
 let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/node/app/config/connections.config.json');
+    connectionConfig = require(configFile('connections.config.json'));
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }

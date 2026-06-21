@@ -389,8 +389,8 @@ END $$;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_auction_id ON atomicmarket_auctions USING btree (auction_id);
-CREATE INDEX IF NOT EXISTS atomicmarket_auctions_seller ON atomicmarket_auctions USING hash (seller);
-CREATE INDEX IF NOT EXISTS atomicmarket_auctions_buyer ON atomicmarket_auctions USING hash (buyer);
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_seller ON atomicmarket_auctions USING btree (seller);
+CREATE INDEX IF NOT EXISTS atomicmarket_auctions_buyer ON atomicmarket_auctions USING btree (buyer);
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_price ON atomicmarket_auctions USING btree (price);
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_collection_name ON atomicmarket_auctions USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_state ON atomicmarket_auctions USING btree (state);
@@ -406,8 +406,8 @@ CREATE INDEX IF NOT EXISTS atomicmarket_auctions_bids_created_at_time ON atomicm
 CREATE INDEX IF NOT EXISTS atomicmarket_balances_owner ON atomicmarket_balances USING btree (owner);
 
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_sale_id ON atomicmarket_sales USING btree (sale_id);
-CREATE INDEX IF NOT EXISTS atomicmarket_sales_seller ON atomicmarket_sales USING hash (seller);
-CREATE INDEX IF NOT EXISTS atomicmarket_sales_buyer ON atomicmarket_sales USING hash (buyer);
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_seller ON atomicmarket_sales USING btree (seller);
+CREATE INDEX IF NOT EXISTS atomicmarket_sales_buyer ON atomicmarket_sales USING btree (buyer);
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_collection_name ON atomicmarket_sales USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_state ON atomicmarket_sales USING btree (state);
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_updated_at_time ON atomicmarket_sales USING btree (updated_at_time);
@@ -416,8 +416,8 @@ CREATE INDEX IF NOT EXISTS atomicmarket_sales_created_at_time ON atomicmarket_sa
 CREATE INDEX IF NOT EXISTS atomicmarket_sales_offer_id ON atomicmarket_sales USING btree (offer_id);
 
 CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_buyoffer_id ON atomicmarket_buyoffers USING btree (buyoffer_id);
-CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_seller ON atomicmarket_buyoffers USING hash (seller);
-CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_buyer ON atomicmarket_buyoffers USING hash (buyer);
+CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_seller ON atomicmarket_buyoffers USING btree (seller);
+CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_buyer ON atomicmarket_buyoffers USING btree (buyer);
 CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_price ON atomicmarket_buyoffers USING btree (price);
 CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_collection_name ON atomicmarket_buyoffers USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_state ON atomicmarket_buyoffers USING btree (state);
@@ -427,8 +427,8 @@ CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_created_at_time ON atomicmarke
 CREATE INDEX IF NOT EXISTS atomicmarket_buyoffers_assets_asset_id ON atomicmarket_buyoffers_assets USING btree (asset_id);
 
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_buyoffer_id ON atomicmarket_template_buyoffers USING btree (buyoffer_id);
-CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_seller ON atomicmarket_template_buyoffers USING hash (seller);
-CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_buyer ON atomicmarket_template_buyoffers USING hash (buyer);
+CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_seller ON atomicmarket_template_buyoffers USING btree (seller);
+CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_buyer ON atomicmarket_template_buyoffers USING btree (buyer);
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_price ON atomicmarket_template_buyoffers USING btree (price);
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_collection_name ON atomicmarket_template_buyoffers USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_template_id ON atomicmarket_template_buyoffers USING btree (template_id);
