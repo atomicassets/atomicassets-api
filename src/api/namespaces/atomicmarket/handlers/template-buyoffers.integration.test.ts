@@ -60,7 +60,7 @@ describe('template buy offer handler', () => {
 
         // template_mint filter/sort parity with sales/auctions/buyoffers. These
         // were dead for SOLD template_buyoffers until the mint drain was wired up
-        // (1.7.5) — the column was always NULL, so the filter silently excluded
+        // (1.7.5) - the column was always NULL, so the filter silently excluded
         // every SOLD row and the sort dumped them all at the end. The drain now
         // populates template_mint; these lock in the resulting behaviour.
         //

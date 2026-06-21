@@ -46,7 +46,7 @@ function stubContext(captures: CapturedQuery[]): AtomicAssetsContext {
 const hasTemplateJoin = (captures: CapturedQuery[]): boolean =>
     captures.some(c => /LEFT JOIN atomicassets_templates/i.test(c.text));
 
-describe('getRawAssetsAction — needsTemplateJoin gate', () => {
+describe('getRawAssetsAction - needsTemplateJoin gate', () => {
     it('count + sort=name skips the templates JOIN', async () => {
         // Production goal: `/atomicassets/v1/assets/_count?sort=name` must
         // not pull in atomicassets_templates. `args.count` short-circuits

@@ -161,7 +161,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
             });
 
             if (configTable.rows.length === 0) {
-                throw new Error('AtomicAssets: Config table empty — cannot seed supported tokens');
+                throw new Error('AtomicAssets: Config table empty - cannot seed supported tokens');
             }
 
             await client.query(
@@ -272,9 +272,9 @@ export default class AtomicAssetsHandler extends ContractHandler {
         // connectionTimeoutMillis must be ≥ statement_timeout: with max:1 and multi-minute
         // work units, queued calls would otherwise hit the parent pool's 5s acquire timeout
         // (postgres.ts:40) while the single client is still running the previous invocation.
-        // Preemptive fix — atomicmarket's sibling pool had this exact failure on WAX.
+        // Preemptive fix - atomicmarket's sibling pool had this exact failure on WAX.
         const longRunningPool: Pool = this.connection.database.createPool({
-            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min — headroom over statement_timeout
+            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min - headroom over statement_timeout
             statement_timeout: 300_000, // 5 min
             max: 1,
         });
@@ -319,7 +319,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicassets_mints', 30, JobQueuePriority.MEDIUM, async () => {
-            // Skip while the reader is catching up — reader-priority gate with
+            // Skip while the reader is catching up - reader-priority gate with
             // hysteresis, shared with the atomicmarket drains (see
             // Filler.shouldDeferDrain).
             if (this.filler.shouldDeferDrain()) {

@@ -15,7 +15,7 @@
     grew to 98 MB while only 172 rows were live (autovacuum_count was
     already 26,630, n_dead_tup was 0). The bloat lived almost entirely
     in the three partial indexes on (market_contract, sale_id),
-    (asset_contract, asset_id), (asset_contract, offer_id) — autovacuum
+    (asset_contract, asset_id), (asset_contract, offer_id) - autovacuum
     reclaims dead tuples but does not return empty heap or index pages
     to the OS. Each maintenance call then scanned a sparse partial
     index to find a handful of live rows; observed function durations
@@ -23,7 +23,7 @@
     queries behind the same partition reads and tripped a >18s
     read-timeout on the API.
 
-    Reclamation only happens via a one-shot rebuild — VACUUM FULL
+    Reclamation only happens via a one-shot rebuild - VACUUM FULL
     (ACCESS EXCLUSIVE for ms-scale on a tiny live set) or
     REINDEX INDEX CONCURRENTLY on the bloated indexes (no locks if
     heap is empty, which is the case after the function processes
@@ -55,7 +55,7 @@
     (autovacuum_vacuum_scale_factor=0.2 + autovacuum_vacuum_threshold
     = 50 + 0.2 * reltuples) only fire when n_dead_tup exceeds 20 % of
     the *estimated* live-row count. On a queue that holds ~hundreds
-    of rows that trigger floats just above n_dead_tup forever — vacuum
+    of rows that trigger floats just above n_dead_tup forever - vacuum
     only fires when the queue is *full*, which is exactly the worst
     moment. Pinning scale_factor to 0.05 (1/4 of default) collapses
     the moving target to something close to a fixed lower bound while

@@ -14,12 +14,12 @@ import {
 } from '../types/actions';
 
 /**
- * Trace log for every captured atomicdropsx action — WAX action set.
+ * Trace log for every captured atomicdropsx action - WAX action set.
  *
  * Field is `claim_amount` on user actions (claimdrop / claimdropwl /
  * claimdropkey) and `amount` on the admin-mediated `triggerdrop`.
  * `claimwlnft` and `claimwhitelis` (the upstream's whitelist names) do
- * not exist on WAX — replaced by `claimdropwl`/`claimdropkey`.
+ * not exist on WAX - replaced by `claimdropwl`/`claimdropkey`.
  * `logclaim` does not exist on WAX but is kept for non-WAX variants.
  */
 export function logProcessor(core: AtomicDropsHandler, processor: DataProcessor): () => any {

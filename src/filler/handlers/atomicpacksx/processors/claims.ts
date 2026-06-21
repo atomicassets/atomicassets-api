@@ -33,7 +33,7 @@ import { UnboxPacksTableRow } from '../types/tables';
  *      unboxer. When ALL rolls are picked, unboxpacks row is erased.
  *      → state: PICKED_UP
  *
- * In 1.5.x the handlers had this inverted — they treated `claimunboxed`
+ * In 1.5.x the handlers had this inverted - they treated `claimunboxed`
  * as the open event, which broke every pack on WAX (claimunboxed fires
  * later or never; logresult always fires first and FK-violated against
  * the missing parent claim). 1.6.0 drives off the contract's actual row
@@ -54,7 +54,7 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
     //    only ever inserted at unbox time and erased at claim completion);
     //    if one ever appears we reuse the upsert path defensively.
     //    Row DELETE (when claimunboxed completes for the last roll) is a
-    //    no-op here — the action listener below handles state transition
+    //    no-op here - the action listener below handles state transition
     //    to PICKED_UP and gives us the better timestamp.
     destructors.push(processor.onContractRow(
         contract, 'unboxpacks',
@@ -91,7 +91,7 @@ export function claimsProcessor(core: AtomicPacksHandler, processor: DataProcess
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<LogResultActionData>): Promise<void> => {
             const ts = eosioTimestampToDate(block.timestamp).getTime();
 
-            // Try UPDATE first (the common case — claim was created by
+            // Try UPDATE first (the common case - claim was created by
             // the unboxpacks delta in this or an earlier block).
             const updateResult = await db.update('atomicpacksx_claims', {
                 state: ClaimState.RESOLVED.valueOf(),

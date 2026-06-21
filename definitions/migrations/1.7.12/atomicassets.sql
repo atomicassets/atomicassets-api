@@ -11,7 +11,7 @@
   only, and no migration ever converged them. On those clusters the upsert raises
       42P10: there is no unique or exclusion constraint matching the ON CONFLICT specification
   and the filler crash-loops on the first transfer block after upgrading. Fresh installs are
-  unaffected — their composite primary key already provides the needed unique index.
+  unaffected - their composite primary key already provides the needed unique index.
 
   FIX
   If no unique index already covers exactly (contract, transfer_id), build one. A UNIQUE INDEX

@@ -6,7 +6,7 @@
   mint storm that re-mints/transfers the assets backing many listings) enqueues
   the same (market_contract, sale_id) / (asset_contract, asset_id) key dozens of
   times. During the 2026-05-29 rustveil storm the queue reached 9.3M rows that
-  deduplicated to only 258k distinct sale keys (~31x) — bloating the backlog and
+  deduplicated to only 258k distinct sale keys (~31x) - bloating the backlog and
   multiplying the drain's per-row work.
 
   Fix: make the three partial indexes UNIQUE so duplicate enqueues collapse at
@@ -17,7 +17,7 @@
 
   This migration runs in the upgrade transaction; the queue is normally small
   (hundreds of rows), so the dedup DELETE + index rebuild is sub-second. If a
-  backlog is present at upgrade time it still completes — the DELETE keeps one
+  backlog is present at upgrade time it still completes - the DELETE keeps one
   row per key (lowest ctid).
 */
 

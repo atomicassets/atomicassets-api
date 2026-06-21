@@ -15,9 +15,9 @@ SELECT
     pk.collection_name,
     pk.pack_template_id,
     pk.display_data AS pack_display_data,
-    -- result_assets carries both `template_id` (set by logresult — the
+    -- result_assets carries both `template_id` (set by logresult - the
     -- template each minted NFT will be from) and `asset_id` (set later
-    -- by atomicassets logmint notify — the actual minted asset_id).
+    -- by atomicassets logmint notify - the actual minted asset_id).
     -- Consumers can pick whichever is relevant: pre-mint embeds use
     -- template_id, post-mint links use asset_id. Both null until the
     -- corresponding chain action fires.

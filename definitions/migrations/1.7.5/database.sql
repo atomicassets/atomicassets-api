@@ -3,7 +3,7 @@
 
   Redefines update_atomicmarket_template_buyoffer_mints as a counting FUNCTION
   (one bounded set-based UPDATE per call, RETURNS rows resolved), mirroring the
-  1.6.5 conversion of the sale/buyoffer/auction mint procedures — which missed
+  1.6.5 conversion of the sale/buyoffer/auction mint procedures - which missed
   this one. The procedure existed and was loaded since 1.3.23 but was never in
   the filler's drain loop, so ~614k SOLD (state = 2) template_buyoffers on WAX
   mainnet accumulated template_mint IS NULL and were silently excluded from the

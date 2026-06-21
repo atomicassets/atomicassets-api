@@ -1,5 +1,5 @@
 /**
- * atomicdropsx action data shapes — WAX mainnet ABI.
+ * atomicdropsx action data shapes - WAX mainnet ABI.
  *
  * Action names follow the official atomicdropsx contract on WAX mainnet
  * (verified via `get_abi`). Notable WAX semantics:
@@ -7,7 +7,7 @@
  *     Field is `claim_amount` (NOT `amount` as the upstream PR #26
  *     assumed).
  *   - `claimdropwl` is the canonical whitelist claim (NOT `claimwlnft` /
- *     `claimwhitelis` which the upstream listened for — those don't exist
+ *     `claimwhitelis` which the upstream listened for - those don't exist
  *     on WAX).
  *   - `claimdropkey` is a separate key-auth claim variant.
  *   - `triggerdrop` is admin-mediated (e.g., card-payment service triggers
@@ -15,7 +15,7 @@
  *     `amount` (count). No `intended_delphi_median`.
  *   - `setdroptimes` is PLURAL on WAX (NOT `setdroptime`).
  *   - `erasedrop` exists but carries an extra `authorized_account` field
- *     that the upstream type didn't include (harmless — extras are ignored).
+ *     that the upstream type didn't include (harmless - extras are ignored).
  *   - There is no `logclaim` action on WAX. (The upstream defined one for
  *     other chain variants; we keep the type defined for future use but
  *     no listener fires.)
@@ -58,13 +58,13 @@ export type SetDropLimitActionData = {
     drop_id: string,
     account_limit: number,
     account_limit_cooldown: number,
-    max_claimable?: number,  // WAX's setdroplimit may not include this — setdropmax does
+    max_claimable?: number,  // WAX's setdroplimit may not include this - setdropmax does
     [key: string]: unknown,
 };
 
 /**
  * `setdroptimes` (PLURAL) on WAX. Both fields are required by the WAX
- * contract — there's no equivalent of "set only start" or "set only end".
+ * contract - there's no equivalent of "set only start" or "set only end".
  */
 export type SetDropTimesActionData = {
     authorized_account: string,
@@ -90,12 +90,12 @@ export type ClaimDropActionData = {
     country?: string,
 };
 
-/** Whitelist claim variant — `claimdropwl` on WAX. */
+/** Whitelist claim variant - `claimdropwl` on WAX. */
 export type ClaimDropWlActionData = ClaimDropActionData & {
     whitelist_proof?: unknown,
 };
 
-/** Key-auth whitelist claim — `claimdropkey` on WAX. */
+/** Key-auth whitelist claim - `claimdropkey` on WAX. */
 export type ClaimDropKeyActionData = ClaimDropActionData & {
     auth_key?: string,
 };
@@ -116,7 +116,7 @@ export type TriggerDropActionData = {
 };
 
 /**
- * Author-side log of a claim. Does NOT exist on WAX — kept for chain
+ * Author-side log of a claim. Does NOT exist on WAX - kept for chain
  * variants that emit it. The upstream listener was already gated on
  * `claim_id` being present, so the no-op fallback is safe.
  */

@@ -11,7 +11,7 @@
 --     changed) so the caller loops until the queue is drained
 --
 -- The recompute (sales_to_insert_or_update CTE + the ins_upd / del block) is
--- IDENTICAL to 1.3.3 — only the queue-consume stages are bounded and the
+-- IDENTICAL to 1.3.3 - only the queue-consume stages are bounded and the
 -- `sales` / `offers` / asset inputs are repointed at the captured temp tables.
 -- This guarantees byte-identical atomicmarket_sales_filters output vs 1.6.2;
 -- only throughput/transaction-length changes.
@@ -29,8 +29,8 @@ BEGIN
     -- subselect caps work per call; RETURNING captures what we own so the
     -- recompute below operates only on the consumed slice. Temp tables are
     -- explicitly dropped at the end of the function (see the DROP before
-    -- RETURN) — matching the original 1.3.3 proc's handling of sales_to_update
-    -- — so the function is safe to call repeatedly on the same session
+    -- RETURN) - matching the original 1.3.3 proc's handling of sales_to_update
+    -- - so the function is safe to call repeatedly on the same session
     -- (the filler longRunningPool reuses one connection) and within a single
     -- transaction (the test harness's txit), and an error mid-proc rolls back
     -- the temp tables with the aborted statement/transaction. (Plain temp
@@ -103,7 +103,7 @@ BEGIN
         ;
     END LOOP;
 
-    -- Recompute affected sales — VERBATIM from 1.3.3 except `sales` reads
+    -- Recompute affected sales - VERBATIM from 1.3.3 except `sales` reads
     -- _del_sales and `offers` reads _del_offers (both already consumed above).
     WITH all_sales_to_update AS MATERIALIZED (
         SELECT market_contract, sale_id
@@ -235,7 +235,7 @@ BEGIN
     -- The SELECT...INTO is what drives the data-modifying CTEs above (ins_upd /
     -- del run for their side effects). plpgsql requires the top-level
     -- data-modifying-CTE query to land in a target, so we discard the count
-    -- (filter rows changed) into the scratch var `n` — it is intentionally NOT
+    -- (filter rows changed) into the scratch var `n` - it is intentionally NOT
     -- the return value: it can be 0 via the IS DISTINCT FROM guards even when
     -- the queue still has work, which would falsely stop the caller's drain
     -- loop. The caller loops on `consumed` (queue rows removed) instead.

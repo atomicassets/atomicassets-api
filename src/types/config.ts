@@ -111,7 +111,7 @@ export interface IReaderConfig {
     /**
      * Soft ceiling for the SHIP-side blocks queue. When the queue is at or
      * above this size, the reader stops acking blocks so SHIP backs off
-     * (W2.2). Optional — when unset or 0, ack semantics are unchanged.
+     * (W2.2). Optional - when unset or 0, ack semantics are unchanged.
      */
     ship_max_blocks_queue?: number;
 

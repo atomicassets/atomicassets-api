@@ -1,8 +1,8 @@
 import logger from './winston';
 
 // Connection-transient error codes worth retrying: the node/endpoint (or
-// DB/redis) is momentarily unreachable — pod mid-restart, DNS not yet
-// resolving, socket reset — rather than the request itself being malformed.
+// DB/redis) is momentarily unreachable - pod mid-restart, DNS not yet
+// resolving, socket reset - rather than the request itself being malformed.
 // A 4xx / chain-id mismatch / bad query is NOT in here and must surface.
 const TRANSIENT_CODES = new Set([
     'ECONNREFUSED',
@@ -58,7 +58,7 @@ export interface RetryOptions {
 const defaultSleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 // Retry an async operation on transient network failures with capped,
-// equal-jitter exponential backoff (each delay is 50–100% of the capped
+// equal-jitter exponential backoff (each delay is 50-100% of the capped
 // exponential value, so it never collapses to ~0). Re-throws immediately for
 // non-transient errors and once the retry budget is exhausted.
 export async function retryTransient<T>(fn: () => Promise<T>, options: RetryOptions = {}): Promise<T> {
@@ -84,13 +84,13 @@ export async function retryTransient<T>(fn: () => Promise<T>, options: RetryOpti
 
             attempt++;
 
-            // Exponential backoff with equal jitter (50–100% of the capped
-            // exponential delay) — keeps a sensible floor while spreading retries.
+            // Exponential backoff with equal jitter (50-100% of the capped
+            // exponential delay) - keeps a sensible floor while spreading retries.
             const expDelay = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
             const delay = Math.floor(expDelay * (0.5 + random() * 0.5));
 
             logger.warn(
-                `Transient error on ${label} (attempt ${attempt}/${retries}) — retrying in ${delay}ms: ` +
+                `Transient error on ${label} (attempt ${attempt}/${retries}) - retrying in ${delay}ms: ` +
                     (error instanceof Error ? error.message : String(error))
             );
 

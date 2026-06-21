@@ -46,7 +46,7 @@ function createReceiverStub(opts: {
         (receiver as any).prepareContractRows = sinon.stub().resolves([]);
     }
 
-    // Stub process() — can be overridden per test
+    // Stub process() - can be overridden per test
     (receiver as any).process = opts.processResult ?? sinon.stub().resolves();
 
     return { receiver, dsLock, dsQueue };
@@ -66,7 +66,7 @@ function makeBlockResponse(blockNum: number): ShipBlockResponse {
 }
 
 describe('StateReceiver', () => {
-    describe('consumer — dsLock semaphore management', () => {
+    describe('consumer - dsLock semaphore management', () => {
         it('releases dsLock on successful block processing', async () => {
             const { receiver, dsLock } = createReceiverStub();
             const resp = makeBlockResponse(1000);
@@ -78,12 +78,12 @@ describe('StateReceiver', () => {
             await (receiver as any).dsQueue.onIdle();
 
             // dsLock should be fully released (counter back to 0 after acquire+release)
-            // Verify by acquiring all permits — should not block
+            // Verify by acquiring all permits - should not block
             const allAcquired = Promise.all(
                 Array.from({length: 3}, () => dsLock.acquire())
             );
             const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('dsLock still held — semaphore leaked')), 200)
+                setTimeout(() => reject(new Error('dsLock still held - semaphore leaked')), 200)
             );
             await Promise.race([allAcquired, timeout]);
         });
@@ -103,7 +103,7 @@ describe('StateReceiver', () => {
                 Array.from({length: 3}, () => dsLock.acquire())
             );
             const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('dsLock leaked — release() missing on error path')), 200)
+                setTimeout(() => reject(new Error('dsLock leaked - release() missing on error path')), 200)
             );
             await Promise.race([allAcquired, timeout]);
         });
@@ -196,13 +196,13 @@ describe('StateReceiver', () => {
                 processResult: () => Promise.reject(new Error('Fatal DB error')),
             });
 
-            // Queue up multiple blocks — each acquires a dsLock permit
+            // Queue up multiple blocks - each acquires a dsLock permit
             await (receiver as any).consumer(makeBlockResponse(5000));
             // The first block will fail in the queue, triggering clear+purge.
             // After dsQueue drains, all permits should be recoverable.
             await dsQueue.onIdle();
 
-            // Purge should have reset the semaphore — all permits available
+            // Purge should have reset the semaphore - all permits available
             let acquired = 0;
             for (let i = 0; i < queueSize; i++) {
                 const p = dsLock.acquire().then(() => { acquired++; });
@@ -213,7 +213,7 @@ describe('StateReceiver', () => {
         });
     });
 
-    describe('startProcessing — ACK deadlock prevention', () => {
+    describe('startProcessing - ACK deadlock prevention', () => {
         it('overrides min_block_confirmation when prefetch < confirm would deadlock', async () => {
             const dsLock = new Semaphore(5);
             const dsQueue = new PQueue({concurrency: 1, autoStart: true});

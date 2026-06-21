@@ -134,12 +134,12 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 // offers (observed on WAX: asset 1099538624457 was in 35,979
                 // offer rows), which pushes the chunked lookup past the
                 // cluster's default 30s statement_timeout regardless of chunk
-                // size — chunking bounds input width but not per-asset fan-out.
+                // size - chunking bounds input width but not per-asset fan-out.
                 //
                 // Raise the budget to 300s scoped to this transaction only.
                 // Matches the longRunningPool ceiling used for ECA's scheduled
                 // maintenance procs. Prior 180s cap (PR #2868) was insufficient
-                // on cold Cinder cache — observed 2026-04-24 12:10 UTC at
+                // on cold Cinder cache - observed 2026-04-24 12:10 UTC at
                 // block #431099975 (asset 1099519085078 with 5,820 offer rows
                 // triggered ~3,256 nested-loop probes and busted 180s).
                 //

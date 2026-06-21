@@ -9,10 +9,10 @@
  * Run via: node build/scripts/recount-asset-counts.js
  *
  * Env vars:
- *   DATABASE_URL    (required) — postgres connection string for eca_wax_mainnet
- *   DRY_RUN         (optional) — "true" (default) to only report, "false" to insert corrections
- *   MIN_DRIFT       (optional) — minimum absolute drift to correct (default: 1)
- *   CONTRACT        (optional) — contract account to recount (default: "atomicassets")
+ *   DATABASE_URL    (required) - postgres connection string for eca_wax_mainnet
+ *   DRY_RUN         (optional) - "true" (default) to only report, "false" to insert corrections
+ *   MIN_DRIFT       (optional) - minimum absolute drift to correct (default: 1)
+ *   CONTRACT        (optional) - contract account to recount (default: "atomicassets")
  */
 
 import { Pool } from 'pg';
@@ -45,7 +45,7 @@ async function main(): Promise<void> {
         connectionString: databaseUrl,
         max: 2,
         application_name: 'recount_asset_counts',
-        statement_timeout: 600_000, // 10 min — full table scan of atomicassets_assets
+        statement_timeout: 600_000, // 10 min - full table scan of atomicassets_assets
     });
 
     try {
@@ -114,7 +114,7 @@ async function main(): Promise<void> {
 
             if (dryRun) {
                 await client.query('ROLLBACK');
-                logger.info('[RECOUNT]: Dry run — rolled back. Set DRY_RUN=false to apply.');
+                logger.info('[RECOUNT]: Dry run - rolled back. Set DRY_RUN=false to apply.');
             } else {
                 await client.query('COMMIT');
                 logger.info(`[RECOUNT]: Committed ${result.rowCount} correction deltas`);

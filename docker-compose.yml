@@ -41,14 +41,14 @@ services:
   # something to connect to. The contract-handler tables (atomicmarket_*, …) are
   # created by the filler's startup migrations (upgradeDb), which is crash-tolerant;
   # on a fresh stack the server retries (restart: unless-stopped) until those
-  # tables exist, then serves — the same ordering as the production deployment.
+  # tables exist, then serves - the same ordering as the production deployment.
   init:
     build: .
     depends_on:
       postgres:
         condition: service_healthy
     # The app defaults Postgres connections to SSL (PGSSLMODE=prefer), but the
-    # plain postgres image above does not serve SSL — disable it for the local stack.
+    # plain postgres image above does not serve SSL - disable it for the local stack.
     environment:
       PGSSLMODE: disable
     command: ['node', 'build/bin/init-schema.js']

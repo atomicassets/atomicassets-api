@@ -35,7 +35,7 @@ SET LOCAL lock_timeout = '60s';
 -- Re-enqueue used to be ON CONFLICT DO NOTHING (zero heap writes when a key was
 -- already queued); 1.7.11 makes it DO UPDATE SET seq=nextval, so every re-enqueue on
 -- the hot asset/sale/offer write path now writes a dead tuple. `seq` is deliberately
--- NOT indexed (see below), so these are HOT updates — but HOT only stays in-page if
+-- NOT indexed (see below), so these are HOT updates - but HOT only stays in-page if
 -- there is free space, and the small live row count means the default autovacuum
 -- scale-factor rarely fires. Set aggressive absolute-threshold autovacuum + a 70%
 -- fillfactor so dead tuples are reclaimed and HOT updates don't migrate pages (which

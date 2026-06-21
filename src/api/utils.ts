@@ -111,7 +111,7 @@ export function respondApiError(res: express.Response, error: Error): express.Re
 // here (NOT Express's own `true`, which trusts everything and lets clients
 // spoof X-Forwarded-For). Hop counts, named subnets and CIDR lists pass
 // through verbatim so deployments behind multiple proxy layers (e.g.
-// Cloudflare → ingress) can resolve the real client IP — with a CIDR list
+// Cloudflare → ingress) can resolve the real client IP - with a CIDR list
 // Express skips all trusted trailing X-Forwarded-For hops, so req.ip (and
 // therefore rate-limit buckets) is the actual client, not the closest proxy.
 export type TrustProxyConfig = boolean | number | string | string[];

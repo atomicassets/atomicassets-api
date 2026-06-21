@@ -1,4 +1,4 @@
--- atomicdropsx tables — drop templates + claims.
+-- atomicdropsx tables - drop templates + claims.
 --
 -- The drop.current_claimed counter is intentionally NOT stored on the base
 -- table. It is computed in the atomicdropsx_drops_master view as
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS atomicdropsx_config (
 CREATE TABLE IF NOT EXISTS atomicdropsx_drops (
     contract character varying(12) NOT NULL,
     drop_id bigint NOT NULL,
-    -- AtomicAssets contract that owns the collection — stored explicitly so
+    -- AtomicAssets contract that owns the collection - stored explicitly so
     -- the master view joins atomicassets_collections_master on the full
     -- (contract, collection_name) compound key (multiple AtomicAssets
     -- contracts can coexist in the DB).

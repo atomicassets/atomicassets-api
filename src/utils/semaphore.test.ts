@@ -11,7 +11,7 @@ describe('Semaphore', () => {
         await sem.acquire();
         await sem.acquire();
 
-        // All 3 permits consumed — fourth acquire should block
+        // All 3 permits consumed - fourth acquire should block
         let blocked = true;
         const p = sem.acquire().then(() => { blocked = false; });
 
@@ -19,7 +19,7 @@ describe('Semaphore', () => {
         await new Promise(resolve => setTimeout(resolve, 10));
         expect(blocked).to.equal(true);
 
-        // Release one permit — the blocked acquire should resolve
+        // Release one permit - the blocked acquire should resolve
         sem.release();
         await p;
         expect(blocked).to.equal(false);
@@ -76,7 +76,7 @@ describe('Semaphore', () => {
         expect(purgedCount).to.equal(1);
         expect(rejected).to.equal(true);
 
-        // After purge, counter is reset — acquire should work again
+        // After purge, counter is reset - acquire should work again
         await sem.acquire();
     });
 });
