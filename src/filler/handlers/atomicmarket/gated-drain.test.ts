@@ -8,7 +8,7 @@ import { runGatedDrain } from './index';
  * jobs (sales filters + the 3 mint backfills). It enforces the ordering the
  * 1.6.6 robustness fix depends on: defer-if-behind BEFORE the work probe, and
  * the probe BEFORE the (expensive) drain. These tests pin that contract so an
- * inverted gate or a dropped early-return can't pass silently — the inline
+ * inverted gate or a dropped early-return can't pass silently - the inline
  * `if (shouldDeferDrain()) return;` guards it replaced had zero coverage.
  */
 describe('runGatedDrain', () => {

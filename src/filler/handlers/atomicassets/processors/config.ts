@@ -23,7 +23,7 @@ export function configProcessor(core: AtomicAssetsHandler, processor: DataProces
                     const index = tokens.indexOf(token.sym);
 
                     if (index === -1) {
-                        // ON CONFLICT DO NOTHING — token rows are fixed by the
+                        // ON CONFLICT DO NOTHING - token rows are fixed by the
                         // chain (precision is immutable per symbol), so a
                         // delta replay against an existing row must be a no-op.
                         // Mirrors the init-time INSERT at index.ts:175.

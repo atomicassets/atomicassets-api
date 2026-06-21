@@ -110,20 +110,20 @@ BEGIN
     END IF;
 
     -- Temp tables now carry the per-row seq captured at claim time (for the guarded
-    -- end-DELETE). Plain temp tables (not ON COMMIT DROP) — explicitly dropped before
-    -- RETURN — so the function is safe to call repeatedly on the reused longRunningPool
+    -- end-DELETE). Plain temp tables (not ON COMMIT DROP) - explicitly dropped before
+    -- RETURN - so the function is safe to call repeatedly on the reused longRunningPool
     -- connection and within a single test transaction.
     CREATE TEMPORARY TABLE _del_assets (asset_contract TEXT, asset_id BIGINT, seq BIGINT);
     CREATE TEMPORARY TABLE _del_sales (market_contract TEXT, sale_id BIGINT, seq BIGINT);
     CREATE TEMPORARY TABLE _del_offers (asset_contract TEXT, offer_id BIGINT, seq BIGINT);
     -- sale_id is BIGINT upstream (atomicmarket_sales_filters.sale_id); use BIGINT here too
-    -- (1.6.3 declared this INT — latent overflow once a sale_id exceeds 2^31-1).
+    -- (1.6.3 declared this INT - latent overflow once a sale_id exceeds 2^31-1).
     CREATE TEMPORARY TABLE sales_to_update (sale_id BIGINT NOT NULL, market_contract TEXT NOT NULL, PRIMARY KEY (sale_id, market_contract));
 
     -- CLAIM (no lock): snapshot up to batch_size rows of each type with their seq.
     -- ORDER BY seq drains FIFO-ish and makes the batch deterministic; a row re-enqueued
     -- mid-batch gets a higher seq and is naturally claimed later. The function RETURNS rows
-    -- DELETED (not claimed) — see the end-DELETE — so the caller's loop terminates when a
+    -- DELETED (not claimed) - see the end-DELETE - so the caller's loop terminates when a
     -- batch makes no removal progress (e.g. only perpetually-re-touched keys remain),
     -- rather than spinning on claimed-but-never-deleted rows.
     INSERT INTO _del_assets
@@ -170,7 +170,7 @@ BEGIN
         ;
     END LOOP;
 
-    -- Recompute affected sales — VERBATIM from 1.3.3 / 1.6.3 (`sales` reads _del_sales,
+    -- Recompute affected sales - VERBATIM from 1.3.3 / 1.6.3 (`sales` reads _del_sales,
     -- `offers` reads _del_offers, both captured above). This is the heavy GIN-write part;
     -- it holds locks only on atomicmarket_sales_filters, NOT on the queue.
     WITH all_sales_to_update AS MATERIALIZED (
@@ -334,7 +334,7 @@ BEGIN
     DROP TABLE _del_assets, _del_sales, _del_offers, sales_to_update;
 
     -- Return queue rows actually REMOVED this call (not merely claimed): a row re-enqueued
-    -- mid-batch has a bumped seq, survives the guarded end-DELETE, and is NOT counted — so
+    -- mid-batch has a bumped seq, survives the guarded end-DELETE, and is NOT counted - so
     -- the caller's `while (removed > 0)` loop stops making a pass that removed nothing
     -- (only hot/perpetually-re-touched keys left) instead of spinning a full recompute that
     -- deletes nothing. Empty queue → 0 → loop stops.

@@ -108,7 +108,7 @@ describe('HttpMetrics middleware', () => {
 
         // /health/db should be skipped (prefix + "/").
         await supertest(app).get('/health/db').expect(200);
-        // /healthy-suffix should NOT be skipped — it's not a sub-path of /health.
+        // /healthy-suffix should NOT be skipped - it's not a sub-path of /health.
         await supertest(app).get('/healthy-suffix').expect(200);
 
         const output = await metrics.getMetrics();

@@ -171,7 +171,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
             // coll_schema_owner, collection_schema_active) plus fires two row-level
             // triggers (update_atomicassets_asset_counts,
             // update_atomicmarket_sales_filters_by_asset). A single uncapped action
-            // can carry thousands of asset_ids — observed 2026-04-25 at block
+            // can carry thousands of asset_ids - observed 2026-04-25 at block
             // #431316736 with 3,000 asset_ids in one transfer from `atomicassets`
             // escrow, which busts the cluster's default 30s statement_timeout and
             // wedges the filler with no auto-recovery (57014 is intentionally not
@@ -186,7 +186,7 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
             // past the same 30s ceiling.
             const TRANSFER_INSERT_CHUNK_SIZE = 1000;
 
-            // SET LOCAL scopes the timeout extension to this transaction only — the
+            // SET LOCAL scopes the timeout extension to this transaction only - the
             // cluster-wide 30s default snaps back automatically for everything else
             // running through this connection. 300s matches the offers.ts ceiling.
             await db.query("SET LOCAL statement_timeout = '300s'");

@@ -8,14 +8,14 @@ import { AddPackRollActionData, LogNewRollActionData } from '../types/actions';
 
 /**
  * On WAX, pack rolls are created in two steps within the same transaction:
- *   1. `lognewroll(pack_id, roll_id)` — announces a roll exists. Outcomes
+ *   1. `lognewroll(pack_id, roll_id)` - announces a roll exists. Outcomes
  *      are NOT in this action's data.
- *   2. `addpackroll(authorized_account, pack_id, outcomes, total_odds)` —
+ *   2. `addpackroll(authorized_account, pack_id, outcomes, total_odds)` -
  *      provides the actual outcomes + total_odds.
  *
  * The processor inserts a placeholder row from `lognewroll` (with empty
  * outcomes) and then UPDATEs it from `addpackroll`. Reading the schema
- * column `roll_index` for the WAX `roll_id` field — the column was named
+ * column `roll_index` for the WAX `roll_id` field - the column was named
  * before the WAX ABI was confirmed; the values it holds are the same.
  */
 export function rollsProcessor(core: AtomicPacksHandler, processor: DataProcessor): () => any {
@@ -46,7 +46,7 @@ export function rollsProcessor(core: AtomicPacksHandler, processor: DataProcesso
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<AddPackRollActionData>): Promise<void> => {
             // Find the most recent roll for this pack (lognewroll fired
             // before this action and gave the row a roll_index). On WAX,
-            // `addpackroll` does NOT carry the roll_id — it always targets
+            // `addpackroll` does NOT carry the roll_id - it always targets
             // the latest unfilled roll. We update the highest roll_index
             // for this pack that still has placeholder outcomes (`'[]'`).
             //

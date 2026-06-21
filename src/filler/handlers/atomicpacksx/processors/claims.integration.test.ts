@@ -37,7 +37,7 @@ function createMockCore(overrides: Record<string, any> = {}): any {
 
 function createMockModuleLoader(): ModuleLoader {
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore — test-only construction matches atomicmarket pattern.
+    // @ts-ignore - test-only construction matches atomicmarket pattern.
     loader.modules = [];
     // @ts-ignore
     loader.names = [];
@@ -64,7 +64,7 @@ function unboxRow(overrides: Partial<UnboxPacksTableRow> = {}): UnboxPacksTableR
     };
 }
 
-describe('atomicpacksx claimsProcessor (1.6.0 — onContractRow + logresult + claimunboxed)', () => {
+describe('atomicpacksx claimsProcessor (1.6.0 - onContractRow + logresult + claimunboxed)', () => {
     let client: Client;
     let processor: DataProcessor;
     let db: ContractDBTransaction;
@@ -242,7 +242,7 @@ describe('atomicpacksx claimsProcessor (1.6.0 — onContractRow + logresult + cl
             'SELECT state FROM atomicpacksx_claims WHERE contract = $1 AND pack_asset_id = $2',
             [PACKS_CONTRACT, '1099999000006'],
         );
-        // Stays CLAIMED — guard prevented the PICKED_UP downgrade-from-CLAIMED.
+        // Stays CLAIMED - guard prevented the PICKED_UP downgrade-from-CLAIMED.
         expect(res.rows[0].state).to.equal(ClaimState.CLAIMED.valueOf());
     });
 

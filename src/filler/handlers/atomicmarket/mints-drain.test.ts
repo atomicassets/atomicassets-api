@@ -111,7 +111,7 @@ describe('drainAtomicmarketMints', () => {
     it('accepts update_atomicmarket_template_buyoffer_mints (4th drain, in the allowlist)', async () => {
         // Regression guard: this routine was dormant for years (never in the
         // allowlist, never scheduled). It must drain through the same harness as
-        // the other three — in the allowlist (no `unknown function` throw) and
+        // the other three - in the allowlist (no `unknown function` throw) and
         // bound with the generic (contract, lib, batchSize) shape.
         const TBO_FN = 'update_atomicmarket_template_buyoffer_mints';
         const { pool, queries } = makePool([2000, 0]);

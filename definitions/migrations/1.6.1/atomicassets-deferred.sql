@@ -13,7 +13,7 @@
 -- IF NOT EXISTS.
 --
 -- ====================================================================
--- Index 1 — /v1/burns query
+-- Index 1 - /v1/burns query
 -- ====================================================================
 --
 -- The /v1/burns handler (src/api/namespaces/atomicassets/handlers/burns.ts)
@@ -45,7 +45,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_burned_part
     WHERE burned_by_account IS NOT NULL;
 
 -- ====================================================================
--- Index 2 — /atomicassets owner-filtered queries (profile inventory)
+-- Index 2 - /atomicassets owner-filtered queries (profile inventory)
 -- ====================================================================
 --
 -- The most-hammered family of queries in pg_stat_statements on FACINGS
@@ -85,7 +85,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_owner_parti
     WHERE owner IS NOT NULL;
 
 -- ====================================================================
--- Index 3 — covering partial for /v1/accounts/:account (profile dropdown)
+-- Index 3 - covering partial for /v1/accounts/:account (profile dropdown)
 -- ====================================================================
 --
 -- The /v1/accounts/:account handler (handlers/accounts/getAccountAction.ts)
@@ -100,7 +100,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS atomicassets_assets_contract_owner_parti
 -- Index 2 above (atomicassets_assets_contract_owner_partial) gets the
 -- planner to use an Index Scan for the WHERE, but the GROUP BY columns
 -- (collection_name, schema_name, template_id) are NOT in that index's
--- key — so each matched index entry forces a random heap fetch to read
+-- key - so each matched index entry forces a random heap fetch to read
 -- them. On warm cache that's fast (~14 ms for 10k NFTs / 161 collections
 -- on WAX-mainnet). On cold cache the 60+ MB of heap pages hit disk and
 -- the query crosses 19 sec -> 408 to the client -> empty "All collections"

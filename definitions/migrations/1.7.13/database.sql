@@ -4,7 +4,7 @@
 
   PROBLEM
   The hourly refresh_atomicmarket_sales_filters_price() bulk-enqueues every variable_price
-  listing (~235k rows on WAX mainnet) into atomicmarket_sales_filters_updates — the same
+  listing (~235k rows on WAX mainnet) into atomicmarket_sales_filters_updates - the same
   strictly-FIFO (ORDER BY seq) queue that carries real-time trigger events. A user's
   cancel/relist enqueued right after the dump waits behind all of it at ~5-15k rows/min,
   so atomicmarket_sales_filters (the only source for /atomicmarket/v2/sales) runs minutes
@@ -13,7 +13,7 @@
 
   FIX
   prio lanes: real-time trigger events enqueue at prio 0, the bulk price refresh at prio 1,
-  and the drain claims ORDER BY prio, seq — user events are picked up by the very next
+  and the drain claims ORDER BY prio, seq - user events are picked up by the very next
   batch regardless of bulk backlog. A real change upgrades an already-queued bulk row to
   prio 0; the bulk refresh never downgrades a pending real-time row (LEAST). Existing
   backlog rows default to prio 0, exactly preserving pre-upgrade FIFO order (one-time).

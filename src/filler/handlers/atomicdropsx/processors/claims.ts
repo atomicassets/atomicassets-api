@@ -17,12 +17,12 @@ import {
  * Drop claim processor.
  *
  * WAX has THREE user-facing claim actions plus one admin-mediated path:
- *   - `claimdrop` — standard public claim (paid).
- *   - `claimdropwl` — whitelist claim (canonical name on WAX; the
+ *   - `claimdrop` - standard public claim (paid).
+ *   - `claimdropwl` - whitelist claim (canonical name on WAX; the
  *     upstream's `claimwlnft`/`claimwhitelis` listeners targeted actions
  *     that don't exist on WAX).
- *   - `claimdropkey` — key-auth whitelist claim variant.
- *   - `triggerdrop` — admin-triggered (e.g., card-payment service claims
+ *   - `claimdropkey` - key-auth whitelist claim variant.
+ *   - `triggerdrop` - admin-triggered (e.g., card-payment service claims
  *     on behalf of a user). Different field naming: `recipient` instead
  *     of `claimer`, `amount` instead of `claim_amount`.
  *
@@ -130,7 +130,7 @@ export function claimsProcessor(core: AtomicDropsHandler, processor: DataProcess
     ));
 
     /**
-     * `logclaim` — does NOT exist on WAX, but kept for non-WAX chain
+     * `logclaim` - does NOT exist on WAX, but kept for non-WAX chain
      * variants that emit it. The early-return on missing claim_id makes
      * it safe to leave registered everywhere.
      */

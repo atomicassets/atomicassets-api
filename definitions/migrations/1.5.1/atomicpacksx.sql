@@ -4,15 +4,15 @@
 -- atomicpacksx contract has different action shapes:
 --
 --   - `claimunboxed` (not `logclaim`) initiates a pack-open and carries
---     ONLY pack_asset_id — no pack_id, no claim_id, no opener (opener
+--     ONLY pack_asset_id - no pack_id, no claim_id, no opener (opener
 --     comes from action authorization).
 --   - `logresult` provides `template_ids` (templates the user will get)
 --     and pack_id, NOT actual asset_ids and NOT claim_id.
 --
 -- This migration:
---   1. Relaxes `atomicpacksx_claims.pack_id` to nullable — claimunboxed
+--   1. Relaxes `atomicpacksx_claims.pack_id` to nullable - claimunboxed
 --      doesn't carry pack_id; first known at logresult time.
---   2. Adds (contract, pack_asset_id) index — logresult UPDATEs WHERE
+--   2. Adds (contract, pack_asset_id) index - logresult UPDATEs WHERE
 --      pack_asset_id matches.
 --   3. Adds `template_id bigint` column to atomicpacksx_claim_assets and
 --      relaxes `asset_id` to nullable. logresult populates template_id;

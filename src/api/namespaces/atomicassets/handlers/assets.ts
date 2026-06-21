@@ -152,7 +152,7 @@ export async function getRawAssetsAction(
     // Count requests short-circuit at the `if (args.count) { ... return }`
     // branch later in this function, before any ORDER BY is applied, so
     // `sort === 'name'` never actually consumes a template column on the
-    // count path — gate it on `!args.count` so `/assets/_count?sort=name`
+    // count path - gate it on `!args.count` so `/assets/_count?sort=name`
     // also benefits.
     const needsTemplateJoin = (!args.count && args.sort === 'name')
         || params.is_transferable !== undefined

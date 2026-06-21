@@ -19,7 +19,7 @@
     atomicmarket_sales_filters. The maintenance job is gated by
     Filler.isFallingBehind(200); once the reader slipped past 200 blocks the
     drain was skipped, the queue grew, the next allowed run was even bigger and
-    more contentious, and the reader fell further behind — a doom-loop that
+    more contentious, and the reader fell further behind - a doom-loop that
     periodically tripped the reader's no-progress watchdog (hard restart).
 
   Fix (see definitions/migrations/1.6.3/atomicmarket.sql):
@@ -29,7 +29,7 @@
     can loop until the queue is drained. Each call is now a short transaction;
     the filler job (src/filler/handlers/atomicmarket/index.ts) calls it in a
     budgeted loop and no longer skips draining while catching up. The per-sale
-    recompute logic is unchanged, so filter OUTPUT is identical to 1.6.2 — only
+    recompute logic is unchanged, so filter OUTPUT is identical to 1.6.2 - only
     the batching changes.
 
     A companion deferred migration (atomicmarket-deferred.sql) REINDEXes the

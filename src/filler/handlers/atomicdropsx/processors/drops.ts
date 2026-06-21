@@ -90,11 +90,11 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
     destructors.push(processor.onActionTrace(
         contract, 'setdroplimit',
         async (db: ContractDBTransaction, block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<SetDropLimitActionData>): Promise<void> => {
-            // WAX's `setdroplimit` carries only the account limits — `max_claimable`
+            // WAX's `setdroplimit` carries only the account limits - `max_claimable`
             // is absent (it is owned by `setdropmax`; see SetDropLimitActionData).
             // Writing it unconditionally pushed `undefined`/`null` into the batched
             // UPDATE, yielding an all-null column that updateBatch typed as `text[]`
-            // and could not assign to the `bigint` column (PG 42804) — wedging the
+            // and could not assign to the `bigint` column (PG 42804) - wedging the
             // reader. Only touch `max_claimable` when the action actually provides
             // it: chains that DO include it still update, WAX keeps its drop's value.
             const updateData: Record<string, unknown> = {
@@ -118,7 +118,7 @@ export function dropsProcessor(core: AtomicDropsHandler, processor: DataProcesso
     /**
      * `setdroptimes` (PLURAL) on WAX. Both `start_time` and `end_time` are
      * required by the contract (no partial updates), so the processor
-     * sets both unconditionally — the upstream's "preserve unspecified"
+     * sets both unconditionally - the upstream's "preserve unspecified"
      * branching doesn't apply to WAX.
      */
     destructors.push(processor.onActionTrace(

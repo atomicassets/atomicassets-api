@@ -1,4 +1,4 @@
--- 1.5.1 has no shared/cross-handler schema changes — the entire migration
+-- 1.5.1 has no shared/cross-handler schema changes - the entire migration
 -- lives in atomicpacksx.sql.
 --
 -- This file exists because the filler's upgrade-db loader (src/filler/upgrade-db.ts)
@@ -7,5 +7,5 @@
 -- against `definitions/migrations/1.5.1/database.sql`. (Note: the test-db
 -- bootstrap loader at src/bin/init-test-db.ts is more forgiving and skips
 -- via existsSync, which is why the integration tests passed but the live
--- filler did not — discrepancy worth fixing in upgrade-db separately.)
+-- filler did not - discrepancy worth fixing in upgrade-db separately.)
 SELECT 1;

@@ -24,8 +24,8 @@ export interface IBlockReaderOptions {
      * acks). Once the queue drains back under the threshold, accumulated
      * `unconfirmed` is sent in one batch. Optional; when unset or 0, ack
      * semantics are unchanged. Added 2026-05-09 (W2.2) after the WAX
-     * hype-drop cliff where blocksQueue grew to 994 — well past the
-     * 200-block max_messages_in_flight limit — and amplified every fork
+     * hype-drop cliff where blocksQueue grew to 994 - well past the
+     * 200-block max_messages_in_flight limit - and amplified every fork
      * notification into a queue-wide rollback.
      */
     max_blocks_queue?: number;

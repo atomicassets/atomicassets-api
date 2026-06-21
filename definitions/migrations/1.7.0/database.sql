@@ -5,9 +5,9 @@
   every ECA chain over a 26-30 day window (idx_scan=0 on each instance, no
   matching pg_stat_statements caller). Reclaims ~1.6 GB on WAX-mainnet and cuts
   index write-amplification per block mutation (one fewer index to maintain on
-  each affected table) — part of the WAX filler burst-resilience work.
+  each affected table) - part of the WAX filler burst-resilience work.
 
-  IMPORTANT — these were verified against the REPLICA, not just the primary:
+  IMPORTANT - these were verified against the REPLICA, not just the primary:
   API reads route to the replica (pooler-ro) while the primary mostly serves the
   filler's writes, so an audit that only reads the primary's idx_scan falsely
   flags read-serving indexes. The 2026-05-27 audit's 14-index "SAFE" set was

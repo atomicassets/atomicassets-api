@@ -31,7 +31,7 @@ import { encodeDatabaseJson } from './utils';
 // and stays under READER_CATCHUP_STALL_TIMEOUT_MS (10m), so a genuinely stuck
 // writer still surfaces via the reader watchdog rather than hanging forever.
 // MUST go through positiveIntEnv: a raw 0 would emit `SET LOCAL statement_timeout
-// = 0` which DISABLES the timeout (hang-forever) — the exact bug this prevents.
+// = 0` which DISABLES the timeout (hang-forever) - the exact bug this prevents.
 const WRITER_STATEMENT_TIMEOUT_MS = positiveIntEnv('FILLER_WRITER_STATEMENT_TIMEOUT_MS', 300_000);
 
 export type Condition = {
@@ -144,13 +144,13 @@ function buildPrimaryCondition(values: {[key: string]: any}, primaryKey: string[
 }
 
 export interface ColumnMeta {
-    pgType: string;   // format_type() output — directly usable as a cast target
+    pgType: string;   // format_type() output - directly usable as a cast target
     isArray: boolean; // array-typed column (typcategory 'A')
     notNull: boolean;
 }
 
 // Process-lifetime cache of per-table column metadata, keyed by bare table
-// name. It is module-level — SHARED across every pooled connection — so an
+// name. It is module-level - SHARED across every pooled connection - so an
 // entry populated by one session is reused by all later sessions WITHOUT
 // re-querying. That is sound here because of two invariants:
 //   1. Every pool connection uses the same configured search_path, so a bare
@@ -166,7 +166,7 @@ export interface ColumnMeta {
 //
 // Why catalog-driven instead of inferring the type from the JS values: value
 // inference cannot know the type of an all-null batch column (it guessed
-// `text`, producing unnest($N::text[]) → 42804 against e.g. a bigint column —
+// `text`, producing unnest($N::text[]) → 42804 against e.g. a bigint column -
 // the WAX filler stall at block #438032575), and it accreted special cases
 // (empty arrays, decimal strings, mixed numerics) every time it guessed wrong
 // on otherwise-legitimate data. The catalog is the source of truth.
@@ -255,7 +255,7 @@ export class WriteBuffer {
         });
         // Deduplicate by PK within batch (last-write-wins) for upsert modes.
         // PG errors if the same PK appears twice in a single INSERT ... ON CONFLICT.
-        // Skip dedup for onConflict='error' — duplicates should be impossible in catchup,
+        // Skip dedup for onConflict='error' - duplicates should be impossible in catchup,
         // and if they occur the error is expected behavior.
         if (primaryKey.length > 0 && onConflict !== 'error') {
             for (const row of normalizedRows) {
@@ -653,8 +653,8 @@ export class ContractDBTransaction {
             }
 
             // Cast types come from the live catalog, not from guessing at the
-            // JS values. This also lets us fail loud — at the writer boundary,
-            // with an accurately located message — on the two programming errors
+            // JS values. This also lets us fail loud - at the writer boundary,
+            // with an accurately located message - on the two programming errors
             // value inference could only surface as a confusing downstream
             // Postgres error: a NULL for a NOT NULL column, or a key that isn't
             // a real column.
@@ -675,7 +675,7 @@ export class ContractDBTransaction {
                 if (cm.notNull && columnArrays[i].some(v => v === null || v === undefined)) {
                     throw new Error(
                         'updateBatch: NULL written to NOT NULL column "' + table + '"."' + col + '"' + at +
-                        ' — a handler passed null/undefined for a required column'
+                        ' - a handler passed null/undefined for a required column'
                     );
                 }
                 pgTypes.push(cm.pgType);
@@ -683,7 +683,7 @@ export class ContractDBTransaction {
             }
 
             // PG's unnest($::T[][]) flattens multidim arrays completely, so
-            // array-typed columns can't go through the unnest path — they need
+            // array-typed columns can't go through the unnest path - they need
             // the VALUES-clause path with per-row casts that preserve row
             // structure. format_type() already yields the full array type
             // (e.g. `jsonb[]`), so no per-row suffix is appended below.
@@ -702,7 +702,7 @@ export class ContractDBTransaction {
                     const placeholders = allColumns.map((_c, colIdx) => {
                         const paramIdx = rowIdx * allColumns.length + colIdx + 1;
                         // pgType is the real column type (scalar for non-array
-                        // columns, full `T[]` for array columns) — one value per
+                        // columns, full `T[]` for array columns) - one value per
                         // row, so no extra suffix.
                         return '$' + paramIdx + '::' + pgTypes[colIdx];
                     });
@@ -989,7 +989,7 @@ export class ContractDBTransaction {
             logger.info('Rollback ' + total + ' operations until block #' + blockNum + ' (chunked)');
 
             const startTime = Date.now();
-            // CHUNK_SIZE bounds each inner transaction — keeps any single
+            // CHUNK_SIZE bounds each inner transaction - keeps any single
             // COMMIT-to-COMMIT window small enough that a slow per-row query
             // (e.g. contract_traces DELETE without a B-tree point-lookup index)
             // cannot exceed statement_timeout on a genuine fork rollback.
@@ -1000,7 +1000,7 @@ export class ContractDBTransaction {
 
             while (counter < total) {
                 // Fetch next chunk by id. Previous chunks are DELETEd below,
-                // so no OFFSET is needed — each LIMIT reads fresh rows.
+                // so no OFFSET is needed - each LIMIT reads fresh rows.
                 const chunk = await this.clientQuery(
                     'SELECT id, operation, "table", "values", condition ' +
                     'FROM reversible_queries WHERE block_num >= $1 AND reader = $2 ' +
@@ -1078,7 +1078,7 @@ export class ContractDBTransaction {
                 // the per-chunk transaction stays inside statement_timeout even
                 // if one of the ops is slow. Fork rollback is already the
                 // primary source of inconsistency visibility between fork
-                // detection and checkpoint advance — chunking doesn't add a
+                // detection and checkpoint advance - chunking doesn't add a
                 // new window, it just makes each internal commit smaller.
                 await this.clientQuery(
                     'DELETE FROM reversible_queries WHERE id = ANY($1::bigint[])',
@@ -1087,7 +1087,7 @@ export class ContractDBTransaction {
                 await this.clientQuery('COMMIT');
                 this.inTransaction = false;
 
-                // Reopen a transaction for the next chunk — begin() is
+                // Reopen a transaction for the next chunk - begin() is
                 // idempotent, so the insert/update/delete helpers above
                 // would otherwise reopen it lazily on the next op.
                 await this.begin();

@@ -43,7 +43,7 @@ try {
 
     it('emits one backlog series per priority lane', async function () {
         // The collector deliberately emits no backlog series on databases without
-        // the atomicmarket tables — skip there instead of asserting lanes.
+        // the atomicmarket tables - skip there instead of asserting lanes.
         const present = await connections.database.query<{ present: boolean }>(
             'SELECT to_regclass(\'atomicmarket_sales_filters_updates\') IS NOT NULL AS present'
         );

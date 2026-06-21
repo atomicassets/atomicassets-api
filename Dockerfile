@@ -15,7 +15,7 @@ COPY . .
 RUN pnpm build
 
 # Stage 2: runtime image with prod-only deps
-# The node:bookworm-slim base ships a `node` user at uid 1000 — reuse it
+# The node:bookworm-slim base ships a `node` user at uid 1000 - reuse it
 # instead of creating a custom user, and set WORKDIR to /home/node/app to
 # match the runtime config path expectations in src/bin/*.ts (which require
 # config files from /home/node/app/config/).
@@ -33,7 +33,7 @@ COPY --from=builder --chown=node:node /app/definitions ./definitions
 # Filler optional contract handlers (e.g. alien.worlds). The ModuleLoader at
 # src/filler/modules.ts:24 requires `<repo>/modules/<name>.js` for each name
 # listed in the chain's readers.config.json. Modules are hand-written
-# CommonJS, not a build artifact — copy them as-is.
+# CommonJS, not a build artifact - copy them as-is.
 COPY --from=builder --chown=node:node /app/modules ./modules
 
 USER node

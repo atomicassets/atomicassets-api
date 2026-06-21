@@ -108,7 +108,7 @@ describe('expressRedisCache', () => {
 
         const req = makeReq();
         const res = makeRes();
-        // Default cap is 2 MB — build a 3 MB string.
+        // Default cap is 2 MB - build a 3 MB string.
         const payload = 'x'.repeat(3 * 1024 * 1024);
 
         await runMiddleware(middleware, req, res, payload);
@@ -149,7 +149,7 @@ describe('expressRedisCache', () => {
         await runMiddleware(middleware, req, res, 'error payload');
 
         expect(redis.set.called, 'redis.set should NOT be called for non-200').to.equal(false);
-        expect(warnSpy.called, 'no warn for non-200 — short-circuit happens before size check').to.equal(false);
+        expect(warnSpy.called, 'no warn for non-200 - short-circuit happens before size check').to.equal(false);
     });
 
     it('still writes the response body to the client when cache is skipped due to size', async () => {

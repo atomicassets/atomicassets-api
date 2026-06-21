@@ -1,27 +1,27 @@
 /**
- * atomicpacksx action data shapes — WAX mainnet ABI.
+ * atomicpacksx action data shapes - WAX mainnet ABI.
  *
  * In 1.6.0, pack metadata + claim lifecycle are driven from contract row
  * deltas (see `types/tables.ts`). Action listeners remain for:
  *
- *   - `logresult` — provides `template_ids` (which template each minted
+ *   - `logresult` - provides `template_ids` (which template each minted
  *     NFT comes from), keyed by `pack_asset_id`. Emitted inline by
- *     `receiverand` (RNG callback). Resolution event — UPSERTs the claim
+ *     `receiverand` (RNG callback). Resolution event - UPSERTs the claim
  *     row to RESOLVED + INSERT claim_assets.
- *   - `claimunboxed` — user's terminal pickup action. Used to flip claim
+ *   - `claimunboxed` - user's terminal pickup action. Used to flip claim
  *     state to PICKED_UP.
- *   - `lognewroll` + `addpackroll` — pack roll metadata (rolls.ts still
+ *   - `lognewroll` + `addpackroll` - pack roll metadata (rolls.ts still
  *     uses these action listeners; rolls aren't worth the scope-decoding
- *     complexity of `packrolls` table deltas — pack_id scope is uint64,
+ *     complexity of `packrolls` table deltas - pack_id scope is uint64,
  *     not name-encoded).
- *   - `lognewpack` — log-only listener (logs.ts) for raw trace stream.
+ *   - `lognewpack` - log-only listener (logs.ts) for raw trace stream.
  *
  * The pack-open event (`receive_asset_transfer` notify with memo="unbox")
  * is captured via the `unboxpacks` row delta INSERT, NOT via an action
  * listener. See `processors/claims.ts`.
  */
 
-/** lognewpack — log-only consumer in logs.ts (no domain mutations). */
+/** lognewpack - log-only consumer in logs.ts (no domain mutations). */
 export type LogNewPackActionData = {
     pack_id: string,
     collection_name: string,
@@ -40,7 +40,7 @@ export type LogNewRollActionData = {
 export type AddPackRollActionData = {
     authorized_account: string,
     pack_id: string,
-    outcomes: unknown,           // ROLL_OUTCOME[] — array of { template_id, odds }
+    outcomes: unknown,           // ROLL_OUTCOME[] - array of { template_id, odds }
     total_odds: string,
 };
 

@@ -38,7 +38,7 @@ function createMockCore(overrides: Record<string, any> = {}): any {
 
 function createMockModuleLoader(): ModuleLoader {
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore — test-only construction matches atomicmarket pattern.
+    // @ts-ignore - test-only construction matches atomicmarket pattern.
     loader.modules = [];
     // @ts-ignore
     loader.names = [];
@@ -182,7 +182,7 @@ describe('atomicdropsx claimsProcessor (WAX ABI)', () => {
     it('atomicdropsx_drops_master.current_claimed is computed from SUM(amount) over claims', async () => {
         await seedDrop(client, '8005');
 
-        // Mix of claim types — all count toward current_claimed.
+        // Mix of claim types - all count toward current_claimed.
         await processActionTrace(processor, db, createBlock(), createTx(), createActionTrace<ClaimDropActionData>(
             DROPS_CONTRACT, 'claimdrop', { claimer: 'a111', drop_id: '8005', claim_amount: 2 },
         ));

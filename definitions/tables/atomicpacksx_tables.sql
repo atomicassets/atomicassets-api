@@ -1,4 +1,4 @@
--- atomicpacksx tables — pack templates, rolls (rarity distributions), claims
+-- atomicpacksx tables - pack templates, rolls (rarity distributions), claims
 -- (user opens), and claim_assets (NFTs revealed by each claim).
 --
 -- Counter columns (e.g., pack open counts) are deliberately NOT stored on the
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS atomicpacksx_config (
 CREATE TABLE IF NOT EXISTS atomicpacksx_packs (
     contract character varying(12) NOT NULL,
     pack_id bigint NOT NULL,
-    -- AtomicAssets contract that owns the collection — explicitly stored so
+    -- AtomicAssets contract that owns the collection - explicitly stored so
     -- views can join against atomicassets_collections_master on the full
     -- (contract, collection_name) compound key (multiple AtomicAssets
     -- contracts can coexist in a single DB).
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS atomicpacksx_claims (
     opener character varying(12) NOT NULL,
     pack_asset_id bigint NOT NULL,
     -- state: 0=claimed (pending result), 1=resolved, 2=cancelled
-    -- (no cancelled state on WAX — the chain has no cancelclaim action)
+    -- (no cancelled state on WAX - the chain has no cancelclaim action)
     state smallint NOT NULL DEFAULT 0,
     txid bytea,
     claimed_at_block bigint NOT NULL,

@@ -42,7 +42,7 @@ const ENQUEUE_SALE = `
         DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
                       prio = 0`;
 
-// Minimal variable-price listing row in atomicmarket_sales_filters — the set
+// Minimal variable-price listing row in atomicmarket_sales_filters - the set
 // refresh_atomicmarket_sales_filters_price() bulk-enqueues from.
 const SEED_VARIABLE_PRICE_LISTING = `
     INSERT INTO atomicmarket_sales_filters
@@ -52,7 +52,7 @@ const SEED_VARIABLE_PRICE_LISTING = `
 
 const { client, txit } = initAtomicMarketTest();
 
-describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)', () => {
+describe('update_atomicmarket_sales_filters - queue-claim decoupling (1.7.11)', () => {
     txit('drains a queued sale: queue emptied, filter row recomputed', async () => {
         const { sale_id } = await client.createFullSale();
 
@@ -116,7 +116,7 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
             // Seed a queued change for key K.
             await reader.query(ENQUEUE_ASSET, [K]);
 
-            // DRAIN phase 1 — CLAIM: SELECT (no lock), capture seq, hold the txn open
+            // DRAIN phase 1 - CLAIM: SELECT (no lock), capture seq, hold the txn open
             // (stands in for the ~25s recompute, during which the real function also
             // holds no queue lock).
             await drain.query('BEGIN');
@@ -126,7 +126,7 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
             );
             const s0 = claimed.rows[0].seq;
 
-            // READER — enqueue the SAME key while the drain txn is open. With a 2s
+            // READER - enqueue the SAME key while the drain txn is open. With a 2s
             // lock_timeout, the old DELETE-at-start design (ON CONFLICT speculative-wait
             // on the drain xid) would raise "canceling statement due to lock timeout";
             // the new SELECT-claim design takes no queue lock so this resolves at once.
@@ -134,7 +134,7 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
             await reader.query(ENQUEUE_ASSET, [K]); // must NOT throw
             await reader.query('SET lock_timeout = 0');
 
-            // DRAIN phase 3 — version-guarded end-DELETE keyed on the captured seq.
+            // DRAIN phase 3 - version-guarded end-DELETE keyed on the captured seq.
             const del = await drain.query(
                 `DELETE FROM atomicmarket_sales_filters_updates WHERE ${where} AND seq = $2`,
                 [K, s0],
@@ -201,13 +201,13 @@ describe('update_atomicmarket_sales_filters — queue-claim decoupling (1.7.11)'
 });
 
 // 1.7.13: real-time trigger events (prio 0) must never wait behind the bulk price
-// refresh (prio 1) — the hourly refresh used to dump ~235k rows into the strict-FIFO
+// refresh (prio 1) - the hourly refresh used to dump ~235k rows into the strict-FIFO
 // queue ahead of fresh user actions (cancel/relist invisible for minutes to tens of
 // minutes on WAX). The drain claims ORDER BY prio, seq; a real change upgrades a
 // queued bulk row to the fast lane; the refresh never downgrades a pending real-time
 // row; and the sliced refresh covers the variable-price listing set exactly once per
 // cycle.
-describe('update_atomicmarket_sales_filters — two-lane priority queue (1.7.13)', () => {
+describe('update_atomicmarket_sales_filters - two-lane priority queue (1.7.13)', () => {
     txit('trigger enqueues land in the fast lane (prio 0)', async () => {
         await client.createFullSale();
 

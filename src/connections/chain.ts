@@ -30,8 +30,8 @@ export default class ChainApi {
     }
 
     async post(path: string, body: any): Promise<any> {
-        // Retry the full round-trip — a transient disconnect can hit while
-        // reading/parsing the response body, not just on connect — so the
+        // Retry the full round-trip - a transient disconnect can hit while
+        // reading/parsing the response body, not just on connect - so the
         // fetch AND the json() are inside the retried unit.
         return await retryTransient(
             async () => {

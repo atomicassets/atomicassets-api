@@ -14,7 +14,7 @@
     contract, offer_id) are disqualified by the planner. The offer-
     invalidation query at offers.ts:146 falls back to a single-column
     asset_id index + heap fetch, which busts the 180s statement_timeout
-    on cold Cinder cache — observed 2026-04-24 12:10 UTC at block
+    on cold Cinder cache - observed 2026-04-24 12:10 UTC at block
     #431099975 when a batch of 4 asset_ids (one with 5,820 rows)
     triggered ~3,256 nested-loop probes.
 
@@ -29,7 +29,7 @@
   fresh without overwhelming the primary.
 
   Keep autovacuum_vacuum_threshold and autovacuum_analyze_threshold as-is
-  — those gate dead-tuple-driven vacuum and ANALYZE respectively; the
+  - those gate dead-tuple-driven vacuum and ANALYZE respectively; the
   100000 threshold there is intentional throttle.
 
   A one-time manual VACUUM is run separately before/alongside this

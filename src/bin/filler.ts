@@ -39,8 +39,8 @@ if (!readerConfigs || readerConfigs.length === 0) {
 }
 
 // Safety net mirroring bin/server.ts. Without these, a single stray rejected
-// promise — e.g. an in-flight chain HTTP fetch losing its connection while the
-// node pod restarts — terminates the process (Node's default for unhandled
+// promise - e.g. an in-flight chain HTTP fetch losing its connection while the
+// node pod restarts - terminates the process (Node's default for unhandled
 // rejections), crash-looping the reader. Log and stay up instead.
 process.on('unhandledRejection', error => {
     logger.error('Unhandled Rejection', error);
@@ -57,7 +57,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     const connection = new ConnectionManager(connectionConfig);
 
     (async (): Promise<void> => {
-        // The node (and DB/redis) can be transiently unreachable at boot — the
+        // The node (and DB/redis) can be transiently unreachable at boot - the
         // SHIP/RPC pod may be mid-restart even after the wait-for-ship init gate.
         // Wait it out with bounded backoff (~5 min) instead of letting an
         // ECONNREFUSED crash-loop the whole filler.
@@ -195,7 +195,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
 
     process.on('SIGTERM', () => {
-        logger.info('Primary received SIGTERM — shutting down workers');
+        logger.info('Primary received SIGTERM - shutting down workers');
 
         server.close();
 
@@ -212,7 +212,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     let filler: Filler | null = null;
 
     process.on('SIGTERM', async () => {
-        logger.info(`Worker ${process.pid} received SIGTERM — stopping filler`);
+        logger.info(`Worker ${process.pid} received SIGTERM - stopping filler`);
 
         if (filler) {
             await filler.stopFiller();
