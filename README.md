@@ -211,7 +211,7 @@ Notes:
 
 ## Troubleshooting
 
-**`Error: Cannot find module '.../build/bin/filler.js'`** The project has not
+**`Error: Cannot find module '.../build/bin/filler.js'`**. The project has not
 been compiled. Run `pnpm build` (which emits `./build`), then retry
 `pnpm start:filler`. `./build` is intentionally not committed.
 
@@ -220,7 +220,7 @@ initialised. Run `pnpm db:schema:init` against the database in
 `connections.config.json` before starting the server, and make sure the
 database itself exists (`createdb`).
 
-**`cp: config/*.example.json: No such file or directory`** Run the copy
+**`cp: config/*.example.json: No such file or directory`**. Run the copy
 commands from the repository root; the example files live in `config/`.
 
 **Index creation runs for hours during a dump restore.** See
