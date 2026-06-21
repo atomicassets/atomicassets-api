@@ -1,6 +1,6 @@
 # atomicassets-api
 
-The official AtomicAssets API service: an indexer and HTTP API for
+An indexer and HTTP API for
 [AtomicAssets](https://github.com/pinknetworkx/atomicassets-contract),
 [AtomicMarket](https://github.com/pinknetworkx/atomicmarket-contract),
 [AtomicTools](https://github.com/pinknetworkx/atomictools-contract), and
@@ -19,8 +19,8 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
   (sales, auctions, buy offers), AtomicTools (link claims), and curated
   collection lists.
 - Indexes AtomicHub-specific contracts when enabled in the reader config:
-  AtomicPacks (`atomicpacksx` — pack templates, claims, and reveal results)
-  and AtomicDrops (`atomicdropsx` — drop templates and claims). Enable per
+  AtomicPacks (`atomicpacksx` for pack templates, claims, and reveal results)
+  and AtomicDrops (`atomicdropsx` for drop templates and claims). Enable per
   chain by adding the relevant entries to `readers.config.json`:
 
       { "handler": "atomicpacksx",
@@ -57,7 +57,7 @@ You will need:
 git clone https://github.com/atomicassets/atomicassets-api.git
 cd atomicassets-api
 pnpm install
-pnpm build          # compile TypeScript to ./build — required before the start scripts
+pnpm build          # compile TypeScript to ./build (required before the start scripts)
 ```
 
 The `build` step is not optional: `pnpm start:filler` and `pnpm start:server`
@@ -84,17 +84,17 @@ cp config/readers.config.example.json    config/readers.config.json
 
 **4. Initialise the schema, then start the filler and server.** The filler
 writes blocks into Postgres; the server reads from Postgres and answers the API.
-They are independent processes — but the server needs the schema to exist first,
+They are independent processes, but the server needs the schema to exist first,
 so run `db:schema:init` before either.
 
 When running outside the container, point `CONFIG_DIR` at your `config/`
-directory — the binaries otherwise look in the image's `/home/node/app/config`.
+directory; otherwise the binaries look in the image's `/home/node/app/config`.
 
 ```sh
 export CONFIG_DIR="$PWD/config"
 pnpm db:schema:init
-pnpm start:filler   # in one terminal — indexes blocks from SHIP into Postgres
-pnpm start:server   # in another — serves the REST + WebSocket API
+pnpm start:filler   # in one terminal: indexes blocks from SHIP into Postgres
+pnpm start:server   # in another: serves the REST + WebSocket API
 ```
 
 The API will be available on port 9000 by default with Swagger UI at
@@ -102,7 +102,7 @@ The API will be available on port 9000 by default with Swagger UI at
 
 A fresh filler syncs from the chain's genesis (or the `start_block` in
 `readers.config.json`), which can take a long time on mainnet. To skip the
-initial sync, restore a published database dump first — see
+initial sync, restore a published database dump first. See
 [Restore from a published dump](#restore-from-a-published-dump).
 
 ### Docker
@@ -124,8 +124,8 @@ it from the same image with `command: node build/bin/filler.js`.
 
 #### docker-compose
 
-`docker-compose.yml` brings up the full stack — Postgres, Valkey, the filler,
-and the server — sharing your `config/` directory:
+`docker-compose.yml` brings up the full stack (Postgres, Valkey, the filler,
+and the server) sharing your `config/` directory:
 
 ```sh
 cp config/connections.config.example.json config/connections.config.json
@@ -144,10 +144,10 @@ services to pick up changes.
 
 Three JSON files in `config/` drive runtime behaviour:
 
-- `connections.config.json` — Postgres, Redis, RPC endpoints, SHIP endpoint.
-- `readers.config.json` — which chains the filler will index, contract
+- `connections.config.json`: Postgres, Redis, RPC endpoints, SHIP endpoint.
+- `readers.config.json`: which chains the filler will index, contract
   filters, start block, and dataset selection.
-- `server.config.json` — HTTP server port, rate limits, CORS, cache
+- `server.config.json`: HTTP server port, rate limits, CORS, cache
   policies, provider name and URL displayed in `/docs`.
 
 See `config/*.example.json` for the full schema with comments.
@@ -203,27 +203,27 @@ Notes:
   on a dump predating 1.7.17 those were hash indexes that build single-threaded
   and dominate restore time.
 - `maintenance_work_mem` is the single biggest lever for index build speed. The
-  default (64 MB) is far too low for these tables; 1–2 GB is reasonable on a host
-  with several GB of RAM.
+  default (64 MB) is far too low for these tables; 1 to 2 GB is reasonable on a
+  host with several GB of RAM.
 - After the restore, run `pnpm db:migrate:up` once to apply any schema
-  migrations newer than the dump, then start the filler — it resumes from the
+  migrations newer than the dump, then start the filler. It resumes from the
   last block in the dump and catches up to the chain head.
 
 ## Troubleshooting
 
-**`Error: Cannot find module '.../build/bin/filler.js'`** — the project has not
+**`Error: Cannot find module '.../build/bin/filler.js'`** The project has not
 been compiled. Run `pnpm build` (which emits `./build`), then retry
 `pnpm start:filler`. `./build` is intentionally not committed.
 
-**The server exits immediately on startup** — the schema has not been
+**The server exits immediately on startup.** The schema has not been
 initialised. Run `pnpm db:schema:init` against the database in
 `connections.config.json` before starting the server, and make sure the
 database itself exists (`createdb`).
 
-**`cp: config/*.example.json: No such file or directory`** — run the copy
+**`cp: config/*.example.json: No such file or directory`** Run the copy
 commands from the repository root; the example files live in `config/`.
 
-**Index creation runs for hours during a dump restore** — see
+**Index creation runs for hours during a dump restore.** See
 [Restore from a published dump](#restore-from-a-published-dump). Restore with
 `--jobs` and a raised `maintenance_work_mem`, and use a dump from 1.7.17 or
 later (btree seller/buyer indexes).
@@ -264,7 +264,7 @@ conventions, and the PR review process. Security reports go through
 
 ## License
 
-MIT — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+MIT. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
 
 ## Acknowledgments
 
