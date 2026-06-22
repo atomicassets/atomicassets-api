@@ -32,6 +32,10 @@ export interface IServerConfig {
     server_port: number;
 
     cache_life: number;
+    // Max response size (bytes) the express cache will SET in Valkey. Larger responses
+    // are served uncached (Valkey is single-threaded; a huge SET blocks every client).
+    // Optional; defaults to 2_000_000 (2 MB). Raise it if your Valkey can take it.
+    cache_max_value_bytes?: number;
     // true = trust one hop; numbers, named subnets and CIDR lists pass through
     // to Express's 'trust proxy' (use a CIDR list when behind Cloudflare so
     // req.ip resolves to the real client, not the CF edge)

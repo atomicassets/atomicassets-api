@@ -76,13 +76,21 @@ const runMiddleware = async (
 
 describe('expressRedisCache', () => {
     let warnSpy: sinon.SinonSpy;
+    let debugSpy: sinon.SinonSpy;
+
+    // The skip-cache notice is logged at debug (it is expected, not a fault). Distinguish it
+    // from the unrelated "Cache request ..." success debug line by message content.
+    const skipLogged = (): boolean =>
+        debugSpy.getCalls().some(call => /Skipping cache SET/.test(String(call.args[0])));
 
     beforeEach(() => {
         warnSpy = sinon.spy(logger, 'warn');
+        debugSpy = sinon.spy(logger, 'debug');
     });
 
     afterEach(() => {
         warnSpy.restore();
+        debugSpy.restore();
         sinon.restore();
     });
 
@@ -98,10 +106,11 @@ describe('expressRedisCache', () => {
         await runMiddleware(middleware, req, res, payload);
 
         expect(redis.set.calledOnce, 'redis.set should be called for small payload').to.equal(true);
+        expect(skipLogged(), 'no skip log expected for small payload').to.equal(false);
         expect(warnSpy.called, 'no warn log expected for small payload').to.equal(false);
     });
 
-    it('skips caching when payload exceeds default maxValueBytes and logs a warn', async () => {
+    it('skips caching when payload exceeds default maxValueBytes and logs at debug', async () => {
         const redis = makeRedis();
         const handler = expressRedisCache(redis as never, 'test-prefix', 60);
         const middleware = handler();
@@ -114,10 +123,10 @@ describe('expressRedisCache', () => {
         await runMiddleware(middleware, req, res, payload);
 
         expect(redis.set.called, 'redis.set should NOT be called for oversized payload').to.equal(false);
-        expect(warnSpy.calledOnce, 'warn log should fire when skipping cache').to.equal(true);
-        const firstArg = warnSpy.firstCall.args[0] as string;
-        expect(firstArg).to.match(/Skipping cache SET/);
-        expect(firstArg).to.match(/exceeds maxValueBytes/);
+        expect(warnSpy.called, 'skip should not warn (it is expected, logged at debug)').to.equal(false);
+        const skipCall = debugSpy.getCalls().find(call => /Skipping cache SET/.test(String(call.args[0])));
+        expect(skipCall, 'debug log should fire when skipping cache').to.not.equal(undefined);
+        expect(String(skipCall!.args[0])).to.match(/exceeds maxValueBytes/);
     });
 
     it('respects a per-route maxValueBytes override', async () => {
@@ -134,7 +143,23 @@ describe('expressRedisCache', () => {
         await runMiddleware(middleware, req, res, payload);
 
         expect(redis.set.called, 'redis.set should NOT be called above per-route cap').to.equal(false);
-        expect(warnSpy.calledOnce).to.equal(true);
+        expect(skipLogged()).to.equal(true);
+    });
+
+    it('honors a configured default cap (cache_max_value_bytes) over the 2 MB default', async () => {
+        const redis = makeRedis();
+        // Operator lowers the cap via server.config; a 500-byte body now exceeds it even
+        // though it is far under the hardcoded 2 MB default.
+        const handler = expressRedisCache(redis as never, 'test-prefix', 60, [], 100);
+        const middleware = handler();
+
+        const req = makeReq();
+        const res = makeRes();
+
+        await runMiddleware(middleware, req, res, 'x'.repeat(500));
+
+        expect(redis.set.called, 'redis.set should NOT be called above configured cap').to.equal(false);
+        expect(skipLogged()).to.equal(true);
     });
 
     it('does not cache non-200 responses', async () => {

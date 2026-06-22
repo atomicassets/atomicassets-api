@@ -19,10 +19,12 @@ export type ExpressRedisCacheHandler = (options?: ExpressRedisCacheOptions) => e
 
 // Valkey is single-threaded; a SET on a 20+ MB value blocks every other client for 40-60 ms.
 // Skip caching responses larger than this; serves them uncached instead of poisoning the shard.
-const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
+// Operators can raise this via server.config `cache_max_value_bytes` if their Valkey can take it.
+export const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
 
 export function expressRedisCache(
-    redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[]
+    redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[],
+    defaultMaxValueBytes: number = DEFAULT_MAX_CACHE_VALUE_BYTES
 ): ExpressRedisCacheHandler {
     return (options: ExpressRedisCacheOptions = {}) => {
         return (req: express.Request, res: express.Response, next: express.NextFunction): void => {
@@ -68,7 +70,7 @@ export function expressRedisCache(
 
                 if (expire < Date.now()) {
                     const sendFn = res.send.bind(res);
-                    const maxValueBytes = options.maxValueBytes ?? DEFAULT_MAX_CACHE_VALUE_BYTES;
+                    const maxValueBytes = options.maxValueBytes ?? defaultMaxValueBytes;
 
                     res.send = (data: Buffer | string): express.Response => {
                         const result = sendFn(data);
@@ -82,7 +84,10 @@ export function expressRedisCache(
                             : data.length;
 
                         if (rawBytes > maxValueBytes) {
-                            logger.warn(
+                            // Expected for large paginated responses (e.g. /assets?limit=1000 > 2 MB):
+                            // the body is served in full, just not cached. Logged at debug to avoid
+                            // flooding operator logs; raise cache_max_value_bytes to cache these.
+                            logger.debug(
                                 `Skipping cache SET for ${key}: ${rawBytes} bytes exceeds maxValueBytes ${maxValueBytes}`,
                                 mergeRequestData(req),
                             );
