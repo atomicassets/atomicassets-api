@@ -10,6 +10,11 @@ This codebase is a continuation of `eosio-contract-api` originally built by
 [Pink Network](https://pink.gg) and is now maintained by the AtomicAssets
 community. See [NOTICE](./NOTICE) for the project's lineage.
 
+> Moving an existing indexer (including one on the original
+> `eosio-contract-api`) to v2? See [UPGRADING.md](./UPGRADING.md). Short version:
+> no Postgres 18 needed, and you can upgrade before the chain switches to the v2
+> contract.
+
 ## What it does
 
 - Subscribes to a State History Plugin (SHIP) endpoint and indexes blocks
