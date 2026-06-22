@@ -4,12 +4,12 @@
 -- pipeline (statement_timeout: 1h, dedicated pool), so CONCURRENTLY is legal.
 --
 -- ====================================================================
--- Index — atomicmarket v2 /v1/sales template_mint-sorted queries
+-- Index - atomicmarket v2 /v1/sales template_mint-sorted queries
 -- ====================================================================
 --
 -- The marketplace listing query at e.g.
 --   https://wax.atomichub.io/market?blockchain=wax-mainnet&order=asc&sort=template_mint&symbol=WAX
--- (handler: src/api/namespaces/atomicmarket/handlers/sales2.ts — the v2
+-- (handler: src/api/namespaces/atomicmarket/handlers/sales2.ts - the v2
 -- handler, which queries the partitioned atomicmarket_sales_filters table.
 -- v1 sales.ts queries atomicmarket_sales/atomicmarket_sales_master and
 -- does NOT touch this index) runs roughly:
@@ -28,7 +28,7 @@
 -- column filters are added (planner picks Index Scan + Incremental
 -- Sort, cost ~236 for LIMIT 1000) but cannot pre-filter by
 -- (market_contract, settlement_symbol). When the query adds those
--- filters — which the marketplace UI always does — using the index
+-- filters - which the marketplace UI always does - using the index
 -- requires a heap fetch per entry to evaluate the filter, and the
 -- planner switches to Parallel Seq Scan + full Sort over the
 -- partition (cost 314,329 on WAX-mainnet, ~30 sec wall time).

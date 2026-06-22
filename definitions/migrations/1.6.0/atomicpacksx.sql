@@ -1,4 +1,4 @@
--- atomicpacksx 1.6.0 — handler architectural rewrite.
+-- atomicpacksx 1.6.0 - handler architectural rewrite.
 --
 -- The 1.5.x handlers treated `claimunboxed` as the pack-open event, but on
 -- the on-chain contract (atomichub/contracts/atomicpacks-contract/src/

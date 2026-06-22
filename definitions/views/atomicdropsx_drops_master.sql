@@ -29,7 +29,7 @@ SELECT
     d.created_at_time,
     d.updated_at_block,
     d.updated_at_time,
-    -- Match on the AtomicAssets contract too — collection_name alone is
+    -- Match on the AtomicAssets contract too - collection_name alone is
     -- not unique across multiple atomicassets contracts in the same DB.
     (SELECT row_to_json(c.*)
        FROM atomicassets_collections_master c

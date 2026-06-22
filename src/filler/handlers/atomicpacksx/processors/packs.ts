@@ -8,8 +8,8 @@ import { PacksTableRow } from '../types/tables';
 
 /**
  * `packs` row delta is the canonical source of pack metadata. It captures
- * announcepack, completepack, setpacktime, setpackdata in a single handler
- * — whichever of those actions ran, the contract's resulting state is
+ * announcepack, completepack, setpacktime, setpackdata in a single handler.
+ * Whichever of those actions ran, the contract's resulting state is
  * what we mirror.
  *
  * `pack_template_id = -1` on chain means "announced but not yet completed";

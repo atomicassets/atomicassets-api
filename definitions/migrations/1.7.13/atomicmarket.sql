@@ -1,16 +1,22 @@
 /*
-  1.7.11 - Version-guarded, lock-light sales-filter drain (see database.sql for the why).
+  1.7.13 - Two-lane priority queue + sliced bulk price refresh (see database.sql for the why).
 
-  Part 1: every enqueue path switches ON CONFLICT ... DO NOTHING -> DO UPDATE SET
-  seq = nextval(...). A re-enqueue of an already-queued key now BUMPS its version token so
-  the drain's end-DELETE (which matches on the captured seq) leaves it for reprocessing
-  instead of silently dropping the change.
+  Part 1: the four trigger enqueue functions set prio = 0 on conflict (a real change
+  upgrades an already-queued bulk row to the fast lane). Fresh inserts ride the column
+  DEFAULT 0. Conflict inference targets are unchanged, so the three partial UNIQUE
+  indexes still arbitrate.
 
-  Part 2: update_atomicmarket_sales_filters() no longer DELETE-claims at the start. It
-  SELECTs (key, seq) into the temp tables (pure MVCC read, no queue lock), runs the
-  recompute VERBATIM, then DELETEs only the claimed rows whose seq is unchanged, at the
-  very end. The ~25s recompute therefore holds NO queue lock, so the reader's enqueue no
-  longer speculative-waits on the drain transaction.
+  Part 2: refresh_atomicmarket_sales_filters_price(slice, total_slices) enqueues at
+  prio 1 and only the sale_ids in its slice (stable modulo), so the filler can spread
+  the former hourly ~235k-row dump across the hour (12 x ~20k by default) - bounding
+  the bulk lane AND smoothing the hourly WAL burst that spikes replica replay lag.
+  LEAST() never downgrades a pending real-time row. DEFAULTs keep the zero-arg call
+  shape working (manual burn-downs, old code during rollout).
+
+  Part 3: the drain claims ORDER BY prio, seq - fast lane first, FIFO within a lane.
+  Everything else is byte-for-byte 1.7.11. The (key, seq) end-DELETE guard already
+  covers prio flips: every path that changes prio also bumps seq in the same DO UPDATE,
+  so "prio changed but seq unchanged" cannot occur.
 
   CREATE OR REPLACE (no DROP) keeps the existing triggers bound to the enqueue functions.
 */
@@ -23,7 +29,8 @@ BEGIN
         CASE TG_OP WHEN 'DELETE' THEN OLD.asset_id ELSE NEW.asset_id END
     )
     ON CONFLICT (asset_contract, asset_id) WHERE asset_id IS NOT NULL
-        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq');
+        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
+                      prio = 0;
 
     RETURN NULL;
 END
@@ -37,7 +44,8 @@ BEGIN
         CASE TG_OP WHEN 'DELETE' THEN OLD.offer_id ELSE NEW.offer_id END
     )
     ON CONFLICT (asset_contract, offer_id) WHERE offer_id IS NOT NULL
-        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq');
+        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
+                      prio = 0;
 
     RETURN NULL;
 END
@@ -51,7 +59,8 @@ BEGIN
         CASE TG_OP WHEN 'DELETE' THEN OLD.sale_id ELSE NEW.sale_id END
     )
     ON CONFLICT (market_contract, sale_id) WHERE sale_id IS NOT NULL
-        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq');
+        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
+                      prio = 0;
 
     RETURN NULL;
 END
@@ -67,30 +76,37 @@ BEGIN
             CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN OLD.account END
         ])
     ON CONFLICT (market_contract, sale_id) WHERE sale_id IS NOT NULL
-        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq');
+        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
+                      prio = 0;
 
     RETURN NULL;
 END
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE FUNCTION refresh_atomicmarket_sales_filters_price() RETURNS VOID
+-- Signature change (new args) -> DROP first; DEFAULTs keep the zero-arg call shape valid.
+DROP FUNCTION IF EXISTS refresh_atomicmarket_sales_filters_price();
+CREATE FUNCTION refresh_atomicmarket_sales_filters_price(slice INT DEFAULT 0, total_slices INT DEFAULT 1) RETURNS VOID
 LANGUAGE sql
 AS $$
-    INSERT INTO atomicmarket_sales_filters_updates (market_contract, sale_id)
-        SELECT market_contract, sale_id
+    INSERT INTO atomicmarket_sales_filters_updates (market_contract, sale_id, prio)
+        SELECT market_contract, sale_id, 1
         FROM atomicmarket_sales_filters
         WHERE sale_state = 1 /* listing */
             AND variable_price
+            -- stable, stateless slicing: each sale_id belongs to exactly one slice, so
+            -- calls for slice 0..total_slices-1 cover the full set exactly once per cycle.
+            -- NULLIF: a misconfigured manual call with total_slices = 0 degrades to a
+            -- no-op (NULL predicate) instead of division-by-zero; an out-of-range slice
+            -- is naturally empty. The filler's env parsing only produces values >= 1.
+            AND sale_id % NULLIF(total_slices, 0) = slice
     ON CONFLICT (market_contract, sale_id) WHERE sale_id IS NOT NULL
-        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq')
+        DO UPDATE SET seq = nextval('atomicmarket_sales_filters_updates_seq'),
+                      -- never downgrade a pending real-time (prio 0) row
+                      prio = LEAST(atomicmarket_sales_filters_updates.prio, 1::SMALLINT)
 $$;
 
--- The drain. Identical to 1.6.3 EXCEPT: the three claim stages SELECT (key, seq) instead
--- of DELETE...RETURNING (no queue lock held across the recompute), and three
--- seq-version-guarded end-DELETEs run at the very end (release). The fan-out loop and the
--- recompute CTE block are byte-for-byte unchanged, preserving the 1.3.3-identical
--- atomicmarket_sales_filters output guarantee.
-DROP FUNCTION IF EXISTS update_atomicmarket_sales_filters;
+-- The drain. Byte-for-byte 1.7.11 EXCEPT the three claim stages ORDER BY prio, seq
+-- (fast lane first, FIFO within a lane).
 CREATE OR REPLACE FUNCTION update_atomicmarket_sales_filters(batch_size INT DEFAULT 5000) RETURNS INT
 LANGUAGE plpgsql
 AS $$
@@ -121,30 +137,31 @@ BEGIN
     CREATE TEMPORARY TABLE sales_to_update (sale_id BIGINT NOT NULL, market_contract TEXT NOT NULL, PRIMARY KEY (sale_id, market_contract));
 
     -- CLAIM (no lock): snapshot up to batch_size rows of each type with their seq.
-    -- ORDER BY seq drains FIFO-ish and makes the batch deterministic; a row re-enqueued
-    -- mid-batch gets a higher seq and is naturally claimed later. The function RETURNS rows
-    -- DELETED (not claimed) - see the end-DELETE - so the caller's loop terminates when a
-    -- batch makes no removal progress (e.g. only perpetually-re-touched keys remain),
-    -- rather than spinning on claimed-but-never-deleted rows.
+    -- ORDER BY prio, seq drains the real-time lane first (FIFO within a lane) and makes
+    -- the batch deterministic; a row re-enqueued mid-batch gets a higher seq and is
+    -- naturally claimed later. The function RETURNS rows DELETED (not claimed) - see the
+    -- end-DELETE - so the caller's loop terminates when a batch makes no removal progress
+    -- (e.g. only perpetually-re-touched keys remain), rather than spinning on
+    -- claimed-but-never-deleted rows.
     INSERT INTO _del_assets
         SELECT asset_contract, asset_id, seq
         FROM atomicmarket_sales_filters_updates
         WHERE asset_id IS NOT NULL
-        ORDER BY seq
+        ORDER BY prio, seq
         LIMIT batch_size;
 
     INSERT INTO _del_sales
         SELECT market_contract, sale_id, seq
         FROM atomicmarket_sales_filters_updates
         WHERE sale_id IS NOT NULL
-        ORDER BY seq
+        ORDER BY prio, seq
         LIMIT batch_size;
 
     INSERT INTO _del_offers
         SELECT asset_contract, offer_id, seq
         FROM atomicmarket_sales_filters_updates
         WHERE offer_id IS NOT NULL
-        ORDER BY seq
+        ORDER BY prio, seq
         LIMIT batch_size;
 
     -- Fan out the consumed asset changes to the sales that reference them, bucketed into
@@ -307,6 +324,8 @@ BEGIN
     -- RELEASE (the only place the queue is locked, ~ms at the very end): delete the claimed
     -- rows whose seq is UNCHANGED since the claim. A row re-enqueued mid-batch has a higher
     -- seq (the DO UPDATE bump above) and is left for the next batch -> no lost updates.
+    -- A mid-batch prio change always comes with a seq bump, so the (key, seq) guard also
+    -- covers lane upgrades: the row survives and reprocesses in its new lane.
     DELETE FROM atomicmarket_sales_filters_updates u
         USING _del_assets d
         WHERE u.asset_id IS NOT NULL

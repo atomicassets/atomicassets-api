@@ -106,3 +106,16 @@ export function respondApiError(res: express.Response, error: Error): express.Re
 
     return res.status(500).json({success: false, message: 'Internal Server Error'});
 }
+
+// Express's 'trust proxy' setting. `true` historically meant "trust one hop"
+// here (NOT Express's own `true`, which trusts everything and lets clients
+// spoof X-Forwarded-For). Hop counts, named subnets and CIDR lists pass
+// through verbatim so deployments behind multiple proxy layers (e.g.
+// Cloudflare → ingress) can resolve the real client IP - with a CIDR list
+// Express skips all trusted trailing X-Forwarded-For hops, so req.ip (and
+// therefore rate-limit buckets) is the actual client, not the closest proxy.
+export type TrustProxyConfig = boolean | number | string | string[];
+
+export function resolveTrustProxy(value: TrustProxyConfig): boolean | number | string | string[] {
+    return value === true ? 1 : value;
+}

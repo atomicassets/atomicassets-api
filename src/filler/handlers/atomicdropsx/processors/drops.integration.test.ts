@@ -40,14 +40,14 @@ function createMockCore(overrides: Record<string, any> = {}): any {
 
 function createMockModuleLoader(): ModuleLoader {
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore — test-only construction matches atomicmarket pattern.
+    // @ts-ignore - test-only construction matches atomicmarket pattern.
     loader.modules = [];
     // @ts-ignore
     loader.names = [];
     return loader;
 }
 
-/** Minimal lognewdrop payload — tests override fields they care about. */
+/** Minimal lognewdrop payload - tests override fields they care about. */
 function buildLogNewDrop(overrides: Partial<LogNewDropActionData> & { drop_id: string }): LogNewDropActionData {
     return {
         collection_name: 'testcol11111',
@@ -246,7 +246,7 @@ describe('atomicdropsx dropsProcessor', () => {
         ));
 
         const block2 = createBlock({ block_num: block1.block_num + 1 });
-        // No max_claimable key — mirrors the WAX setdroplimit ABI.
+        // No max_claimable key - mirrors the WAX setdroplimit ABI.
         const data: SetDropLimitActionData = {
             drop_id: '9008',
             account_limit: 6,
@@ -264,7 +264,7 @@ describe('atomicdropsx dropsProcessor', () => {
         expect(res.rowCount).to.equal(1);
         expect(Number(res.rows[0].account_limit)).to.equal(6);
         expect(Number(res.rows[0].account_limit_cooldown)).to.equal(0);
-        // Preserved from lognewdrop — setdroplimit must NOT clobber it to null/0.
+        // Preserved from lognewdrop - setdroplimit must NOT clobber it to null/0.
         expect(Number(res.rows[0].max_claimable)).to.equal(100);
     });
 
@@ -292,7 +292,7 @@ describe('atomicdropsx dropsProcessor', () => {
             [DROPS_CONTRACT, '9007'],
         );
         expect(res.rowCount).to.equal(1);
-        // WAX requires both fields in setdroptimes — both update unconditionally.
+        // WAX requires both fields in setdroptimes - both update unconditionally.
         expect(Number(res.rows[0].start_time)).to.equal(2000);
         expect(Number(res.rows[0].end_time)).to.equal(8000);
     });

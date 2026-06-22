@@ -52,7 +52,7 @@ function stubContext(captures: CapturedQuery[]): AtomicAssetsContext {
 const hasTemplateJoin = (captures: CapturedQuery[]): boolean =>
     captures.some(c => /LEFT JOIN atomicassets_templates/i.test(c.text));
 
-describe('getBurnsAction — burnsQueryNeedsTemplateJoin gate', () => {
+describe('getBurnsAction - burnsQueryNeedsTemplateJoin gate', () => {
     // `list[name]` / `list[id]` filter types (used by owner, collection_name,
     // schema_name, asset_id, etc.) are validated by the `'list'` validation
     // type that's registered lazily by initListValidator() at server boot,
@@ -105,14 +105,14 @@ describe('getBurnsAction — burnsQueryNeedsTemplateJoin gate', () => {
         });
 
         it('match_immutable_name (asset.immutable_data->>name)', async () => {
-            // utils.ts:141-146 — runs against asset.immutable_data, not template.
+            // utils.ts:141-146 - runs against asset.immutable_data, not template.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ match_immutable_name: 'foo' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'match_immutable_name is asset-side, no JOIN').to.equal(false);
         });
 
         it('match_mutable_name (asset.mutable_data->>name)', async () => {
-            // utils.ts:148-153 — runs against asset.mutable_data, not template.
+            // utils.ts:148-153 - runs against asset.mutable_data, not template.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ match_mutable_name: 'foo' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'match_mutable_name is asset-side, no JOIN').to.equal(false);
@@ -133,35 +133,35 @@ describe('getBurnsAction — burnsQueryNeedsTemplateJoin gate', () => {
 
     describe('triggers the templates JOIN (correctness path: filter would be silently dropped)', () => {
         it('match (template.immutable_data->>name)', async () => {
-            // utils.ts:161-166 — gated behind `if (options.templateTable)`.
+            // utils.ts:161-166 - gated behind `if (options.templateTable)`.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ match: 'foo' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'match needs template join').to.equal(true);
         });
 
         it('search (trigram on template.immutable_data->>name)', async () => {
-            // utils.ts:168-172 — gated behind `if (options.templateTable)`.
+            // utils.ts:168-172 - gated behind `if (options.templateTable)`.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ search: 'foo' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'search needs template join').to.equal(true);
         });
 
         it('is_transferable=true', async () => {
-            // utils.ts:259-265 — `if (options.templateTable && typeof args.is_transferable === 'boolean')`.
+            // utils.ts:259-265 - `if (options.templateTable && typeof args.is_transferable === 'boolean')`.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ is_transferable: 'true' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'is_transferable needs template join').to.equal(true);
         });
 
         it('is_burnable=false', async () => {
-            // utils.ts:267-273 — `if (options.templateTable && typeof args.is_burnable === 'boolean')`.
+            // utils.ts:267-273 - `if (options.templateTable && typeof args.is_burnable === 'boolean')`.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ is_burnable: 'false' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'is_burnable needs template join').to.equal(true);
         });
 
         it('template_data.X (untyped)', async () => {
-            // utils.ts:113, 157-159 — templateCondition merges template_data into template.immutable_data check.
+            // utils.ts:113, 157-159 - templateCondition merges template_data into template.immutable_data check.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ 'template_data.rarity': 'rare' }, stubContext(captures));
             expect(hasTemplateJoin(captures), 'template_data.* needs template join').to.equal(true);
@@ -185,8 +185,8 @@ describe('getBurnsAction — burnsQueryNeedsTemplateJoin gate', () => {
             expect(hasTemplateJoin(captures), 'template_data:bool.* needs template join').to.equal(true);
         });
 
-        it('data.X (untyped) — preserves pre-1.6.1 semantics (filters template when joined, asset when not)', async () => {
-            // utils.ts:113 vs :117-119 — `data.X` semantically switches table.
+        it('data.X (untyped) - preserves pre-1.6.1 semantics (filters template when joined, asset when not)', async () => {
+            // utils.ts:113 vs :117-119 - `data.X` semantically switches table.
             // Gate triggers the join to preserve the historical result set.
             const captures: CapturedQuery[] = [];
             await getBurnsAction({ 'data.rarity': 'rare' }, stubContext(captures));

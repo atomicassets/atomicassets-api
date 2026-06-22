@@ -30,7 +30,7 @@ SELECT
            AND r.pack_id = pack.pack_id
        ) roll
     ) AS rolls,
-    -- Match on the AtomicAssets contract too — multiple atomicassets
+    -- Match on the AtomicAssets contract too - multiple atomicassets
     -- contracts can coexist in the DB and collection_name alone is not
     -- unique across them.
     (SELECT row_to_json(c.*)

@@ -4,7 +4,7 @@
     "port": 5432,
     "user": "root",
     "password": "changeme",
-    "database": "root"
+    "database": "atomicassets"
   },
   "redis": {
     "host": "127.0.0.1",

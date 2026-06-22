@@ -87,7 +87,7 @@ export default class Filler {
      * chain head. Scheduled aggregators (atomicassets/atomicmarket mints,
      * sales filters) gate themselves on this so they don't pile concurrent
      * UPDATEs on hot tables while the filler is already saturating its
-     * DataSource queue catching up. 200 blocks ≈ 100 s of WAX time — past
+     * DataSource queue catching up. 200 blocks ≈ 100 s of WAX time - past
      * normal reversible-window jitter (~50 blocks) but close enough to
      * resume aggregator runs as soon as the backlog clears.
      *
@@ -105,7 +105,7 @@ export default class Filler {
      * (sales filters, mints). Returns true while the reader is catching up so
      * those jobs defer and the reader keeps DB/block-write priority during
      * bursts and post-restart catch-up. Gates ON above DRAIN_GATE_STOP_BLOCKS,
-     * OFF below DRAIN_GATE_RESUME_BLOCKS — the hysteresis band avoids flapping
+     * OFF below DRAIN_GATE_RESUME_BLOCKS - the hysteresis band avoids flapping
      * the drain on/off while the reader hovers near a single threshold.
      *
      * Re-introduces the pre-1.6.3 gate (removed in bdebfd2a). Safe again because
@@ -198,7 +198,7 @@ export default class Filler {
 
             // Fast self-heal: if the consumer queue died on a non-recoverable
             // error it will never process another block, so don't wait out the
-            // multi-minute stall timer below — restart the pod immediately. Uses
+            // multi-minute stall timer below - restart the pod immediately. Uses
             // the same failure channel as the stall path (process.send → master
             // → exit → K8s restart; CrashLoopBackOff throttles a persistent
             // failure). Cuts recovery from up to ~10 min to ~5s + restart.

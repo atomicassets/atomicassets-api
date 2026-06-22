@@ -45,7 +45,7 @@ export enum ClaimState {
     CANCELLED = 2,
     // PICKED_UP: claimunboxed fired; user has the NFTs (atomicassets mintasset).
     // Note: claimunboxed may fire multiple times if the user picks up rolls
-    // incrementally — state stays PICKED_UP from the first call onward.
+    // incrementally - state stays PICKED_UP from the first call onward.
     PICKED_UP = 3,
 }
 
@@ -82,7 +82,7 @@ export default class AtomicPacksHandler extends ContractHandler {
 
     static async upgrade(client: PoolClient, version: string): Promise<void> {
         if (version === '1.5.1') {
-            // Re-run the view DDL — the column list changed (template_id
+            // Re-run the view DDL - the column list changed (template_id
             // added to result_assets json_agg). CREATE OR REPLACE works
             // because no column types changed in the SELECT signature.
             await client.query(

@@ -32,7 +32,7 @@ export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, D
 // 1.7.6 retune (measured on WAX mainnet): batch 5000 had grown past the 2048MB
 // work_mem (below), so the recompute spilled to temp files (IO/BuffileWrite,
 // ~20-26s/call) instead of running in memory. Sizing the batch to stay WITHIN
-// work_mem keeps each call in memory (the original design intent) — we shrink
+// work_mem keeps each call in memory (the original design intent) - we shrink
 // the batch rather than raise work_mem because work_mem is per-operation and
 // the 6 fillers' DB pods vary in size (a smaller batch lowers memory pressure
 // everywhere; a larger work_mem would raise it). Budget raised 30s->50s to use
@@ -42,7 +42,7 @@ const SALES_FILTERS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_BATC
 const SALES_FILTERS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_DRAIN_BUDGET_MS', 50_000);
 // Per-batch statement_timeout for the drain query. This is the EFFECTIVE cap on
 // a single update_atomicmarket_sales_filters() call. It is applied via
-// `SET LOCAL` inside each batch's transaction (see below) — NOT via the pool's
+// `SET LOCAL` inside each batch's transaction (see below) - NOT via the pool's
 // connection-level statement_timeout, which does not survive PgBouncer
 // transaction pooling (the server backend is shared between transactions, so a
 // connection-level SET is silently dropped). 2026-05-29 incident: the drain
@@ -55,14 +55,14 @@ const SALES_FILTERS_STATEMENT_TIMEOUT_MS = positiveIntEnv('ATOMICMARKET_SALES_FI
 // recompute in memory. Applied via `SET LOCAL` (same PgBouncer-safe, txn-scoped
 // reason as statement_timeout) on the drain's single longRunningPool connection.
 //
-// 1.7.7 retune: measured on WAX mainnet at batch=2500 — the recompute's working
+// 1.7.7 retune: measured on WAX mainnet at batch=2500 - the recompute's working
 // set is ~3.5 GB, so at the old 2048MB default every call held 2 GB in memory and
 // spilled ~1.5 GB to temp (pgsql_tmp climbing to ~1.5 GB per ~30s call). Raised to
 // 5120 MB to hold it in memory + headroom. Safe to size this large: the recompute
 // runs SINGLE-THREADED (no parallel workers observed) so this is a hard per-call
 // ceiling (no ×workers fan-out), the pool is max:1 (one such query at a time), and
 // the primary's memory is dominated by reclaimable page cache (raising work_mem
-// displaces cache, not anon — no OOM risk). Smaller chains never approach the
+// displaces cache, not anon - no OOM risk). Smaller chains never approach the
 // ceiling (work_mem is a cap, only used if the operation needs it).
 const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 5120);
 // Per-run work_mem (MB) for the hourly update_atomicmarket_template_prices() recompute.
@@ -79,8 +79,18 @@ const TEMPLATE_PRICES_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES
 // longRunningPool (max:1, so runs never overlap), and (c) the job is now reader-gated
 // (shouldDeferDrain) so it yields block-write priority while the reader is catching up.
 // The 300s statement_timeout is a worst-case CEILING, not the typical run time, so the gate
-// — not the interval — is what guarantees it can't starve the reader. Env-tunable.
+// - not the interval - is what guarantees it can't starve the reader. Env-tunable.
 const TEMPLATE_PRICES_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S', 5 * 60);
+
+// Sliced cadence for refresh_atomicmarket_sales_filters_price(slice, total_slices).
+// 1.7.13: the former hourly single call bulk-enqueued every variable_price listing
+// (~235k rows on WAX) into the drain queue in one shot - even with the prio-1 bulk
+// lane that's one huge enqueue txn and a WAL/recompute burst that spikes replica
+// replay lag. Spreading it over SLICES calls per cycle (stable sale_id modulo, one
+// slice per INTERVAL_S tick) keeps the bulk lane bounded (~235k/12 ≈ 20k per slice)
+// and flattens the burst, at the same total hourly refresh coverage.
+const SALES_FILTERS_PRICE_REFRESH_SLICES = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_PRICE_REFRESH_SLICES', 12);
+const SALES_FILTERS_PRICE_REFRESH_INTERVAL_S = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_PRICE_REFRESH_INTERVAL_S', 5 * 60);
 
 // Bounded mint backfill (update_atomicmarket_{sale,buyoffer,auction}_mints).
 // Each call is a single set-based UPDATE over at most BATCH_SIZE unmint-ed rows
@@ -106,7 +116,7 @@ interface DrainPool {
  *
  * Why the transaction + SET LOCAL (and not the pool's statement_timeout):
  *  - Through PgBouncer transaction pooling, a connection-level statement_timeout
- *    does not stick — so the drain inherited the role default (30 s) and timed
+ *    does not stick - so the drain inherited the role default (30 s) and timed
  *    out under load (2026-05-29 incident).
  *  - statement_timeout is armed when the outer statement starts, so raising it
  *    from INSIDE update_atomicmarket_sales_filters() cannot extend the running
@@ -133,7 +143,7 @@ async function drainOneBatch(
             // commit is safe here. The block reader already runs synchronous_commit
             // = off (src/filler/database.ts), but the drain uses its own raw
             // BEGIN…COMMIT on longRunningPool and inherits the server default
-            // (`on`) — so every batch was paying an fsync the reader does not.
+            // (`on`) - so every batch was paying an fsync the reader does not.
             // Removing it cuts per-batch commit cost and the WAL-flush contention
             // the drain imposed on the shared volume during a burst.
             await client.query('SET LOCAL synchronous_commit = off');
@@ -155,7 +165,7 @@ async function drainOneBatch(
  * (same PgBouncer-safe, txn-scoped rationale; see drainOneBatch). For heavy
  * aggregations (PERCENTILE_DISC / hash-agg / sorts) this keeps the working set in
  * memory instead of spilling to pgsql_tmp and going IO-bound against the reader's
- * block-writes — the failure class found in the 2026-06 DB write-spill audit.
+ * block-writes - the failure class found in the 2026-06 DB write-spill audit.
  * Use on longRunningPool (max:1) so the per-run work_mem ceiling is bounded.
  */
 export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: number): Promise<void> {
@@ -188,7 +198,7 @@ export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: nu
  * that falls behind mid-budget reclaims priority immediately instead of waiting
  * out the whole budget. This matters because a live (committed) batch is ~36s on
  * WAX (WAL + GIN index maintenance on the 46M-row filter table), and the gate
- * was previously only evaluated at tick start (runGatedDrain) — so a large budget
+ * was previously only evaluated at tick start (runGatedDrain) - so a large budget
  * starved the block reader 1:1 for its whole window and tripped the watchdog
  * (2026-05-31). Checking it per batch lets the budget be large (fast draining
  * while the reader is idle) AND reader-safe (yield the instant blocksUntilHead
@@ -218,7 +228,7 @@ interface MintsPool {
     query(sql: string, params?: any[]): Promise<{ rows: Array<{ updated?: number | string }> }>;
 }
 
-// fnName is interpolated into the SQL (identifier context — can't be a bind
+// fnName is interpolated into the SQL (identifier context - can't be a bind
 // param), so it MUST come from this fixed allowlist. The call sites pass
 // constants; the guard in drainAtomicmarketMints makes that safe-by-construction
 // and rejects any accidental/untrusted value rather than risk SQL injection.
@@ -233,14 +243,14 @@ const MINT_BACKFILL_FUNCTIONS = new Set([
  * Backfill template_mint via the bounded mint FUNCTIONs in small batches.
  *
  * Each `SELECT <fnName>($1,$2,$3)` runs one set-based UPDATE over at most
- * batchSize unmint-ed rows (autocommit — the function is not wrapped in an
+ * batchSize unmint-ed rows (autocommit - the function is not wrapped in an
  * explicit txn, and unlike the sales-filter drain it needs no SET LOCAL because
  * small batches finish well under the statement_timeout) and returns the rows
  * resolved. We loop until a batch resolves 0 rows or the budget elapses.
  *
  * Stop on `updated === 0`, NOT on `updated < batchSize`: the function's HAVING
  * guard skips rows whose assets aren't minted yet, so a batch can resolve fewer
- * than batchSize while resolvable work remains — but when it resolves 0, nothing
+ * than batchSize while resolvable work remains - but when it resolves 0, nothing
  * is currently resolvable and the next 60s tick re-probes. `fnName` is checked
  * against MINT_BACKFILL_FUNCTIONS because it is interpolated into the SQL.
  * `shouldYield` is checked between batches (same reader-priority rationale as
@@ -274,10 +284,20 @@ export async function drainAtomicmarketMints(
 }
 
 /**
+ * Which slice of the sliced bulk price refresh is due now. Clock-derived rather
+ * than a mutable counter: stateless across restarts (no missed/double-slice
+ * bookkeeping), and a tick skipped by the reader-priority gate simply re-enqueues
+ * on the next full cycle - coverage self-heals. Deterministic for tests.
+ */
+export function priceRefreshSlice(nowMs: number, intervalS: number, totalSlices: number): number {
+    return Math.floor(nowMs / (intervalS * 1000)) % totalSlices;
+}
+
+/**
  * Shared reader-priority wrapper for the maintenance drain jobs (sales filters +
  * the 4 mint backfills). Enforces the ordering the robustness fix depends on:
  *
- *   1. defer if the reader is catching up  (Filler.shouldDeferDrain — Layer 1)
+ *   1. defer if the reader is catching up  (Filler.shouldDeferDrain - Layer 1)
  *   2. else skip if there's nothing queued  (cheap EXISTS probe)
  *   3. else run the bounded drain
  *
@@ -305,7 +325,7 @@ export async function runGatedDrain(
 // literal from the same map, so neither interpolation in mintsWorkProbeSql can
 // carry untrusted input. template_buyoffers needs `AND state = 2`: only SOLD
 // template_buyoffers ever own an nft, so the probe must match the drain
-// FUNCTION's own state filter — otherwise it matches the millions of
+// FUNCTION's own state filter - otherwise it matches the millions of
 // never-mintable non-SOLD nulls (the gate would never report no-work) and can't
 // use the atomicmarket_template_buyoffers_missing_mint partial index.
 export const MINTS_WORK_FILTER = {
@@ -620,7 +640,7 @@ export default class AtomicMarketHandler extends ContractHandler {
         // Observed on WAX mainnet where update_atomicmarket_sales_filters() can run >5s and
         // every subsequent job call failed with "timeout exceeded when trying to connect".
         const longRunningPool: Pool = this.connection.database.createPool({
-            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min — headroom over statement_timeout
+            connectionTimeoutMillis: 10 * 60 * 1_000, // 10 min - headroom over statement_timeout
             statement_timeout: 300_000, // 5 min
             max: 1,
         });
@@ -642,9 +662,9 @@ export default class AtomicMarketHandler extends ContractHandler {
         // Reader-priority gate + EXISTS probe + bounded drain are sequenced by
         // runGatedDrain (defer while the reader is catching up so it keeps
         // block-write priority during bursts / post-restart catch-up; the deduped
-        // queue stays bounded meanwhile — see Filler.shouldDeferDrain). The probe
+        // queue stays bounded meanwhile - see Filler.shouldDeferDrain). The probe
         // SQL (incl. each table's trusted predicate) is built by the exported,
-        // unit-tested mintsWorkProbeSql — see MINTS_WORK_FILTER for why
+        // unit-tested mintsWorkProbeSql - see MINTS_WORK_FILTER for why
         // template_buyoffers needs `AND state = 2`.
         const mintsHasWork = (table: MintsWorkTable) => async (): Promise<boolean> => {
             const probe = await this.connection.database.query(
@@ -698,7 +718,7 @@ export default class AtomicMarketHandler extends ContractHandler {
         // tables saturated Cinder I/O on eca-wax-mainnet-cluster. The proc is
         // event-driven (reads atomicmarket_sales_filters_updates queue) but
         // still pays temp-table + CTE-plan cost per empty-queue run. The probe
-        // races harmlessly with the proc's own DELETE on the queue — a late
+        // races harmlessly with the proc's own DELETE on the queue - a late
         // insertion between probe and call just falls through to the proc,
         // which returns quickly if the queue is drained by then.
         // Drain the queue in bounded batches. update_atomicmarket_sales_filters
@@ -709,7 +729,7 @@ export default class AtomicMarketHandler extends ContractHandler {
         //
         // Reader-priority gate (re-added 1.6.6, via runGatedDrain): defer the drain
         // while the reader is catching up so it keeps block-write priority during
-        // bursts and post-restart catch-up — the contention that repeatedly knocked
+        // bursts and post-restart catch-up - the contention that repeatedly knocked
         // the reader behind and wedged it. The gate was REMOVED in 1.6.3 because the
         // then-unbounded drain + gate doom-looped (queue grew unbounded while
         // gated). 1.6.4 dedup (unique partial indexes) now caps
@@ -729,14 +749,25 @@ export default class AtomicMarketHandler extends ContractHandler {
                     SALES_FILTERS_STATEMENT_TIMEOUT_MS,
                     SALES_FILTERS_WORK_MEM_MB,
                     // yield between batches the moment the reader falls behind (not just
-                    // at tick start) so a large budget stays reader-safe — the drain
+                    // at tick start) so a large budget stays reader-safe - the drain
                     // releases priority instantly instead of running out its whole window
                     () => this.filler.shouldDeferDrain(),
                 ),
             ));
 
-        this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', 60 * 60, JobQueuePriority.LOW, async () => {
-            await longRunningPool.query('SELECT refresh_atomicmarket_sales_filters_price()');
+        this.filler.jobs.add('refresh_atomicmarket_sales_filters_price', SALES_FILTERS_PRICE_REFRESH_INTERVAL_S, JobQueuePriority.LOW, async () => {
+            // Reader-priority gate (same rationale as update_atomicmarket_template_prices'
+            // hourly->5min move in 1.7.8): at the shorter cadence, skip the tick while the
+            // reader is catching up. The clock-derived slice means a skipped slice is
+            // simply refreshed on the next full cycle.
+            if (this.filler.shouldDeferDrain()) {
+                return;
+            }
+            const slice = priceRefreshSlice(Date.now(), SALES_FILTERS_PRICE_REFRESH_INTERVAL_S, SALES_FILTERS_PRICE_REFRESH_SLICES);
+            await longRunningPool.query(
+                'SELECT refresh_atomicmarket_sales_filters_price($1, $2)',
+                [slice, SALES_FILTERS_PRICE_REFRESH_SLICES],
+            );
         });
 
         this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {

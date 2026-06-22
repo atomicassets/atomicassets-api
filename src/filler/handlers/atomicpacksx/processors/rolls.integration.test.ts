@@ -36,7 +36,7 @@ function createMockCore(overrides: Record<string, any> = {}): any {
 
 function createMockModuleLoader(): ModuleLoader {
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore — test-only construction matches atomicmarket pattern.
+    // @ts-ignore - test-only construction matches atomicmarket pattern.
     loader.modules = [];
     // @ts-ignore
     loader.names = [];

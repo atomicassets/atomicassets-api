@@ -12,9 +12,10 @@ import { MetricsCollectorHandler } from '../metrics/handler';
 import { Registry } from 'prom-client';
 import { setAutoVacSettings } from '../filler/set-autovac-settings';
 import { retryTransient } from '../utils/retry';
+import { configFile } from '../utils/config-path';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const readerConfigs: IReaderConfig[] = require('/home/node/app/config/readers.config.json');
+const readerConfigs: IReaderConfig[] = require(configFile('readers.config.json'));
 
 // In-memory block history for computing sync rate per reader.
 // Each /status call appends a {block, time} snapshot; entries older than
@@ -26,7 +27,7 @@ let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} 
 
 try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    connectionConfig = require('/home/node/app/config/connections.config.json');
+    connectionConfig = require(configFile('connections.config.json'));
 } catch {
     logger.warn('No connections.config.json found. Falling back to environment variables');
 }
@@ -38,8 +39,8 @@ if (!readerConfigs || readerConfigs.length === 0) {
 }
 
 // Safety net mirroring bin/server.ts. Without these, a single stray rejected
-// promise — e.g. an in-flight chain HTTP fetch losing its connection while the
-// node pod restarts — terminates the process (Node's default for unhandled
+// promise - e.g. an in-flight chain HTTP fetch losing its connection while the
+// node pod restarts - terminates the process (Node's default for unhandled
 // rejections), crash-looping the reader. Log and stay up instead.
 process.on('unhandledRejection', error => {
     logger.error('Unhandled Rejection', error);
@@ -56,7 +57,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     const connection = new ConnectionManager(connectionConfig);
 
     (async (): Promise<void> => {
-        // The node (and DB/redis) can be transiently unreachable at boot — the
+        // The node (and DB/redis) can be transiently unreachable at boot - the
         // SHIP/RPC pod may be mid-restart even after the wait-for-ship init gate.
         // Wait it out with bounded backoff (~5 min) instead of letting an
         // ECONNREFUSED crash-loop the whole filler.
@@ -194,7 +195,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
 
     process.on('SIGTERM', () => {
-        logger.info('Primary received SIGTERM — shutting down workers');
+        logger.info('Primary received SIGTERM - shutting down workers');
 
         server.close();
 
@@ -211,7 +212,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     let filler: Filler | null = null;
 
     process.on('SIGTERM', async () => {
-        logger.info(`Worker ${process.pid} received SIGTERM — stopping filler`);
+        logger.info(`Worker ${process.pid} received SIGTERM - stopping filler`);
 
         if (filler) {
             await filler.stopFiller();

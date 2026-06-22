@@ -3,7 +3,7 @@
 
   Redefines the three mint-backfill PROCEDUREs as counting FUNCTIONs (one
   bounded set-based UPDATE per call, RETURNS rows resolved) so the filler can
-  loop them in small batches within a time budget — fixing the recurring 57014
+  loop them in small batches within a time budget - fixing the recurring 57014
   on the default-pool 30s statement_timeout. See 1.6.5/atomicmarket.sql.
 
   Metadata-only DDL (DROP PROCEDURE + CREATE FUNCTION); no index work, so no

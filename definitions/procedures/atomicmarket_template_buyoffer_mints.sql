@@ -3,7 +3,7 @@
 -- batches within a time budget (drainAtomicmarketMints). Keeps each call well
 -- under the 30s statement_timeout. See definitions/migrations/1.6.5 for the
 -- sale/buyoffer/auction conversion this mirrors; template_buyoffers was missed
--- by 1.6.5 and was never wired into the drain loop at all — finished in 1.7.5.
+-- by 1.6.5 and was never wired into the drain loop at all - finished in 1.7.5.
 -- Only SOLD (state = 2) template_buyoffers ever own an nft, so that is the only
 -- state with a mint to resolve (matches the atomicmarket_template_buyoffers_missing_mint
 -- partial index).

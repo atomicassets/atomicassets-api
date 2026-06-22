@@ -52,7 +52,7 @@ export default class StateReceiver {
     // (see consumer()). It's a known-dead state: the queue is cleared+paused and
     // no blocks will ever process again. The filler watchdog polls this and exits
     // immediately for a pod restart, instead of waiting out the multi-minute
-    // "No blocks processed" stall timer (2026-06-01 incident — recovery took
+    // "No blocks processed" stall timer (2026-06-01 incident - recovery took
     // ~10 min because the dead queue only surfaced via the time-based watchdog).
     queueStopped = false;
 
@@ -142,7 +142,7 @@ export default class StateReceiver {
         if (prefetch < minConfirm) {
             const override = Math.max(1, Math.floor(prefetch / 2));
             logger.warn(
-                `ship_prefetch_blocks (${prefetch}) < ship_min_block_confirmation (${minConfirm}) — ` +
+                `ship_prefetch_blocks (${prefetch}) < ship_min_block_confirmation (${minConfirm}) - ` +
                 `this will deadlock! Overriding min_block_confirmation to ${override}`
             );
             this.ship.setOptions({ min_block_confirmation: override });
@@ -171,7 +171,7 @@ export default class StateReceiver {
 
     // Codes worth retrying because they're contention-/connection-transient: the
     // same block can succeed on a retry. Deliberately EXCLUDES 57014 (statement
-    // timeout): a timeout is a resource/time verdict, not contention — retrying
+    // timeout): a timeout is a resource/time verdict, not contention - retrying
     // the same batch with the same budget just times out again (wasted attempts).
     // The real lever for 57014 is the writer's raised statement_timeout (see
     // database.ts WRITER_STATEMENT_TIMEOUT_MS); a 57014 that still reaches the

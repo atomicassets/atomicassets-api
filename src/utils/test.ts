@@ -11,7 +11,7 @@ function loadConnectionConfig(): IConnectionsConfig {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         return require('../../config/connections.config.json');
     } catch {
-        // In CI, connections.config.json doesn't exist — use env vars
+        // In CI, connections.config.json doesn't exist - use env vars
         return {
             postgres: {
                 host: process.env.POSTGRES_TEST_HOST || 'localhost',

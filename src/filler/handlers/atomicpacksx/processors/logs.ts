@@ -18,7 +18,7 @@ import {
  *
  * Mirrors the gating pattern in atomicmarket: only registered when
  * args.store_logs is true. WAX action names (claimunboxed, addpackroll,
- * etc.) — there is no logclaim or cancelclaim on WAX.
+ * etc.) - there is no logclaim or cancelclaim on WAX.
  */
 export function logProcessor(core: AtomicPacksHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];

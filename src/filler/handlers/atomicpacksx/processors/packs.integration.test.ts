@@ -32,7 +32,7 @@ function createMockCore(overrides: Record<string, any> = {}): any {
 
 function createMockModuleLoader(): ModuleLoader {
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore — test-only construction matches atomicmarket pattern.
+    // @ts-ignore - test-only construction matches atomicmarket pattern.
     loader.modules = [];
     // @ts-ignore
     loader.names = [];
@@ -51,7 +51,7 @@ function packsRow(overrides: Partial<PacksTableRow> = {}): PacksTableRow {
     };
 }
 
-describe('atomicpacksx packsProcessor (1.6.0 — onContractRow driven)', () => {
+describe('atomicpacksx packsProcessor (1.6.0 - onContractRow driven)', () => {
     let client: Client;
     let processor: DataProcessor;
     let db: ContractDBTransaction;

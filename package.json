@@ -30,9 +30,13 @@
     "test:watch": "mocha --require @swc-node/register --watch --watch-extensions ts 'src/**/*.test.ts' --ignore 'src/**/*.integration.test.ts'",
     "test:coverage": "c8 mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
     "test:coverage:ci": "pnpm test:init-db && c8 mocha --require @swc-node/register --timeout 30000 'src/**/*.test.ts'",
+    "prestart": "[ -f build/bin/server.js ] || pnpm build",
     "start": "node ./build/bin/server.js",
+    "prestart:server": "[ -f build/bin/server.js ] || pnpm build",
     "start:server": "node ./build/bin/server.js",
+    "prestart:filler": "[ -f build/bin/filler.js ] || pnpm build",
     "start:filler": "node ./build/bin/filler.js",
+    "prestart:abiscan": "[ -f build/bin/abiscan.js ] || pnpm build",
     "start:abiscan": "node ./build/bin/abiscan.js",
     "dev": "tsc --watch",
     "dev:server": "tsc && node --trace-warnings ./build/bin/server.js",
@@ -40,8 +44,8 @@
     "dev:abiscan": "tsc && node --trace-warnings ./build/bin/abiscan.js",
     "dev:test:watch": "mocha -r @swc-node/register 'src/**/*.test.ts' --watch --watch-files src/ --reporter min",
     "dev:init-test-db": "tsc && node --trace-warnings ./build/bin/init-test-db.js",
-    "db:schema:init": "tsc && node --trace-warnings ./build/bin/init-schema.js",
-    "db:migrate:up": "tsc && node --trace-warnings ./build/bin/migrate.js"
+    "db:schema:init": "pnpm build && node --trace-warnings ./build/bin/init-schema.js",
+    "db:migrate:up": "pnpm build && node --trace-warnings ./build/bin/migrate.js"
   },
   "dependencies": {
     "@wharfkit/antelope": "^1.1.1",

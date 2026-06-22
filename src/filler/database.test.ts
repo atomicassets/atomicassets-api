@@ -119,7 +119,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             // begin() issues `SET LOCAL statement_timeout = WRITER_STATEMENT_TIMEOUT_MS`
             // so a large catch-up batch can commit instead of hitting the role's 30s
             // cap (57014). Default is 300000ms; assert it's well above 30s and never 0
-            // (0 would DISABLE the timeout — the hang-forever footgun).
+            // (0 would DISABLE the timeout - the hang-forever footgun).
             const {rows} = await transaction.query('SHOW statement_timeout', []);
             // pg returns a human string like '5min'; convert via the setting's ms.
             const ms = (await transaction.query(
@@ -131,10 +131,10 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        it('begin is idempotent — second call is a no-op', async () => {
+        it('begin is idempotent - second call is a no-op', async () => {
             const transaction = await contract.startTransaction(102);
 
-            // Call begin again — should return immediately without error
+            // Call begin again - should return immediately without error
             await transaction.begin();
 
             // Session settings from the first begin should still be active
@@ -148,7 +148,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             const transaction = await contract.startTransaction(103);
             await transaction.commit();
 
-            // New raw connection from pool — synchronous_commit should be server default
+            // New raw connection from pool - synchronous_commit should be server default
             const client = await connection.database.pool.connect();
             try {
                 const {rows} = await client.query('SHOW synchronous_commit');
@@ -236,7 +236,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
                 block_time: 0
             }, ['account', 'block_num']);
 
-            // Buffer should contain the row — all inserts are buffered in catchup
+            // Buffer should contain the row - all inserts are buffered in catchup
             expect(transaction.writeBuffer!.totalRows).to.equal(1);
 
             // Flush via query and verify
@@ -469,7 +469,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
                 block_time: 999
             }, ['account', 'block_num'], ['block_time'], false);
 
-            // Flush and check — block_time should be preserved (100, not 999)
+            // Flush and check - block_time should be preserved (100, not 999)
             const result = await transaction.query(
                 'SELECT block_time FROM contract_abis WHERE account = \'wb_bl_1\' AND block_num = 10080'
             );
@@ -513,7 +513,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             await transaction.abort();
         });
 
-        // The real-bug case stays loud — but with an accurate, located message
+        // The real-bug case stays loud - but with an accurate, located message
         // at the writer boundary instead of a misleading 42804 three layers down.
         it('rejects NULL for a NOT NULL column with a clear, located error', async () => {
             const transaction = await contract.startTransaction();
@@ -625,7 +625,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             // Flush the insert
             await transaction.query('SELECT 1');
 
-            // Non-PK condition — should NOT be buffered
+            // Non-PK condition - should NOT be buffered
             await transaction.update('contract_abis', {
                 block_time: 99
             }, {
@@ -671,7 +671,7 @@ const hasDatabase = !!process.env.POSTGRES_TEST_HOST || (() => {
             // Should be 1 row (merged), not 2
             expect(transaction.updateBuffer!.totalRows).to.equal(1);
 
-            // Flush and verify — last write wins
+            // Flush and verify - last write wins
             const check = await transaction.query(
                 'SELECT block_time FROM contract_abis WHERE account = \'ub_merge_1\' AND block_num = 20020'
             );
@@ -1106,9 +1106,9 @@ describe('UpdateBuffer flush() unit tests', () => {
     it('sorts setColumns for consistent grouping', async () => {
         const buffer = new UpdateBuffer();
 
-        // First add sets {b, a} — stored with sorted keys: [a, b]
+        // First add sets {b, a} - stored with sorted keys: [a, b]
         buffer.add('t', {b: 2, a: 1}, {str: 'id = $1', values: [1]}, ['id']);
-        // Second add sets {a, b} — same sorted keys
+        // Second add sets {a, b} - same sorted keys
         buffer.add('t', {a: 3, b: 4}, {str: 'id = $1', values: [2]}, ['id']);
 
         const calls: any[] = [];
@@ -1276,7 +1276,7 @@ describe('WriteBuffer unit tests', () => {
         buffer.add('t', {id: 1, val: 'first'}, ['id'], 'error', false);
         buffer.add('t', {id: 1, val: 'second'}, ['id'], 'error', false);
 
-        // No dedup for error mode — both rows kept
+        // No dedup for error mode - both rows kept
         expect(buffer.totalRows).to.equal(2);
     });
 
@@ -1355,7 +1355,7 @@ describe('WriteBuffer unit tests', () => {
     it('normalizes row values to sorted key order', async () => {
         const buffer = new WriteBuffer();
 
-        // Add rows with different key orders — should be normalized
+        // Add rows with different key orders - should be normalized
         buffer.add('t', {id: 1, b: 'b1', a: 'a1'}, ['id'], 'update', false);
         buffer.add('t', {a: 'a2', id: 2, b: 'b2'}, ['id'], 'update', false);
 
@@ -1410,7 +1410,7 @@ describe('UpdateBuffer unit tests', () => {
     it('filters PK columns from set values', () => {
         const buffer = new UpdateBuffer();
 
-        // values include PK column 'id' — should be filtered out
+        // values include PK column 'id' - should be filtered out
         buffer.add('t', {id: 1, val: 'a'}, {str: 'id = $1', values: [1]}, ['id']);
 
         expect(buffer.totalRows).to.equal(1);

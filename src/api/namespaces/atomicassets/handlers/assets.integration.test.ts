@@ -403,7 +403,7 @@ describe('AtomicAssets Assets API', () => {
             // Regression guard: getRawAssetsAction's `needsTemplateJoin`
             // forces the LEFT JOIN to atomicassets_templates when
             // sort === 'name', but count requests short-circuit before
-            // any ORDER BY is applied — so the JOIN is pure overhead on
+            // any ORDER BY is applied - so the JOIN is pure overhead on
             // the count path. Production observed the count plan drop
             // from ~11.5M to ~2.7M rows when the JOIN was removed.
             await client.createAsset();

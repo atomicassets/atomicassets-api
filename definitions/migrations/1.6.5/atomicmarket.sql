@@ -17,7 +17,7 @@
   FUNCTION that does ONE bounded, set-based `UPDATE … FROM new_mints` per call
   and RETURNS the rows resolved. The filler loops in small batches within a time
   budget (drainAtomicmarketMints), so every call is sub-second and well under
-  30s — no timeout reliance, no 2D000. One small txn per batch replaces 50k
+  30s - no timeout reliance, no 2D000. One small txn per batch replaces 50k
   per-row commits; the by_sale enqueue semantics are unchanged and the bounded
   sales-filter drain (+ 1.6.4 dedup) absorbs the enqueues.
 

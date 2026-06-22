@@ -41,6 +41,26 @@ try {
         expect(metrics.every(s => res.includes(s))).to.be.true;
     });
 
+    it('emits one backlog series per priority lane', async function () {
+        // The collector deliberately emits no backlog series on databases without
+        // the atomicmarket tables - skip there instead of asserting lanes.
+        const present = await connections.database.query<{ present: boolean }>(
+            'SELECT to_regclass(\'atomicmarket_sales_filters_updates\') IS NOT NULL AS present'
+        );
+        if (!present.rows[0]?.present) {
+            this.skip();
+        }
+
+        const handler = new MetricsCollectorHandler(connections, 'filler', os.hostname());
+
+        const res = await handler.getMetrics(new Registry());
+
+        // Both lanes are always emitted (reset to 0 before set) so an emptied
+        // lane drops to 0 instead of disappearing / holding its last value.
+        expect(res).to.include('prio="0"');
+        expect(res).to.include('prio="1"');
+    });
+
     it('skips the metrics using the collect from option', async () => {
         const handler = new MetricsCollectorHandler(connections, 'filler', os.hostname(), {
             readers: false,
