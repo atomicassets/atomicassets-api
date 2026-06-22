@@ -140,6 +140,62 @@ The server is published on port 9000. The filler and server share the
 `config/` bind mount, so edit the configs on the host and restart the
 services to pick up changes.
 
+### Keeping it running in production
+
+`pnpm start:filler` / `pnpm start:server` run in the foreground and stop when you
+disconnect. For an always-on deployment, supervise both processes so they restart
+on crash and after a reboot. Any of the following work; pick one.
+
+**docker-compose (recommended).** The services above set `restart: unless-stopped`,
+so `docker compose up -d` already gives you supervised, reboot-surviving filler and
+server. Nothing else to configure.
+
+**PM2.** A ready-made `ecosystem.config.cjs` is included (filler + server). Build
+first — PM2 runs `node build/...` directly and does not trigger the `prestart*`
+hooks:
+
+```sh
+pnpm install && pnpm build
+pnpm db:schema:init            # once, before the first start
+pm2 start ecosystem.config.cjs
+pm2 save && pm2 startup        # survive reboots
+pm2 logs                       # follow both processes
+```
+
+Override `CONFIG_DIR`, `FILLER_MAX_MEMORY`, or `SERVER_MAX_MEMORY` by exporting
+them before `pm2 start`.
+
+**systemd.** One unit per process. Build once (`pnpm build`), then create
+`/etc/systemd/system/atomicassets-filler.service`:
+
+```ini
+[Unit]
+Description=atomicassets-api filler
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=atomicassets
+WorkingDirectory=/opt/atomicassets-api
+Environment=CONFIG_DIR=/opt/atomicassets-api/config
+ExecStart=/usr/bin/node --enable-source-maps build/bin/filler.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Copy it to `atomicassets-server.service` with `ExecStart=… build/bin/server.js`,
+then:
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now atomicassets-filler atomicassets-server
+journalctl -u atomicassets-filler -f
+```
+
 ## Configuration
 
 Three JSON files in `config/` drive runtime behaviour:
