@@ -156,7 +156,7 @@ so `docker compose up -d` already gives you supervised, reboot-surviving filler 
 server. Nothing else to configure.
 
 **PM2.** A ready-made `ecosystem.config.cjs` is included (filler + server). Build
-first — PM2 runs `node build/...` directly and does not trigger the `prestart*`
+first, since PM2 runs `node build/...` directly and does not trigger the `prestart*`
 hooks:
 
 ```sh
