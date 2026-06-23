@@ -31,6 +31,7 @@ export function generateTransferSchema(assetSchema: string): any {
             sender_name: {type: 'string'},
             recipient_name: {type: 'string'},
             memo: {type: 'string'},
+            txid: {type: 'string'},
 
             assets: {type: 'array', items: {'$ref': '#/components/schemas/' + assetSchema}},
 
@@ -49,6 +50,7 @@ export function generateMoveSchema(assetSchema: string): any {
             sender_name: {type: 'string'},
             recipient_name: {type: 'string'},
             memo: {type: 'string'},
+            txid: {type: 'string'},
 
             assets: {type: 'array', items: {'$ref': '#/components/schemas/' + assetSchema}},
 
