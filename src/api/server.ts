@@ -277,10 +277,16 @@ export class WebServer {
 
     private loadGitRevision(): void {
         try {
-            const headRef = fs.readFileSync(`${__dirname}/../../.git/HEAD`).toString()
-                .replace(/^ref: /, '').replace(/\s/g, '');
-            const revision = fs.readFileSync(`${__dirname}/../../.git/${headRef}`).toString()
-                .replace(/\s/g, '').substring(0, 7);
+            const head = fs.readFileSync(`${__dirname}/../../.git/HEAD`).toString().replace(/\s/g, '');
+            let revision: string;
+            if (head.startsWith('ref:')) {
+                const ref = head.replace(/^ref:/, '');
+                revision = fs.readFileSync(`${__dirname}/../../.git/${ref}`).toString().replace(/\s/g, '');
+            } else {
+                // detached HEAD (e.g. a deployed tag like 2.0.0-rc3): HEAD holds the raw commit SHA
+                revision = head;
+            }
+            revision = revision.substring(0, 7);
             if (revision) {
                 this.gitRevision = revision;
 
