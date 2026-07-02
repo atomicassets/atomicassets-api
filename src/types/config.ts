@@ -69,7 +69,6 @@ interface IAssetsLimitsConfig {
     schemas?: number;
     templates?: number;
     transfers?: number;
-    moves?: number;
     logs?: number;
 }
 

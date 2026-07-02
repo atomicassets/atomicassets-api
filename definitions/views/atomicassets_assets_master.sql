@@ -64,8 +64,7 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         asset.burned_by_account, asset.burned_at_block, asset.burned_at_time,
         asset.updated_at_block, asset.updated_at_time,
         asset.transferred_at_block, asset.transferred_at_time,
-        asset.minted_at_block, asset.minted_at_time,
-        asset.holder
+        asset.minted_at_block, asset.minted_at_time
     FROM
         atomicassets_assets asset
         LEFT JOIN atomicassets_templates "template" ON (

@@ -113,7 +113,3 @@ export function formatOffer(row: any): any {
 export function formatTransfer(row: any): any {
     return {...row};
 }
-
-export function formatMove(row: any): any {
-    return {...row};
-}

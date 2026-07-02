@@ -176,7 +176,6 @@ export function buildDataConditions(values: FilterValues, query: QueryBuilder, o
 const assetFilters: FiltersDefinition = {
     asset_id: {type: 'list[id]'},
     owner: {type: 'list[name]'},
-    holder: {type: 'list[name]'},
     burned: {type: 'bool'},
     template_id: {type: 'list[id]'},
     collection_name: {type: 'list[name]'},
@@ -206,10 +205,6 @@ export async function buildAssetFilter(
 
     if (args.owner.length) {
         query.equalMany(options.assetTable + '.owner', args.owner);
-    }
-
-    if (args.holder.length) {
-        query.equalMany(options.assetTable + '.holder', args.holder);
     }
 
     if (args.template_id.length) {
