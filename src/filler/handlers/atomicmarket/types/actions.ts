@@ -130,3 +130,43 @@ export interface FulfillTemplateBuyofferActionData {
     expected_price: string;
     taker_marketplace: string;
 }
+
+export type RoyaltyPayoutActionData = {
+    recipient: string,
+    amount: string
+};
+
+export type LogRoyaltyFoundActionData = {
+    collection_name: string,
+    asset_id: string,
+    payouts: RoyaltyPayoutActionData[]
+};
+
+export type LogRoyaltyTemplateActionData = {
+    collection_name: string,
+    asset_id: string,
+    template_id: number,
+    payouts: RoyaltyPayoutActionData[]
+};
+
+export type LogRoyaltyAttributeActionData = {
+    collection_name: string,
+    asset_id: string,
+    rule_id: string,
+    payouts: RoyaltyPayoutActionData[]
+};
+
+export type LogRoyaltyDustActionData = {
+    collection_name: string,
+    collection_author: string,
+    amount: string
+};
+
+export type SetDefaultMarketCreatorActionData = {
+    new_creator: string
+};
+
+export type MigrateBalanceActionData = {
+    from: string,
+    to: string
+};

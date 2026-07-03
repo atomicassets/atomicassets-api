@@ -20,6 +20,7 @@ import { buyofferProcessor } from './processors/buyoffers';
 import { bonusfeeProcessor } from './processors/bonusfees';
 import { JobQueuePriority } from '../../jobqueue';
 import { templateBuyofferProcessor } from './processors/template-buyoffers';
+import { royaltyProcessor } from './processors/royalties';
 
 export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, DELPHIORACLE_BASE_PRIORITY) + 1000;
 
@@ -385,11 +386,33 @@ export enum TemplateBuyofferState {
     SOLD = 2
 }
 
+// atomicmarket_royalty_payouts.listing_type - the settlement action a payout was
+// distributed by, resolved from the log trace's creator-action ancestry (see
+// resolveSettlement in processors/royalties.ts). UNRESOLVED never drops the
+// payout - it just means the linkage could not be traced.
+export enum RoyaltyListingType {
+    UNRESOLVED = 0,
+    SALE = 1,
+    AUCTION = 2,
+    BUYOFFER = 3,
+    TEMPLATE_BUYOFFER = 4
+}
+
+// atomicmarket_royalty_payouts.category - which part of the royalty split engine
+// produced the payout row.
+export enum RoyaltyPayoutCategory {
+    FOUNDERS = 1,
+    TEMPLATE = 2,
+    ATTRIBUTE = 3,
+    DUST = 4
+}
+
 export enum AtomicMarketUpdatePriority {
     TABLE_BALANCES = ATOMICMARKET_BASE_PRIORITY + 10,
     TABLE_MARKETPLACES = ATOMICMARKET_BASE_PRIORITY + 10,
     TABLE_CONFIG = ATOMICMARKET_BASE_PRIORITY + 10,
     TABLE_BONUSFEES = ATOMICMARKET_BASE_PRIORITY + 10,
+    TABLE_ROYALTIES = ATOMICMARKET_BASE_PRIORITY + 10,
     ACTION_CREATE_SALE = ATOMICMARKET_BASE_PRIORITY + 20,
     ACTION_CREATE_AUCTION = ATOMICMARKET_BASE_PRIORITY + 20,
     ACTION_CREATE_BUYOFFER = ATOMICMARKET_BASE_PRIORITY + 20,
@@ -399,6 +422,7 @@ export enum AtomicMarketUpdatePriority {
     ACTION_UPDATE_AUCTION = ATOMICMARKET_BASE_PRIORITY + 40,
     ACTION_UPDATE_BUYOFFER = ATOMICMARKET_BASE_PRIORITY + 40,
     ACTION_UPDATE_TEMPLATE_BUYOFFER = ATOMICMARKET_BASE_PRIORITY + 40,
+    ACTION_LOG_ROYALTIES = ATOMICMARKET_BASE_PRIORITY + 40,
     LOGS = ATOMICMARKET_BASE_PRIORITY
 }
 
@@ -484,6 +508,18 @@ export default class AtomicMarketHandler extends ContractHandler {
         }
 
         if (version === '1.3.24') {
+            await client.query(fs.readFileSync('./definitions/views/atomicmarket_auctions_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicmarket_buyoffers_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicmarket_template_buyoffers_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicmarket_sales_master.sql', {encoding: 'utf8'}));
+        }
+
+        if (version === '2.0.2') {
+            // Royalty read layer: the four listing master views gain a trailing
+            // current_collection_fee column (live atomicassets_collections.market_fee,
+            // as opposed to the listing-time collection_fee snapshot already stored on
+            // the row). CREATE OR REPLACE VIEW cannot add a column at a non-trailing
+            // position, but appending at the end keeps it valid without a DROP.
             await client.query(fs.readFileSync('./definitions/views/atomicmarket_auctions_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicmarket_buyoffers_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicmarket_template_buyoffers_master.sql', {encoding: 'utf8'}));
@@ -617,6 +653,8 @@ export default class AtomicMarketHandler extends ContractHandler {
             'atomicmarket_token_symbols', 'atomicmarket_bonusfees', 'atomicmarket_balances',
             'atomicmarket_stats_markets', 'atomicmarket_template_prices',
             'atomicmarket_template_buyoffers', 'atomicmarket_template_buyoffers_assets',
+            'atomicmarket_royalties_config', 'atomicmarket_royalties_templates',
+            'atomicmarket_royalties_attributes', 'atomicmarket_royalty_payouts',
         ];
 
         for (const table of tables) {
@@ -654,6 +692,9 @@ export default class AtomicMarketHandler extends ContractHandler {
         destructors.push(configProcessor(this, processor));
         destructors.push(marketplaceProcessor(this, processor));
         destructors.push(saleProcessor(this, processor, notifier));
+        // Payouts are core settled data, not a store_logs-gated audit trail - register
+        // unconditionally like the other core table/action processors above.
+        destructors.push(royaltyProcessor(this, processor));
 
         if (this.args.store_logs) {
             destructors.push(logProcessor(this, processor));
