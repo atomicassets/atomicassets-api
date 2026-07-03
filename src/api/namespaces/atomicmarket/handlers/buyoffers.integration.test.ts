@@ -2,7 +2,7 @@ import {expect} from 'chai';
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
-import {getBuyOffersAction} from './buyoffers';
+import {getBuyOfferAction, getBuyOffersAction} from './buyoffers';
 
 // TODO add more tests
 describe('buy offer handler', () => {
@@ -54,6 +54,32 @@ describe('buy offer handler', () => {
                 .to.deep.equal([buyOffer2.buyoffer_id, buyOffer3.buyoffer_id, buyOffer1.buyoffer_id]);
         });
 
+    });
+
+    describe('current_collection_fee (live-fee enrichment)', () => {
+        txit('exposes current_collection_fee equal to the collection market_fee', async () => {
+            const {collection_name} = await client.createCollection({market_fee: 0.07});
+            const {buyoffer_id} = await client.createBuyOffer({collection_name});
+
+            const result = await getBuyOfferAction({}, getTestContext(client, {buyoffer_id}));
+
+            expect(result.current_collection_fee).to.equal(0.07);
+        });
+
+        txit('reflects live collection market_fee changes while the listing snapshot (collection.market_fee) stays fixed', async () => {
+            const {collection_name} = await client.createCollection({market_fee: 0.05});
+            const {buyoffer_id} = await client.createBuyOffer({collection_name, collection_fee: 0.05});
+
+            await client.query(
+                'UPDATE atomicassets_collections SET market_fee = $1 WHERE collection_name = $2',
+                [0.09, collection_name]
+            );
+
+            const result = await getBuyOfferAction({}, getTestContext(client, {buyoffer_id}));
+
+            expect(result.current_collection_fee).to.equal(0.09);
+            expect(result.collection.market_fee).to.equal(0.05);
+        });
     });
 
     after(async () => {
