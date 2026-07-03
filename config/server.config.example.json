@@ -7,6 +7,7 @@
   "server_port": 9000,
 
   "cache_life": 2,
+  "cache_max_value_bytes": 2000000,
   "trust_proxy": true,
 
   "rate_limit": {

@@ -7,6 +7,32 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [2.0.0] - unreleased
+
+AtomicAssets v2. See [UPGRADING.md](./UPGRADING.md) for the upgrade path,
+including operators coming from `eosio-contract-api`.
+
+### Added
+
+- AtomicAssets v2 indexing and API: dual ownership (asset `holder` for rentals
+  via the on-chain `move` / `logmove` actions), a `/atomicassets/v1/moves`
+  endpoint and `atomicassets_moves` tables, mutable templates, schema media
+  types, and collection author succession. Migration `2.0.0` adds the schema
+  (`holder` is added nullable and backfilled out of band; see the migration
+  notes), and `2.0.1` ports the partition-parallel sales-filter drain.
+- Optional `cache_max_value_bytes` in `server.config` so operators can tune the
+  response-cache size cap (default unchanged at 2 MB).
+- `ecosystem.config.cjs` for PM2, and a README "Keeping it running in
+  production" section covering docker-compose, PM2, and a systemd unit.
+- `UPGRADING.md` with the v2 upgrade path, the Postgres-version answer (no PG18
+  required), and the holder backfill.
+
+### Changed
+
+- The express cache "skipping SET" notice for oversized responses moved from
+  warn to debug. It is expected for large responses (the body is still served,
+  just not cached) and was flooding operator logs.
+
 ## [1.7.17]
 
 ### Changed

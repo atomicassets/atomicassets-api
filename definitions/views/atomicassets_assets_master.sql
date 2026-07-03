@@ -24,6 +24,7 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         json_build_object(
             'schema_name', "schema".schema_name,
             'format', "schema".format,
+            'types', "schema".types,
             'created_at_block', "schema".created_at_block::text,
             'created_at_time', "schema".created_at_time::text
         ) "schema",

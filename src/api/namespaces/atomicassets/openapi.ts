@@ -31,6 +31,7 @@ export function generateTransferSchema(assetSchema: string): any {
             sender_name: {type: 'string'},
             recipient_name: {type: 'string'},
             memo: {type: 'string'},
+            txid: {type: 'string'},
 
             assets: {type: 'array', items: {'$ref': '#/components/schemas/' + assetSchema}},
 
@@ -75,7 +76,9 @@ export const atomicassetsComponents = {
                             type: 'object',
                             properties: {
                                 name: {type: 'string'},
-                                type: {type: 'string'}
+                                type: {type: 'string'},
+                                mediatype: {type: 'string'},
+                                info: {type: 'string'}
                             }
                         }
                     },
@@ -92,7 +95,12 @@ export const atomicassetsComponents = {
                     is_transferable: {type: 'boolean'},
                     is_burnable: {type: 'boolean'},
 
+                    mutable_data: {type: 'object'},
                     immutable_data: {type: 'object'},
+                    data: {type: 'object'},
+
+                    deleted_at_time: {type: 'string'},
+                    deleted_at_block: {type: 'string'},
 
                     created_at_time: {type: 'string'},
                     created_at_block: {type: 'string'}
@@ -138,6 +146,9 @@ export const atomicassetsComponents = {
             notify_accounts: {type: 'array', items: {type: 'string'}},
             market_fee: {type: 'number'},
 
+            new_author_name: {type: 'string'},
+            new_author_date: {type: 'string'},
+
             data: {type: 'object'},
 
             created_at_block: {type: 'string'},
@@ -155,7 +166,9 @@ export const atomicassetsComponents = {
                     type: 'object',
                     properties: {
                         name: {type: 'string'},
-                        type: {type: 'string'}
+                        type: {type: 'string'},
+                        mediatype: {type: 'string'},
+                        info: {type: 'string'}
                     }
                 }
             },
@@ -189,12 +202,17 @@ export const atomicassetsComponents = {
             is_transferable: {type: 'boolean'},
             is_burnable: {type: 'boolean'},
 
+            mutable_data: {type: 'object'},
             immutable_data: {type: 'object'},
+            data: {type: 'object'},
+
+            deleted_at_time: {type: 'string'},
+            deleted_at_block: {type: 'string'},
 
             created_at_time: {type: 'string'},
             created_at_block: {type: 'string'},
 
-            scheme: {
+            schema: {
                 type: 'object',
                 properties: {
                     schema_name: {type: 'string'},
@@ -204,7 +222,9 @@ export const atomicassetsComponents = {
                             type: 'object',
                             properties: {
                                 name: {type: 'string'},
-                                type: {type: 'string'}
+                                type: {type: 'string'},
+                                mediatype: {type: 'string'},
+                                info: {type: 'string'}
                             }
                         }
                     },

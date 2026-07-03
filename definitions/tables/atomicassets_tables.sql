@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS atomicassets_collections (
     notify_accounts character varying(12)[] NOT NULL,
     market_fee double precision NOT NULL,
     data jsonb,
+    new_author_name character varying(12),
+    new_author_date bigint,
     created_at_block bigint NOT NULL,
     created_at_time bigint NOT NULL,
     CONSTRAINT atomicassets_collections_pkey PRIMARY KEY (contract, collection_name)
@@ -104,8 +106,11 @@ CREATE TABLE IF NOT EXISTS atomicassets_templates (
     max_supply bigint NOT NULL,
     issued_supply bigint NOT NULL,
     immutable_data jsonb,
+    mutable_data jsonb,
     created_at_time bigint NOT NULL,
     created_at_block bigint NOT NULL,
+    deleted_at_block bigint,
+    deleted_at_time bigint,
     CONSTRAINT atomicassets_templates_pkey PRIMARY KEY (contract, template_id)
 );
 
@@ -114,6 +119,7 @@ CREATE TABLE IF NOT EXISTS atomicassets_schemas (
     collection_name character varying(12) NOT NULL,
     schema_name character varying(12) NOT NULL,
     format jsonb[] NOT NULL,
+    types jsonb[] NOT NULL DEFAULT ARRAY[]::jsonb[],
     created_at_block bigint NOT NULL,
     created_at_time bigint NOT NULL,
     CONSTRAINT atomicassets_schemas_pkey PRIMARY KEY (contract, collection_name, schema_name)

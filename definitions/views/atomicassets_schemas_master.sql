@@ -15,7 +15,8 @@ CREATE OR REPLACE VIEW atomicassets_schemas_master AS
             'created_at_block', collection.created_at_block::text,
             'created_at_time', collection.created_at_time::text
         ) collection,
-        "schema".created_at_time, "schema".created_at_block
+        "schema".created_at_time, "schema".created_at_block,
+        "schema".types
     FROM
         atomicassets_schemas "schema"
         JOIN atomicassets_collections collection ON (collection.contract = "schema".contract AND collection.collection_name = "schema".collection_name)

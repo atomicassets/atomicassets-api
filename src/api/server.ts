@@ -218,7 +218,8 @@ export class WebServer {
             this.server.connection.redis.ioRedis,
             'eosio-contract-api:' + this.server.connection.chain.name + ':express-cache:',
             this.server.config.cache_life || 0,
-            this.server.config.ip_whitelist || []
+            this.server.config.ip_whitelist || [],
+            this.server.config.cache_max_value_bytes
         );
 
         this.middleware();

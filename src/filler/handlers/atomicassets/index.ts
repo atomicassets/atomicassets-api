@@ -16,8 +16,14 @@ import { schemaProcessor } from './processors/schemas';
 import { templateProcessor } from './processors/templates';
 import Filler  from '../../filler';
 import { JobQueuePriority } from '../../jobqueue';
+import { positiveIntEnv } from '../../../utils/env';
 
 export const ATOMICASSETS_BASE_PRIORITY = 0;
+
+// AtomicAssetsHandler.init() skips its eager missing-mint reconciliation while the reader is more
+// than this many blocks behind chain head (the deferred update_atomicassets_mints job fills the
+// backlog once near head). Env-tunable per deployment.
+const MINT_RECONCILIATION_MAX_LAG_BLOCKS = positiveIntEnv('ATOMICASSETS_MINT_RECONCILIATION_MAX_LAG_BLOCKS', 10_000);
 
 export enum OfferState {
     PENDING = 0,
@@ -108,6 +114,17 @@ export default class AtomicAssetsHandler extends ContractHandler {
 
         if (version === '1.3.20') {
             await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+        }
+
+        if (version === '2.0.0') {
+            // v2 added columns to these masters (appended at the end), so
+            // CREATE OR REPLACE works without DROP ... CASCADE of dependent
+            // atomicmarket views. The 2.0.0 migration SQL already added the
+            // underlying table columns before this runs.
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_collections_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
         }
@@ -220,9 +237,39 @@ export default class AtomicAssetsHandler extends ContractHandler {
 
         logger.info('Check for missing mint numbers of ' + this.args.atomicassets_account + '. Last irreversible block #' + lastIrreversibleBlock);
 
-        const contractsQuery = await this.connection.database.query('SELECT * FROM atomicassets_config');
+        // Reader-priority gate: the reconciliation below loops `CALL update_atomicassets_mints`
+        // (bounded 50k/call) + a full atomicassets_assets COUNT until the missing-mint backlog is
+        // under 50k. While the reader is catching up the update_atomicassets_mints job is deferred
+        // (shouldDeferDrain), so on a large chain this backlog is millions of rows — running it at
+        // boot then blocks the reader from starting for a very long time AND busts the connection
+        // statement_timeout on the COUNT, turning any restart mid-catchup into a crash-loop.
+        // shouldDeferDrain() can't be used here (reader.blocksUntilHead is still 0 before the
+        // reader starts), so compare the reader's stored position to chain head directly. The
+        // gated update_atomicassets_mints job fills the backlog once the reader reaches head.
+        const readerPositionQuery = await this.connection.database.query(
+            'SELECT block_num FROM contract_readers WHERE name = $1',
+            [this.filler.reader.name]
+        );
+        const readerBlock = Number(readerPositionQuery.rows[0]?.block_num);
+        const headBlock = Number(chainInfo.head_block_num);
+        // Fail safe: if either position is unknown/non-numeric, treat the reader as far behind and
+        // skip — never fall open into the expensive reconciliation during catchup. Clamp at >= 0.
+        const blocksBehindHead = (Number.isFinite(readerBlock) && Number.isFinite(headBlock))
+            ? Math.max(headBlock - readerBlock, 0)
+            : null;
+        const skipMintReconciliation = blocksBehindHead === null || blocksBehindHead > MINT_RECONCILIATION_MAX_LAG_BLOCKS;
 
-        for (const row of contractsQuery.rows) {
+        if (skipMintReconciliation) {
+            logger.info('Skipping eager missing-mint reconciliation (reader ' +
+                (blocksBehindHead === null ? 'position unknown' : '~' + blocksBehindHead + ' blocks behind head') +
+                '); the update_atomicassets_mints job fills the backlog once near head');
+        }
+
+        const contractRows = skipMintReconciliation
+            ? []
+            : (await this.connection.database.query('SELECT * FROM atomicassets_config')).rows;
+
+        for (const row of contractRows) {
             let emptyMints;
 
             do {
