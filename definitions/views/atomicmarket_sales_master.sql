@@ -62,7 +62,9 @@ CREATE OR REPLACE VIEW atomicmarket_sales_master AS
         sale.updated_at_block,
         sale.updated_at_time,
         sale.created_at_block,
-        sale.created_at_time
+        sale.created_at_time,
+
+        collection.market_fee AS current_collection_fee
     FROM
         atomicmarket_sales sale LEFT JOIN atomicmarket_symbol_pairs pair ON (
             pair.market_contract = sale.market_contract AND

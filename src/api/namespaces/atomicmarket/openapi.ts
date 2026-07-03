@@ -99,6 +99,13 @@ export const atomicmarketComponents = {
 
             collection: atomicassetsComponents.Asset.properties.collection,
 
+            current_collection_fee: {
+                type: 'number',
+                description: 'The collection\'s market_fee as of the last indexed block. collection.market_fee is ' +
+                    'the listing-time snapshot; AtomicMarket v2 reads the fee live at settlement, so this field can ' +
+                    'differ from the snapshot for a listing that is still open.'
+            },
+
             state: {type: 'integer'},
 
             updated_at_block: {type: 'string'},
@@ -152,6 +159,13 @@ export const atomicmarketComponents = {
 
             collection: atomicassetsComponents.Asset.properties.collection,
 
+            current_collection_fee: {
+                type: 'number',
+                description: 'The collection\'s market_fee as of the last indexed block. collection.market_fee is ' +
+                    'the listing-time snapshot; AtomicMarket v2 reads the fee live at settlement, so this field can ' +
+                    'differ from the snapshot for a listing that is still open.'
+            },
+
             state: {type: 'integer'},
 
             end_time: {type: 'string'},
@@ -191,6 +205,13 @@ export const atomicmarketComponents = {
             taker_marketplace: {type: 'string', nullable: true},
 
             collection: atomicassetsComponents.Asset.properties.collection,
+
+            current_collection_fee: {
+                type: 'number',
+                description: 'The collection\'s market_fee as of the last indexed block. collection.market_fee is ' +
+                    'the listing-time snapshot; AtomicMarket v2 reads the fee live at settlement, so this field can ' +
+                    'differ from the snapshot for a listing that is still open.'
+            },
 
             state: {type: 'integer'},
 
@@ -235,6 +256,13 @@ export const atomicmarketComponents = {
 
             template: atomicassetsComponents.Asset.properties.template,
 
+            current_collection_fee: {
+                type: 'number',
+                description: 'The collection\'s market_fee as of the last indexed block. collection.market_fee is ' +
+                    'the listing-time snapshot; AtomicMarket v2 reads the fee live at settlement, so this field can ' +
+                    'differ from the snapshot for a listing that is still open.'
+            },
+
             state: {type: 'integer'},
 
             updated_at_block: {type: 'string'},
@@ -248,6 +276,111 @@ export const atomicmarketComponents = {
         properties: {
             marketplace_name: {type: 'string'},
             creator: {type: 'string'},
+            created_at_block: {type: 'string'},
+            created_at_time: {type: 'string'}
+        }
+    },
+    RoyaltyConfig: {
+        type: 'object',
+        description: 'Raw row-for-row mirror of the on-chain royaltyconf table. No off-chain resolution is applied.',
+        properties: {
+            market_contract: {type: 'string'},
+            collection_name: {type: 'string'},
+            founders: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        recipient: {type: 'string'},
+                        weight: {type: 'integer'}
+                    }
+                }
+            },
+            attribute_mode: {type: 'integer', description: '0 = merged, 1 = granular'},
+            split_founders: {type: 'string'},
+            split_templates: {type: 'string'},
+            split_attributes: {type: 'string'},
+            updated_at_block: {type: 'string'},
+            updated_at_time: {type: 'string'},
+            created_at_block: {type: 'string'},
+            created_at_time: {type: 'string'}
+        }
+    },
+    RoyaltyTemplateRule: {
+        type: 'object',
+        description: 'Raw row-for-row mirror of the on-chain royaltytemp table.',
+        properties: {
+            market_contract: {type: 'string'},
+            collection_name: {type: 'string'},
+            template_id: {type: 'string'},
+            recipients: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        recipient: {type: 'string'},
+                        weight: {type: 'integer'}
+                    }
+                }
+            },
+            updated_at_block: {type: 'string'},
+            updated_at_time: {type: 'string'},
+            created_at_block: {type: 'string'},
+            created_at_time: {type: 'string'}
+        }
+    },
+    RoyaltyAttributeRule: {
+        type: 'object',
+        description: 'Raw row-for-row mirror of the on-chain royaltyattr table.',
+        properties: {
+            market_contract: {type: 'string'},
+            collection_name: {type: 'string'},
+            rule_id: {type: 'string'},
+            source: {type: 'integer'},
+            field: {type: 'string'},
+            value: {
+                type: 'array',
+                description: 'Raw deserialized ["type", value] variant tuple - integer payloads are preserved as strings.',
+                items: {}
+            },
+            weight: {type: 'integer'},
+            recipients: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        recipient: {type: 'string'},
+                        weight: {type: 'integer'}
+                    }
+                }
+            },
+            lookup_hash: {type: 'string', description: 'Hex-encoded sha256 lookup hash'},
+            updated_at_block: {type: 'string'},
+            updated_at_time: {type: 'string'},
+            created_at_block: {type: 'string'},
+            created_at_time: {type: 'string'}
+        }
+    },
+    RoyaltyPayout: {
+        type: 'object',
+        description: 'One settled royalty payout entry, keyed by the log trace global_sequence and its position in the payouts vector.',
+        properties: {
+            market_contract: {type: 'string'},
+            log_global_sequence: {type: 'string'},
+            payout_index: {type: 'integer'},
+            listing_type: {type: 'string', enum: ['unresolved', 'sale', 'auction', 'buyoffer', 'template_buyoffer']},
+            listing_id: {type: 'string', nullable: true},
+            category: {type: 'string', enum: ['founders', 'template', 'attribute', 'dust']},
+            collection_name: {type: 'string'},
+            asset_id: {type: 'string', nullable: true},
+            template_id: {type: 'string', nullable: true},
+            rule_id: {type: 'string', nullable: true},
+            recipient: {type: 'string'},
+            amount: {type: 'string'},
+            token_symbol: {type: 'string'},
+            token_precision: {type: 'integer'},
+            token_contract: {type: 'string'},
+            txid: {type: 'string'},
             created_at_block: {type: 'string'},
             created_at_time: {type: 'string'}
         }

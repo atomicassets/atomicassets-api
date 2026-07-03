@@ -20,6 +20,7 @@ import { assetsEndpoints } from './routes/assets';
 import { ActionHandlerContext } from '../../actionhandler';
 import { ILimits } from '../../../types/config';
 import { templateBuyoffersEndpoints } from './routes/template-buyoffers';
+import { royaltiesEndpoints } from './routes/royalties';
 
 export interface AtomicMarketNamespaceArgs {
     connected_reader: string;
@@ -119,6 +120,7 @@ export class AtomicMarketNamespace extends ApiNamespace {
         endpointsDocs.push(pricesEndpoints(this, server, router));
         endpointsDocs.push(statsEndpoints(this, server, router));
         endpointsDocs.push(configEndpoints(this, server, router));
+        endpointsDocs.push(royaltiesEndpoints(this, server, router));
 
         const assetApi = new AssetApi(
             this, server, 'ListingAsset',
