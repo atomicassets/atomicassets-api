@@ -43,10 +43,6 @@ export enum AtomicAssetsUpdatePriority {
     TABLE_TEMPLATES = ATOMICASSETS_BASE_PRIORITY + 40,
     ACTION_MINT_ASSET = ATOMICASSETS_BASE_PRIORITY + 50,
     ACTION_UPDATE_ASSET = ATOMICASSETS_BASE_PRIORITY + 60,
-    // v2: the `holders` table delta is the AUTHORITATIVE holder source and must
-    // run AFTER the asset action handlers (mint/transfer/move/burn) so it
-    // reconciles `holder` for rented assets after they optimistically set it.
-    TABLE_HOLDERS = ATOMICASSETS_BASE_PRIORITY + 70,
     ACTION_CREATE_OFFER = ATOMICASSETS_BASE_PRIORITY + 80,
     ACTION_UPDATE_OFFER = ATOMICASSETS_BASE_PRIORITY + 90,
     LOGS = 0
@@ -75,7 +71,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         const views = [
             'atomicassets_asset_mints_master', 'atomicassets_templates_master',
             'atomicassets_schemas_master', 'atomicassets_collections_master', 'atomicassets_offers_master',
-            'atomicassets_transfers_master', 'atomicassets_moves_master'
+            'atomicassets_transfers_master'
         ];
 
         if (!existsQuery.rows[0].exists) {
@@ -131,7 +127,6 @@ export default class AtomicAssetsHandler extends ContractHandler {
             await client.query(fs.readFileSync('./definitions/views/atomicassets_collections_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
-            await client.query(fs.readFileSync('./definitions/views/atomicassets_moves_master.sql', {encoding: 'utf8'}));
         }
     }
 

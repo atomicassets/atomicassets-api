@@ -104,21 +104,3 @@ export async function fillTransfers(
     }));
 }
 
-export async function fillMoves(
-    db: DB, contract: string, moves: any[], formatter: (_: any) => any,
-    view: string, hook?: FillerHook
-): Promise<any[]> {
-    const assetIDs: string[] = [];
-
-    for (const move of moves) {
-        assetIDs.push(...move.assets);
-    }
-
-    const filler = new AssetFiller(db, contract, assetIDs, formatter, view, hook);
-
-    return await Promise.all(moves.map(async (move) => {
-        move.assets = await filler.fill(move.assets);
-
-        return move;
-    }));
-}

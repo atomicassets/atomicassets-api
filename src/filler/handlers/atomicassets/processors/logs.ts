@@ -17,7 +17,6 @@ import {
     LogBackAssetActionData,
     LogBurnAssetActionData,
     LogMintAssetActionData,
-    LogMoveActionData,
     LogNewOfferActionData,
     LogNewTemplateActionData,
     LogSetDataActionData,
@@ -107,13 +106,6 @@ export function logProcessor(core: AtomicAssetsHandler, processor: DataProcessor
                 old_data: trace.act.data.old_data,
                 new_data: trace.act.data.new_data
             });
-        }, AtomicAssetsUpdatePriority.LOGS.valueOf()
-    ));
-
-    destructors.push(processor.onActionTrace(
-        contract, 'logmove',
-        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogMoveActionData>): Promise<void> => {
-            await db.logTrace(block, tx, trace, trace.act.data);
         }, AtomicAssetsUpdatePriority.LOGS.valueOf()
     ));
 

@@ -9,15 +9,6 @@ export type LogTransferActionData = {
     memo: string
 };
 
-export type LogMoveActionData = {
-    collection_name: string,
-    owner: string,
-    'from': string,
-    to: string,
-    asset_ids: string[],
-    memo: string
-};
-
 export type LogMintAssetActionData = {
     asset_id: string;
     authorized_minter: string,
