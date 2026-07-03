@@ -131,7 +131,10 @@ export async function getTemplateBuyOfferLogsAction(params: RequestValues, ctx: 
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicmarket_account,
-        applyActionGreylistFilters(['lognewtbuyo', 'canceltbuyo', 'fulfilltbuyo'], args),
+        applyActionGreylistFilters(
+            ['lognewtbuyo', 'canceltbuyo', 'fulfilltbuyo', 'logroyfound', 'logroytempl', 'logroyattr', 'logroydust'],
+            args
+        ),
         {buyoffer_id: args.buyoffer_id},
         (args.page - 1) * args.limit, args.limit, args.order
     );

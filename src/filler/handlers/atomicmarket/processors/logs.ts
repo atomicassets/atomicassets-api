@@ -1,4 +1,4 @@
-import { AtomicMarketUpdatePriority } from '../index';
+import { AtomicMarketUpdatePriority, RoyaltyListingType } from '../index';
 import DataProcessor from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { EosioActionTrace, EosioTransaction } from '../../../../types/eosio';
@@ -10,8 +10,34 @@ import {
     AuctionClaimSellerActionData,
     CancelAuctionActionData, CancelBuyofferActionData, CancelSaleActionData, DeclineBuyofferActionData,
     LogAuctionStartActionData,
-    LogNewAuctionActionData, LogNewBuyofferActionData, LogNewSaleActionData, LogSaleStartActionData, PurchaseSaleActionData
+    LogNewAuctionActionData, LogNewBuyofferActionData, LogNewSaleActionData, LogSaleStartActionData, PurchaseSaleActionData,
+    LogRoyaltyAttributeActionData, LogRoyaltyDustActionData, LogRoyaltyFoundActionData, LogRoyaltyTemplateActionData,
+    MigrateBalanceActionData, SetDefaultMarketCreatorActionData
 } from '../types/actions';
+import { resolveSettlement } from './royalties';
+
+// The resolved settlement linkage merged into a royalty log's metadata, keyed
+// the way each listing type's own log actions already key it (sale_id /
+// auction_id / buyoffer_id) so the per-listing /logs endpoints stay uniform.
+function resolvedSettlementMetadata(tx: EosioTransaction, trace: EosioActionTrace<any>): Record<string, string> {
+    const settlement = resolveSettlement(tx, trace);
+
+    if (!settlement) {
+        return {};
+    }
+
+    switch (settlement.listingType) {
+        case RoyaltyListingType.SALE:
+            return {sale_id: settlement.listingId};
+        case RoyaltyListingType.AUCTION:
+            return {auction_id: settlement.listingId};
+        case RoyaltyListingType.BUYOFFER:
+        case RoyaltyListingType.TEMPLATE_BUYOFFER:
+            return {buyoffer_id: settlement.listingId};
+        default:
+            return {};
+    }
+}
 
 export function logProcessor(core: AtomicMarketHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
@@ -163,6 +189,63 @@ export function logProcessor(core: AtomicMarketHandler, processor: DataProcessor
                 buyoffer_id: trace.act.data.buyoffer_id,
                 taker_marketplace: trace.act.data.taker_marketplace
             });
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    /* ROYALTIES - metadata is the action data plus the resolved settlement
+       linkage (sale_id/auction_id/buyoffer_id), so the per-listing /logs
+       endpoints can surface these the same way as every other settlement log. */
+    destructors.push(processor.onActionTrace(
+        contract, 'logroyfound',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogRoyaltyFoundActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, {
+                ...trace.act.data,
+                ...resolvedSettlementMetadata(tx, trace)
+            });
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'logroytempl',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogRoyaltyTemplateActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, {
+                ...trace.act.data,
+                ...resolvedSettlementMetadata(tx, trace)
+            });
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'logroyattr',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogRoyaltyAttributeActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, {
+                ...trace.act.data,
+                ...resolvedSettlementMetadata(tx, trace)
+            });
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'logroydust',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogRoyaltyDustActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, {
+                ...trace.act.data,
+                ...resolvedSettlementMetadata(tx, trace)
+            });
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'setdefmktcr',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<SetDefaultMarketCreatorActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, trace.act.data);
+        }, AtomicMarketUpdatePriority.LOGS.valueOf()
+    ));
+
+    destructors.push(processor.onActionTrace(
+        contract, 'migratebal',
+        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<MigrateBalanceActionData>): Promise<void> => {
+            await db.logTrace(block, tx, trace, trace.act.data);
         }, AtomicMarketUpdatePriority.LOGS.valueOf()
     ));
 
