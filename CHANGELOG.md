@@ -26,6 +26,18 @@ including operators coming from `eosio-contract-api`.
   production" section covering docker-compose, PM2, and a systemd unit.
 - `UPGRADING.md` with the v2 upgrade path, the Postgres-version answer (no PG18
   required), and the holder backfill.
+- AtomicMarket v2 royalty read layer. Migration `2.0.2` adds raw mirrors of the
+  on-chain royalty config tables (`royaltyconf` / `royaltytemp` / `royaltyattr`)
+  and an `atomicmarket_royalty_payouts` ledger fed by the settlement log actions
+  (`logroyfound` / `logroytempl` / `logroyattr` / `logroydust`), with each
+  payout row linked back to the sale / auction / buyoffer / template buyoffer it
+  settled. New `/atomicmarket/v1/royalties/*` endpoints expose the config
+  mirrors, the payout ledger (filterable by recipient, collection, listing,
+  category, asset, and symbol), and per-account earnings aggregates. The four
+  listing `/logs` endpoints include the royalty log actions, and every listing
+  response gains `current_collection_fee`: the collection's live `market_fee`,
+  since the v2 contract reads the fee at settlement and the stored
+  `collection_fee` is only the listing-time snapshot.
 
 ### Changed
 

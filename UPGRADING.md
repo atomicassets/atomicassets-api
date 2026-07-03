@@ -30,6 +30,15 @@ indexer gains:
   reduction.
 - **Schema media types.** Per-format media-type metadata.
 - **Collection author succession.** Pending author changes.
+- **AtomicMarket royalty read layer.** Raw mirrors of the AtomicMarket v2
+  royalty config tables and a per-recipient settled-payout ledger fed by the
+  `logroy*` settlement log actions, served under `/atomicmarket/v1/royalties/*`.
+  Listing responses gain `current_collection_fee` (the collection's live
+  `market_fee`); the stored `collection_fee` remains the listing-time snapshot.
+  Note the indexer only records `logroy*` traces from blocks it processes while
+  subscribed: deploy this version before royalty configs go live on a chain, or
+  replay from the AtomicMarket v2 deployment block to capture earlier
+  settlements.
 
 Existing on-chain tables keep the same layout, so existing data and clients are
 unaffected.
