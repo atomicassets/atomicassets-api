@@ -227,6 +227,79 @@ CREATE TABLE IF NOT EXISTS atomicmarket_stats_markets (
 	CONSTRAINT atomicmarket_stats_markets_pkey PRIMARY KEY (market_contract, listing_type, listing_id)
 );
 
+-- Raw mirror of the v2 royaltyconf contract table (scope = contract, PK = collection)
+CREATE TABLE IF NOT EXISTS atomicmarket_royalties_config
+(
+    market_contract character varying(12) NOT NULL,
+    collection_name character varying(12) NOT NULL,
+    founders jsonb NOT NULL DEFAULT '[]'::jsonb,
+    attribute_mode smallint NOT NULL DEFAULT 0,
+    split_founders bigint NOT NULL DEFAULT 0,
+    split_templates bigint NOT NULL DEFAULT 0,
+    split_attributes bigint NOT NULL DEFAULT 0,
+    updated_at_block bigint NOT NULL,
+    updated_at_time bigint NOT NULL,
+    created_at_block bigint NOT NULL,
+    created_at_time bigint NOT NULL,
+    CONSTRAINT atomicmarket_royalties_config_pkey PRIMARY KEY (market_contract, collection_name)
+);
+
+-- Raw mirror of the v2 royaltytemp contract table (scope = collection, PK = template)
+CREATE TABLE IF NOT EXISTS atomicmarket_royalties_templates
+(
+    market_contract character varying(12) NOT NULL,
+    collection_name character varying(12) NOT NULL, -- royaltytemp delta scope
+    template_id bigint NOT NULL,
+    recipients jsonb NOT NULL,
+    updated_at_block bigint NOT NULL,
+    updated_at_time bigint NOT NULL,
+    created_at_block bigint NOT NULL,
+    created_at_time bigint NOT NULL,
+    CONSTRAINT atomicmarket_royalties_templates_pkey PRIMARY KEY (market_contract, collection_name, template_id)
+);
+
+-- Raw mirror of the v2 royaltyattr contract table (scope = collection, PK = rule index)
+CREATE TABLE IF NOT EXISTS atomicmarket_royalties_attributes
+(
+    market_contract character varying(12) NOT NULL,
+    collection_name character varying(12) NOT NULL, -- royaltyattr delta scope
+    rule_id bigint NOT NULL, -- on-chain royaltyattr.index
+    source smallint NOT NULL,
+    field text NOT NULL,
+    value jsonb NOT NULL, -- raw ["type", value] variant tuple
+    weight bigint NOT NULL,
+    recipients jsonb NOT NULL,
+    lookup_hash bytea NOT NULL,
+    updated_at_block bigint NOT NULL,
+    updated_at_time bigint NOT NULL,
+    created_at_block bigint NOT NULL,
+    created_at_time bigint NOT NULL,
+    CONSTRAINT atomicmarket_royalties_attributes_pkey PRIMARY KEY (market_contract, collection_name, rule_id)
+);
+
+-- Settled royalty ledger: one row per (logroy* action, payout entry), keyed by
+-- the log trace's global_sequence + payouts vector position (idempotent replay)
+CREATE TABLE IF NOT EXISTS atomicmarket_royalty_payouts
+(
+    market_contract character varying(12) NOT NULL,
+    log_global_sequence bigint NOT NULL,
+    payout_index integer NOT NULL,
+    listing_type smallint NOT NULL, -- 1 sale, 2 auction, 3 buyoffer, 4 template_buyoffer, 0 unresolved
+    listing_id bigint,
+    category smallint NOT NULL, -- 1 founders, 2 template, 3 attribute, 4 dust
+    collection_name character varying(12) NOT NULL,
+    asset_id bigint,
+    template_id bigint,
+    rule_id bigint,
+    recipient character varying(12) NOT NULL,
+    amount bigint NOT NULL,
+    token_symbol character varying(12) NOT NULL,
+    txid bytea NOT NULL,
+    created_at_block bigint NOT NULL,
+    created_at_time bigint NOT NULL,
+    CONSTRAINT atomicmarket_royalty_payouts_pkey PRIMARY KEY (market_contract, log_global_sequence, payout_index)
+);
+
 -- Foreign Keys
 DO $$
 BEGIN
@@ -387,6 +460,17 @@ END $$;
 
 
 
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'atomicmarket_royalty_payouts_token_symbol_fkey') THEN
+        ALTER TABLE ONLY atomicmarket_royalty_payouts
+    ADD CONSTRAINT atomicmarket_royalty_payouts_token_symbol_fkey FOREIGN KEY (market_contract, token_symbol)
+    REFERENCES atomicmarket_tokens (market_contract, token_symbol) MATCH SIMPLE ON UPDATE RESTRICT ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED NOT VALID;
+    END IF;
+END $$;
+
+
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_auction_id ON atomicmarket_auctions USING btree (auction_id);
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_seller ON atomicmarket_auctions USING btree (seller);
@@ -468,3 +552,12 @@ CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_created ON atomicmarke
 CREATE INDEX IF NOT EXISTS atomicmarket_auctions_mc_state_endtime ON atomicmarket_auctions (market_contract, state, end_time DESC, auction_id) WHERE state = 1;
 
 CREATE INDEX IF NOT EXISTS atomicmarket_template_buyoffers_mc_state_created ON atomicmarket_template_buyoffers (market_contract, state, created_at_time DESC, buyoffer_id);
+
+CREATE INDEX IF NOT EXISTS atomicmarket_royalty_payouts_recipient
+    ON atomicmarket_royalty_payouts (market_contract, recipient, created_at_time DESC);
+CREATE INDEX IF NOT EXISTS atomicmarket_royalty_payouts_recipient_symbol
+    ON atomicmarket_royalty_payouts (market_contract, recipient, token_symbol) INCLUDE (amount);
+CREATE INDEX IF NOT EXISTS atomicmarket_royalty_payouts_collection
+    ON atomicmarket_royalty_payouts (market_contract, collection_name, created_at_time DESC);
+CREATE INDEX IF NOT EXISTS atomicmarket_royalty_payouts_listing
+    ON atomicmarket_royalty_payouts (market_contract, listing_type, listing_id);
