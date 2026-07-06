@@ -19,6 +19,9 @@ including operators coming from `eosio-contract-api`.
   ports the partition-parallel sales-filter drain. (Custodial rentals - asset
   `holder`, `move` / `logmove`, and the `/atomicassets/v1/moves` endpoint -
   were descoped from the v2 release train and are not part of this release.)
+- `GET /openapi.json` serving the assembled OpenAPI 3.0 document as plain JSON,
+  for code generation and tooling. The Swagger UI at `/docs` already embeds this
+  document but did not expose it at a stable URL.
 - Optional `cache_max_value_bytes` in `server.config` so operators can tune the
   response-cache size cap (default unchanged at 2 MB).
 - `ecosystem.config.cjs` for PM2, and a README "Keeping it running in

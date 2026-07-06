@@ -480,6 +480,11 @@ export class DocumentationServer {
             customCssUrl: 'https://cdn.jsdelivr.net/npm/swagger-ui-themes@3.0.0/themes/3.x/theme-flattop.min.css'
         }));
 
+        // The same OpenAPI 3.0 document the Swagger UI renders, as a plain JSON
+        // endpoint for code generation and tooling (the UI embeds it but does
+        // not expose it at a stable URL).
+        router.get('/openapi.json', (_req, res) => res.json(this.documentation));
+
         this.server.web.express.use(router);
     }
 }
