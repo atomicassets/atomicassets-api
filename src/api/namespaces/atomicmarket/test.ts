@@ -184,4 +184,76 @@ export class AtomicMarketTestClient extends AtomicAssetsTestClient {
         };
     }
 
+    async createRoyaltyConfig(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('atomicmarket_royalties_config', {
+            market_contract: 'amtest',
+            collection_name: values.collection_name ?? (await this.createCollection()).collection_name,
+            founders: JSON.stringify([]),
+            attribute_mode: 0,
+            split_founders: 0,
+            split_templates: 0,
+            split_attributes: 0,
+            updated_at_block: this.getId(),
+            updated_at_time: this.getId(),
+            created_at_block: this.getId(),
+            created_at_time: this.getId(),
+            ...values,
+        });
+    }
+
+    async createRoyaltyTemplateRule(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('atomicmarket_royalties_templates', {
+            market_contract: 'amtest',
+            collection_name: values.collection_name ?? (await this.createCollection()).collection_name,
+            template_id: this.getId(),
+            recipients: JSON.stringify([]),
+            updated_at_block: this.getId(),
+            updated_at_time: this.getId(),
+            created_at_block: this.getId(),
+            created_at_time: this.getId(),
+            ...values,
+        });
+    }
+
+    async createRoyaltyAttributeRule(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('atomicmarket_royalties_attributes', {
+            market_contract: 'amtest',
+            collection_name: values.collection_name ?? (await this.createCollection()).collection_name,
+            rule_id: this.getId(),
+            source: 0,
+            field: 'field',
+            value: JSON.stringify(['uint64', '1']),
+            weight: 1,
+            recipients: JSON.stringify([]),
+            lookup_hash: Buffer.alloc(32),
+            updated_at_block: this.getId(),
+            updated_at_time: this.getId(),
+            created_at_block: this.getId(),
+            created_at_time: this.getId(),
+            ...values,
+        });
+    }
+
+    async createRoyaltyPayout(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('atomicmarket_royalty_payouts', {
+            market_contract: 'amtest',
+            log_global_sequence: this.getId(),
+            payout_index: 0,
+            listing_type: 1,
+            listing_id: this.getId(),
+            category: 1,
+            collection_name: values.collection_name ?? (await this.createCollection()).collection_name,
+            asset_id: null,
+            template_id: null,
+            rule_id: null,
+            recipient: 'recipient',
+            amount: 100,
+            token_symbol: 'TEST',
+            txid: Buffer.alloc(32),
+            created_at_block: this.getId(),
+            created_at_time: this.getId(),
+            ...values,
+        });
+    }
+
 }

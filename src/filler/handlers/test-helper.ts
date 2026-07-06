@@ -49,11 +49,13 @@ function wrapClientAsPoolClient(client: Client): PoolClientLike {
 // ---------------------------------------------------------------------------
 // Create a ContractDBTransaction from a plain pg.Client
 // ---------------------------------------------------------------------------
-export function createTestTransaction(client: Client, readerName = 'test-reader'): ContractDBTransaction {
+export function createTestTransaction(client: Client, readerName = 'test-reader', currentBlock?: number): ContractDBTransaction {
     const poolClient = wrapClientAsPoolClient(client) as any;
     const stats = { operations: 0 };
-    // Pass currentBlock = undefined so no reversible-query bookkeeping is attempted
-    const txn = new ContractDBTransaction(poolClient, readerName, stats, undefined);
+    // currentBlock defaults to undefined so no reversible-query bookkeeping is
+    // attempted; pass a block number (head-mode reader) to exercise the
+    // reversible_queries rollback-log path in a test.
+    const txn = new ContractDBTransaction(poolClient, readerName, stats, currentBlock);
     // Mark as already in a transaction so it does not issue its own BEGIN.
     // The test harness manages BEGIN/ROLLBACK externally.
     txn.inTransaction = true;

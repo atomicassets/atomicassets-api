@@ -1,6 +1,6 @@
 import 'mocha';
 import {expect} from 'chai';
-import {getSalesAction} from './sales';
+import {getSaleAction, getSalesAction} from './sales';
 import {SaleApiState} from '../index';
 import {OfferState} from '../../../../filler/handlers/atomicassets';
 import {SaleState} from '../../../../filler/handlers/atomicmarket';
@@ -726,6 +726,32 @@ describe('AtomicMarket Sales API', () => {
             expect(result).to.haveOwnProperty('state');
             expect(result).to.haveOwnProperty('price');
             expect(result).to.haveOwnProperty('collection');
+        });
+    });
+
+    describe('current_collection_fee (live-fee enrichment)', () => {
+        txit('exposes current_collection_fee equal to the collection market_fee', async () => {
+            const {collection_name} = await client.createCollection({market_fee: 0.07});
+            const {sale_id} = await client.createSale({collection_name});
+
+            const result = await getSaleAction({}, getTestContext(client, {sale_id}));
+
+            expect(result.current_collection_fee).to.equal(0.07);
+        });
+
+        txit('reflects live collection market_fee changes while the listing snapshot (collection.market_fee) stays fixed', async () => {
+            const {collection_name} = await client.createCollection({market_fee: 0.05});
+            const {sale_id} = await client.createSale({collection_name, collection_fee: 0.05});
+
+            await client.query(
+                'UPDATE atomicassets_collections SET market_fee = $1 WHERE collection_name = $2',
+                [0.09, collection_name]
+            );
+
+            const result = await getSaleAction({}, getTestContext(client, {sale_id}));
+
+            expect(result.current_collection_fee).to.equal(0.09);
+            expect(result.collection.market_fee).to.equal(0.05);
         });
     });
 

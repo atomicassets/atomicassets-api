@@ -43,7 +43,10 @@ export async function getSaleLogsAction(params: RequestValues, ctx: AtomicMarket
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicmarket_account,
-        applyActionGreylistFilters(['lognewsale', 'logsalestart', 'cancelsale', 'purchasesale'], args),
+        applyActionGreylistFilters(
+            ['lognewsale', 'logsalestart', 'cancelsale', 'purchasesale', 'logroyfound', 'logroytempl', 'logroyattr', 'logroydust'],
+            args
+        ),
         {sale_id: args.sale_id},
         (args.page - 1) * args.limit, args.limit, args.order
     );

@@ -79,3 +79,36 @@ export type BuyoffersTableRow = {
     collection_name: string,
     collection_fee: number
 }
+
+export type RoyaltyPairTableRow = {
+    recipient: string,
+    weight: number
+};
+
+// royaltyconf - scope: market contract (get_self()), one row per collection
+export type RoyaltyConfTableRow = {
+    collection: string,
+    founders: RoyaltyPairTableRow[],
+    attribute_mode: number,
+    split_founders: number,
+    split_templates: number,
+    split_attributes: number
+};
+
+// royaltytemp - scope: collection
+export type RoyaltyTempTableRow = {
+    template_id: number,
+    recipients: RoyaltyPairTableRow[]
+};
+
+// royaltyattr - scope: collection. `value` is the raw deserialized ATOMIC_ATTRIBUTE
+// variant tuple (["type", value]) - stored as-is, never off-chain resolved.
+export type RoyaltyAttrTableRow = {
+    index: string,
+    source: number,
+    field: string,
+    value: [string, any],
+    weight: number,
+    recipients: RoyaltyPairTableRow[],
+    lookup_hash: string
+};

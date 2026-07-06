@@ -137,7 +137,10 @@ export async function getAuctionLogsAction(params: RequestValues, ctx: AtomicMar
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicmarket_account,
-        applyActionGreylistFilters(['lognewauct', 'logauctstart', 'cancelauct', 'auctclaimbuy', 'auctclaimsel'], args),
+        applyActionGreylistFilters(
+            ['lognewauct', 'logauctstart', 'cancelauct', 'auctclaimbuy', 'auctclaimsel', 'logroyfound', 'logroytempl', 'logroyattr', 'logroydust'],
+            args
+        ),
         {auction_id: args.auction_id},
         (args.page - 1) * args.limit, args.limit, args.order
     );

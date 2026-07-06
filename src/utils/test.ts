@@ -90,6 +90,19 @@ export class TestClient extends Client implements DB {
         });
     }
 
+    async createContractTrace(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return await this.insert('contract_traces', {
+            global_sequence: this.getId(),
+            account: 'amtest',
+            name: 'lognewsale',
+            metadata: {},
+            txid: Buffer.alloc(32),
+            created_at_block: this.getId(),
+            created_at_time: this.getId(),
+            ...values,
+        });
+    }
+
     async createContractReader(values: Record<string, any> = {}): Promise<Record<string, any>> {
         return await this.insert('contract_readers', {
             name: 'test-default',

@@ -50,7 +50,9 @@ CREATE OR REPLACE VIEW atomicmarket_buyoffers_master AS
         buyoffer.updated_at_block,
         buyoffer.updated_at_time,
         buyoffer.created_at_block,
-        buyoffer.created_at_time
+        buyoffer.created_at_time,
+
+        collection.market_fee AS current_collection_fee
     FROM atomicmarket_buyoffers buyoffer, atomicassets_collections collection, atomicmarket_tokens token
     WHERE buyoffer.market_contract = token.market_contract AND buyoffer.token_symbol = token.token_symbol AND
         buyoffer.assets_contract = collection.contract AND buyoffer.collection_name = collection.collection_name
