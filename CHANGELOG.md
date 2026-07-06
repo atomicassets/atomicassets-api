@@ -14,18 +14,17 @@ including operators coming from `eosio-contract-api`.
 
 ### Added
 
-- AtomicAssets v2 indexing and API: dual ownership (asset `holder` for rentals
-  via the on-chain `move` / `logmove` actions), a `/atomicassets/v1/moves`
-  endpoint and `atomicassets_moves` tables, mutable templates, schema media
-  types, and collection author succession. Migration `2.0.0` adds the schema
-  (`holder` is added nullable and backfilled out of band; see the migration
-  notes), and `2.0.1` ports the partition-parallel sales-filter drain.
+- AtomicAssets v2 indexing and API: mutable templates, schema media types, and
+  collection author succession. Migration `2.0.0` adds the schema, and `2.0.1`
+  ports the partition-parallel sales-filter drain. (Custodial rentals - asset
+  `holder`, `move` / `logmove`, and the `/atomicassets/v1/moves` endpoint -
+  were descoped from the v2 release train and are not part of this release.)
 - Optional `cache_max_value_bytes` in `server.config` so operators can tune the
   response-cache size cap (default unchanged at 2 MB).
 - `ecosystem.config.cjs` for PM2, and a README "Keeping it running in
   production" section covering docker-compose, PM2, and a systemd unit.
-- `UPGRADING.md` with the v2 upgrade path, the Postgres-version answer (no PG18
-  required), and the holder backfill.
+- `UPGRADING.md` with the v2 upgrade path and the Postgres-version answer (no
+  PG18 required).
 - AtomicMarket v2 royalty read layer. Migration `2.0.2` adds raw mirrors of the
   on-chain royalty config tables (`royaltyconf` / `royaltytemp` / `royaltyattr`)
   and an `atomicmarket_royalty_payouts` ledger fed by the settlement log actions

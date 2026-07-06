@@ -13,19 +13,15 @@ covers what changes, whether you need a new Postgres, and the exact steps.
   v2 indexer reads a still-v1 chain fine; the new features stay dormant until the
   contract is upgraded on-chain, then light up on their own.
 - You do not hand-apply SQL. Point the filler at the v2 image and it runs every
-  pending migration in order, all the way from a 1.3.x schema to 2.0.x.
-- One manual step on large chains: backfill the new `holder` column in batches.
-  See [Holder backfill](#holder-backfill).
+  pending migration in order, all the way from a 1.3.x schema to 2.0.x. There
+  are no manual steps; the v2 migrations are metadata-only and run in seconds
+  on any chain size.
 
 ## What v2 adds
 
 The on-chain AtomicAssets v2 contract is an additive, non-breaking upgrade. The
 indexer gains:
 
-- **Dual ownership (rentals).** Assets now track a `holder` alongside the owner,
-  populated from the new on-chain `move` / `logmove` actions.
-- **Moves.** A new `/atomicassets/v1/moves` endpoint and `atomicassets_moves`
-  tables.
 - **Mutable templates.** Template `mutable_data`, plus deletion and max-supply
   reduction.
 - **Schema media types.** Per-format media-type metadata.
@@ -72,41 +68,26 @@ older deploy will cross:
 - atomicmarket seller/buyer indexes rebuilt from hash to btree (1.7.17). On a large
   mainnet these are sizable but run online; see the 1.7.17 migration notes.
 - A one-time converge of the legacy `atomicassets_transfers` primary key (1.7.12).
-- The v2 schema: `holder`, moves, mutable templates, and schema media types (2.0.0),
-  then the partition-parallel sales-filter drain (2.0.1).
+- The v2 schema: mutable templates, schema media types, and author succession
+  (2.0.0), the partition-parallel sales-filter drain (2.0.1), then the
+  AtomicMarket royalty tables (2.0.2).
 
 ## Upgrade runbook (existing deploy)
 
-1. Pull the image: `ghcr.io/atomicassets/atomicassets-api:2.0` (or pin
-   `2.0.0-rc3` while testing the release candidate).
+1. Pull the image: `ghcr.io/atomicassets/atomicassets-api:2.0` (or pin the
+   exact release-candidate tag while testing one).
 2. Stop the filler. Leave the server up if you want to keep serving reads.
 3. Start the filler against the v2 image. It runs all pending migrations before
-   it begins reading. On large chains the 1.7.x index rebuilds and the 2.0.0
-   schema changes can take a while; let them finish.
-4. Run the [holder backfill](#holder-backfill).
-5. Restart the server on the v2 image so it can serve the new fields and the
-   `/moves` endpoint.
-6. Verify: `dbinfo` shows version `2.0.x`, the filler is advancing, and
-   `GET /atomicassets/v1/moves` responds.
+   it begins reading. On large chains the 1.7.x index rebuilds can take a
+   while; the 2.0.x steps are metadata-only and finish in seconds.
+4. Restart the server on the v2 image so it can serve the new fields and the
+   `/atomicmarket/v1/royalties/*` endpoints.
+5. Verify: `dbinfo` shows version `2.0.x`, the filler is advancing, and
+   `GET /atomicmarket/v1/royalties/payouts` responds.
 
-You can do all of this while the chain is still on the v1 contract. The v2 indexer
-runs cleanly against a v1 chain; holder simply equals owner and no moves exist
-until the contract is upgraded on-chain.
-
-### Holder backfill
-
-The 2.0.0 migration adds `atomicassets_assets.holder` as a nullable column
-(instant). Existing rows stay `NULL` until backfilled to equal `owner`. On a large
-mainnet (WAX is ~475M rows) do **not** run a single full-table `UPDATE`; it rewrites
-the whole table in one transaction and busts the statement timeout. Run it in
-batches during a low-traffic window. The exact recipe, including the batched loop,
-is in [`definitions/migrations/2.0.0/README.md`](definitions/migrations/2.0.0/README.md).
-
-Small chains (testnets, small mainnets) can run the simple form directly:
-
-```sql
-UPDATE atomicassets_assets SET holder = owner WHERE holder IS NULL;
-```
+You can do all of this while the chain is still on the v1 contracts. The v2
+indexer runs cleanly against a v1 chain; the new tables stay empty until the
+contracts are upgraded on-chain.
 
 ## Fresh install
 
@@ -120,8 +101,8 @@ and [Keeping it running in production](README.md#keeping-it-running-in-productio
 - v2 indexer on a v1 chain: safe. New handlers stay dormant.
 - v1 indexer on a v2 chain: keeps running. It indexes ownership, mints, transfers,
   offers, and sales as before, and ignores the new v2 actions and tables. It will
-  not crash; it simply will not have holder, moves, mutable-template, or media-type
-  data until you upgrade.
+  not crash; it simply will not have mutable-template, media-type, author-succession,
+  or royalty data until you upgrade.
 
 Because of this, operators can upgrade on their own schedule. There is no flag day.
 
