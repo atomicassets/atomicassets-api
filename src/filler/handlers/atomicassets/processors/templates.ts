@@ -7,6 +7,7 @@ import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { TemplatesTableRow } from '../types/tables';
 import { deserialize, ObjectSchema } from 'atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
+import logger from '../../../../utils/winston';
 
 export function templateProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
@@ -16,7 +17,14 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
         contract, 'templates',
         async (db: ContractDBTransaction, block: ShipBlock, delta: EosioContractRow<TemplatesTableRow>): Promise<void> => {
             if (!delta.present) {
-                throw new Error('AtomicAssets: A template was deleted. Should not be possible by contract');
+                // AtomicAssets v2 contracts can delete templates (deltemplate). This indexer
+                // predates v2 and has no deleted-template schema, so keep the indexed row
+                // (the contract only allows deleting templates with zero issued supply).
+                logger.warn(
+                    'AtomicAssets: template ' + delta.value.template_id + ' in collection ' + delta.scope +
+                    ' was deleted on-chain (AtomicAssets v2 deltemplate); keeping the indexed row'
+                );
+                return;
             }
 
             const templateQuery = await db.query(
