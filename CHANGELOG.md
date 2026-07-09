@@ -58,9 +58,12 @@ Maintenance release on the `release/1.7` branch; contains no v2 code.
   1.x handler was written; the filler treated such a delta as a fatal error
   (`AtomicAssets: A template was deleted. Should not be possible by contract`)
   and crash-looped on the same block after every restart. The filler now logs a
-  warning and keeps the indexed template row. 1.7.18 keeps running against a
-  chain with v2 contracts but does not index the new v2 data - that requires
-  2.0.0.
+  warning and keeps the indexed template row. The row is kept rather than
+  deleted because `atomicassets_assets` references templates with
+  `ON DELETE RESTRICT`, and the contract only allows deleting templates that
+  never issued an asset, so the retained row stays accurate. 1.7.18 keeps
+  running against a chain with v2 contracts but does not index the new v2 data -
+  that requires 2.0.0.
 
 ## [1.7.17]
 

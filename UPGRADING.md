@@ -59,12 +59,14 @@ or later is enough. You never need 18.
 ## Coming from `pinknetworkx/eosio-contract-api`
 
 This project is the continued line of `eosio-contract-api`. The legacy repo is
-archived; its final release, `v1.3.25`, only adds the same deltemplate fix
-described below, so a 1.3.25 deploy migrates here exactly like a 1.3.24 one.
-The database lineage is shared, so there is no re-sync and no schema rewrite.
-The migration runner walks your current `dbinfo` version forward through every
-release in order, for example `1.3.24 -> ... -> 1.7.17 -> 2.0.0 -> 2.0.1`,
-applying only the steps newer than what you have.
+archived; its final release, `v1.3.25`, adds the same deltemplate fix described
+below plus non-schema changes (a template_buyoffer subquery fix, response
+compression, the MIT relicense), so its migration path is identical to a 1.3.24
+deploy's. The database lineage is shared, so there is no re-sync and no schema
+rewrite. The migration runner walks your current `dbinfo` version forward
+through every release in order, for example
+`1.3.24 -> ... -> 1.7.17 -> 2.0.0 -> 2.0.1 -> 2.0.2`, applying only the steps
+newer than what you have.
 
 To switch, change your image from
 `ghcr.io/pinknetworkx/eosio-contract-api` (or your local build) to
