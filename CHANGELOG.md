@@ -7,6 +7,23 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [1.7.18]
+
+### Fixed
+
+- Survive AtomicAssets v2 contracts. The v2 contract adds a `deltemplate` action
+  that deletes rows from the `templates` table, which was impossible when this
+  handler was written; the filler treated such a delta as a fatal error
+  (`AtomicAssets: A template was deleted. Should not be possible by contract`)
+  and crash-looped on the same block after every restart. The filler now logs a
+  warning and keeps the indexed template row (the contract only allows deleting
+  templates with zero issued supply, so the retained row stays accurate; the row
+  is kept rather than deleted because `atomicassets_assets` references templates
+  with `ON DELETE RESTRICT`). Indexers on this release keep running against a
+  chain with v2 contracts, but do not index the new v2 data (mutable templates,
+  schema media types, author succession, royalty configuration) - that requires
+  2.0.0.
+
 ## [1.7.17]
 
 ### Changed
