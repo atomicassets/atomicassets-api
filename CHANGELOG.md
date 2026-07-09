@@ -47,6 +47,21 @@ including operators coming from `eosio-contract-api`.
   warn to debug. It is expected for large responses (the body is still served,
   just not cached) and was flooding operator logs.
 
+## [1.7.18]
+
+Maintenance release on the `release/1.7` branch; contains no v2 code.
+
+### Fixed
+
+- Survive AtomicAssets v2 contracts. The v2 contract adds a `deltemplate` action
+  that deletes rows from the `templates` table, which was impossible when the
+  1.x handler was written; the filler treated such a delta as a fatal error
+  (`AtomicAssets: A template was deleted. Should not be possible by contract`)
+  and crash-looped on the same block after every restart. The filler now logs a
+  warning and keeps the indexed template row. 1.7.18 keeps running against a
+  chain with v2 contracts but does not index the new v2 data - that requires
+  2.0.0.
+
 ## [1.7.17]
 
 ### Changed

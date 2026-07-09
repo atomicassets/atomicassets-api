@@ -16,6 +16,10 @@ covers what changes, whether you need a new Postgres, and the exact steps.
   pending migration in order, all the way from a 1.3.x schema to 2.0.x. There
   are no manual steps; the v2 migrations are metadata-only and run in seconds
   on any chain size.
+- Already crash-looping on `AtomicAssets: A template was deleted`? Your indexer
+  predates 1.7.18 and hit a v2 `deltemplate` on-chain. See
+  [Compatibility, in short](#compatibility-in-short) - upgrading the image
+  recovers in place, no database repair needed.
 
 ## What v2 adds
 
@@ -54,11 +58,13 @@ or later is enough. You never need 18.
 
 ## Coming from `pinknetworkx/eosio-contract-api`
 
-This project is the continued line of `eosio-contract-api`. The database lineage
-is shared, so there is no re-sync and no schema rewrite. The migration runner walks
-your current `dbinfo` version forward through every release in order, for example
-`1.3.24 -> 1.3.25 -> ... -> 1.7.x -> 2.0.0 -> 2.0.1`, applying only the steps newer
-than what you have.
+This project is the continued line of `eosio-contract-api`. The legacy repo is
+archived; its final release, `v1.3.25`, only adds the same deltemplate fix
+described below, so a 1.3.25 deploy migrates here exactly like a 1.3.24 one.
+The database lineage is shared, so there is no re-sync and no schema rewrite.
+The migration runner walks your current `dbinfo` version forward through every
+release in order, for example `1.3.24 -> ... -> 1.7.17 -> 2.0.0 -> 2.0.1`,
+applying only the steps newer than what you have.
 
 To switch, change your image from
 `ghcr.io/pinknetworkx/eosio-contract-api` (or your local build) to
@@ -99,12 +105,26 @@ and [Keeping it running in production](README.md#keeping-it-running-in-productio
 ## Compatibility, in short
 
 - v2 indexer on a v1 chain: safe. New handlers stay dormant.
-- v1 indexer on a v2 chain: keeps running. It indexes ownership, mints, transfers,
-  offers, and sales as before, and ignores the new v2 actions and tables. It will
-  not crash; it simply will not have mutable-template, media-type, author-succession,
-  or royalty data until you upgrade.
+- v1 indexer at 1.7.18 or later (or 1.3.25 of the legacy repo) on a v2 chain:
+  keeps running. It indexes ownership, mints, transfers, offers, and sales as
+  before, and ignores the new v2 actions and tables. It will not have
+  mutable-template, media-type, author-succession, or royalty data until you
+  upgrade to 2.x.
+- v1 indexer older than 1.7.18 on a v2 chain: **crashes the first time a template
+  is deleted on-chain.** AtomicAssets v2 adds a `deltemplate` action; older
+  fillers treat the resulting table delta as fatal and stop with
 
-Because of this, operators can upgrade on their own schedule. There is no flag day.
+  ```
+  Consumer queue stopped due to an error at #<block> AtomicAssets: A template was deleted. Should not be possible by contract
+  ```
+
+  then hit the same block again after every restart - a crash loop. Nothing in
+  the database is damaged. To recover, upgrade the image to `1.7.18` (stays on
+  v1, patched) or `2.0` (full v2 data); either replays from the last checkpoint
+  and moves past the block.
+
+Operators can upgrade on their own schedule, but move to at least the patched
+v1 release before the chain you index switches to the v2 contract.
 
 ## Known follow-ups
 
