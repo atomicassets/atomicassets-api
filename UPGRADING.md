@@ -97,6 +97,43 @@ You can do all of this while the chain is still on the v1 contracts. The v2
 indexer runs cleanly against a v1 chain; the new tables stay empty until the
 contracts are upgraded on-chain.
 
+## Ran a 2.0.0 release candidate before rc4?
+
+Release candidates `2.0.0-rc1` through `2.0.0-rc3` included a custodial-rental
+feature (an asset `holder` column and `atomicassets_moves` tables) that was
+descoped before release. `2.0.0-rc4` and later ship without it, and the `2.0.0`
+migration no longer creates it - but the migration runner never revisits an
+applied version, so a database that ran one of those early candidates keeps the
+rental schema after upgrading.
+
+No action is required. The filler and API ignore the extra objects, and later
+migrations apply cleanly over them. The one visible residue is cosmetic: asset
+API responses keep a stale `"holder"` field, served from the old
+`atomicassets_assets_master` view definition.
+
+To remove the leftovers, run this once from a checkout of the release you are
+on, as the role that owns the views, in a quiet window (the transaction holds
+locks on the two views until it commits):
+
+```sql
+BEGIN;
+DROP VIEW IF EXISTS atomicmarket_assets_master;
+DROP VIEW IF EXISTS atomicassets_assets_master;
+DROP VIEW IF EXISTS atomicassets_moves_master;
+DROP TABLE IF EXISTS atomicassets_moves_assets;
+DROP TABLE IF EXISTS atomicassets_moves;
+DROP INDEX IF EXISTS atomicassets_assets_holder_btree;
+ALTER TABLE atomicassets_assets DROP COLUMN IF EXISTS holder;
+\i definitions/views/atomicassets_assets_master.sql
+\i definitions/views/atomicmarket_assets_master.sql
+COMMIT;
+```
+
+The two `\i` lines re-create the views this cleanup drops; they must run in the
+same transaction. `atomicmarket_assets_master` is dropped first only because it
+selects from `atomicassets_assets_master`, which cannot lose its `holder`
+output column in place.
+
 ## Fresh install
 
 If you are standing up a new indexer rather than upgrading, do not sync from
