@@ -118,7 +118,7 @@ meta-commands with paths relative to that root), as the role that owns the
 views:
 
 ```
-psql <your connection options> -v ON_ERROR_STOP=1 -f cleanup.sql
+psql <your connection options> -X -v ON_ERROR_STOP=1 -f cleanup.sql
 ```
 
 Pick a quiet window: the `ALTER TABLE ... DROP COLUMN` takes an
