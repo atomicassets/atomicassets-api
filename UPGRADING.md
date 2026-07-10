@@ -111,9 +111,12 @@ migrations apply cleanly over them. The one visible residue is cosmetic: asset
 API responses keep a stale `"holder"` field, served from the old
 `atomicassets_assets_master` view definition.
 
-To remove the leftovers, run this once from a checkout of the release you are
-on, as the role that owns the views, in a quiet window (the transaction holds
-locks on the two views until it commits):
+To remove the leftovers, run this once with `psql`, from the repo root of the
+checkout you are on (the `\i` lines are psql meta-commands with paths relative
+to that root), as the role that owns the views. Pick a quiet window: the
+`ALTER TABLE ... DROP COLUMN` takes an access-exclusive lock on
+`atomicassets_assets`, and the dropped views are unavailable, until the
+transaction commits.
 
 ```sql
 BEGIN;
@@ -122,17 +125,20 @@ DROP VIEW IF EXISTS atomicassets_assets_master;
 DROP VIEW IF EXISTS atomicassets_moves_master;
 DROP TABLE IF EXISTS atomicassets_moves_assets;
 DROP TABLE IF EXISTS atomicassets_moves;
-DROP INDEX IF EXISTS atomicassets_assets_holder_btree;
 ALTER TABLE atomicassets_assets DROP COLUMN IF EXISTS holder;
 \i definitions/views/atomicassets_assets_master.sql
 \i definitions/views/atomicmarket_assets_master.sql
 COMMIT;
 ```
 
-The two `\i` lines re-create the views this cleanup drops; they must run in the
-same transaction. `atomicmarket_assets_master` is dropped first only because it
+Dropping the `holder` column also drops its index, if you ran the rc-era
+deferred index script. The two `\i` lines re-create the two views that must
+survive; `atomicassets_moves_master` is part of the removed rental schema and
+stays dropped. `atomicmarket_assets_master` is dropped first only because it
 selects from `atomicassets_assets_master`, which cannot lose its `holder`
-output column in place.
+output column in place. Everything is `IF EXISTS`-guarded and wrapped in one
+transaction, so a failure rolls back cleanly and the block is a no-op on a
+database that never ran an early candidate.
 
 ## Fresh install
 
