@@ -106,19 +106,26 @@ migration no longer creates it - but the migration runner never revisits an
 applied version, so a database that ran one of those early candidates keeps the
 rental schema after upgrading.
 
-No action is required. The filler and API ignore the extra objects, and later
-migrations apply cleanly over them. The one visible residue is cosmetic: asset
-API responses keep a stale `"holder"` field, served from the old
-`atomicassets_assets_master` view definition.
+No action is required. The leftover tables and column are inert: the filler
+never touches them, and later migrations apply cleanly over them. The one
+visible residue comes from the outdated view definition, not the objects
+themselves: asset API responses keep a stale `"holder"` field until
+`atomicassets_assets_master` is re-created.
 
-To remove the leftovers, run this once with `psql`, from the repo root of the
-checkout you are on (the `\i` lines are psql meta-commands with paths relative
-to that root), as the role that owns the views. Pick a quiet window: the
-`ALTER TABLE ... DROP COLUMN` takes an access-exclusive lock on
-`atomicassets_assets`, and the dropped views are unavailable, until the
-transaction commits.
+To remove the leftovers, save the block below as `cleanup.sql` and run it once
+from the repo root of the checkout you are on (the `\i` lines are psql
+meta-commands with paths relative to that root), as the role that owns the
+views:
 
-```sql
+```
+psql <your connection options> -v ON_ERROR_STOP=1 -f cleanup.sql
+```
+
+Pick a quiet window: the `ALTER TABLE ... DROP COLUMN` takes an
+access-exclusive lock on `atomicassets_assets`, and the dropped views are
+unavailable, until the transaction commits.
+
+```psql
 BEGIN;
 DROP VIEW IF EXISTS atomicmarket_assets_master;
 DROP VIEW IF EXISTS atomicassets_assets_master;
@@ -137,8 +144,12 @@ survive; `atomicassets_moves_master` is part of the removed rental schema and
 stays dropped. `atomicmarket_assets_master` is dropped first only because it
 selects from `atomicassets_assets_master`, which cannot lose its `holder`
 output column in place. Everything is `IF EXISTS`-guarded and wrapped in one
-transaction, so a failure rolls back cleanly and the block is a no-op on a
-database that never ran an early candidate.
+transaction, and `ON_ERROR_STOP` makes psql exit at the first error, rolling
+the open transaction back on disconnect - a partial run leaves no half-state,
+and the whole block is a no-op on a database that never ran an early
+candidate. (If you paste it into an interactive session instead, issue
+`ROLLBACK;` yourself after any error - an aborted transaction otherwise holds
+its locks until you do.)
 
 ## Fresh install
 
