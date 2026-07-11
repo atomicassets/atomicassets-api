@@ -7,6 +7,18 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [1.7.19] - unreleased
+
+### Fixed
+
+- The `update_atomicmarket_template_prices()` recompute now raises its own
+  per-transaction `statement_timeout` via `SET LOCAL`, tunable through
+  `ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S` (default 900s). A cold
+  full recompute (empty/evicted cache) takes 7-8 minutes, longer than the
+  maintenance pool's own 5-minute connection-level `statement_timeout`; without
+  a per-transaction override the job would time out and retry on every
+  interval indefinitely after any cache-evicting restart.
+
 ## [1.7.18]
 
 ### Fixed
