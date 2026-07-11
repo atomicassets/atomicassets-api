@@ -47,6 +47,16 @@ including operators coming from `eosio-contract-api`.
   warn to debug. It is expected for large responses (the body is still served,
   just not cached) and was flooding operator logs.
 
+### Fixed
+
+- The `update_atomicmarket_template_prices()` recompute now raises its own
+  per-transaction `statement_timeout` via `SET LOCAL`, tunable through
+  `ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S` (default 900s). A cold
+  full recompute (empty/evicted cache) takes 7-8 minutes, longer than the
+  maintenance pool's own 5-minute connection-level `statement_timeout`; without
+  a per-transaction override the job would time out and retry on every
+  interval indefinitely after any cache-evicting restart.
+
 ## [1.7.18]
 
 Maintenance release on the `release/1.7` branch; contains no v2 code.
