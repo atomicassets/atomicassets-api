@@ -38,16 +38,21 @@ if (!readerConfigs || readerConfigs.length === 0) {
     process.exit(-1);
 }
 
-// Safety net mirroring bin/server.ts. Without these, a single stray rejected
-// promise - e.g. an in-flight chain HTTP fetch losing its connection while the
-// node pod restarts - terminates the process (Node's default for unhandled
-// rejections), crash-looping the reader. Log and stay up instead.
+// Log and exit rather than stay up: swallowing these here left a filler
+// process alive-but-dead after a startup rejection (e.g. a statement-timeout
+// during AtomicAssetsHandler.init on a cold cache) - the reader never
+// started but Kubernetes had no crashed process to restart. Node's default
+// (crash) is what gets the pod restarted; matching it here is the fix.
 process.on('unhandledRejection', error => {
     logger.error('Unhandled Rejection', error);
+
+    process.exit(1);
 });
 
 process.on('uncaughtException', error => {
     logger.error('Uncaught Exception', error);
+
+    process.exit(1);
 });
 
 // @ts-ignore
@@ -56,8 +61,32 @@ if (cluster.isPrimary || cluster.isMaster) {
 
     const connection = new ConnectionManager(connectionConfig);
 
+    // Set before killing workers on SIGTERM so the cluster 'exit' listener
+    // below can tell a requested shutdown (workers exit with signal SIGTERM)
+    // from an unexpected worker death and not escalate the former.
+    let isShuttingDown = false;
+
+    // Every forked worker owns one reader config; losing any of them
+    // silently degrades the filler to fewer active readers. The
+    // worker.on('message', 'failure') path below only covers a worker that
+    // reports its own fatal error - a worker killed by its own
+    // unhandledRejection/uncaughtException handler (above) exits without
+    // sending that message, so the primary would otherwise keep running
+    // with a dead reader and a still-green /healthc. This is the safety net
+    // beneath the 'failure' path: any unexpected worker exit takes the
+    // primary down too, so Kubernetes restarts the pod.
+    cluster.on('exit', (worker, code, signal) => {
+        if (isShuttingDown) {
+            return;
+        }
+
+        logger.error(`Worker ${worker.process.pid} exited unexpectedly (code=${code}, signal=${signal})`);
+
+        process.exit(1);
+    });
+
     (async (): Promise<void> => {
-        // The node (and DB/redis) can be transiently unreachable at boot - the
+        // The node (and DB/redis) can be transiently unreachable at boot — the
         // SHIP/RPC pod may be mid-restart even after the wait-for-ship init gate.
         // Wait it out with bounded backoff (~5 min) instead of letting an
         // ECONNREFUSED crash-loop the whole filler.
@@ -195,7 +224,9 @@ if (cluster.isPrimary || cluster.isMaster) {
     const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
 
     process.on('SIGTERM', () => {
-        logger.info('Primary received SIGTERM - shutting down workers');
+        logger.info('Primary received SIGTERM — shutting down workers');
+
+        isShuttingDown = true;
 
         server.close();
 
@@ -212,7 +243,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     let filler: Filler | null = null;
 
     process.on('SIGTERM', async () => {
-        logger.info(`Worker ${process.pid} received SIGTERM - stopping filler`);
+        logger.info(`Worker ${process.pid} received SIGTERM — stopping filler`);
 
         if (filler) {
             await filler.stopFiller();
