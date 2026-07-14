@@ -1,5 +1,5 @@
 import {oneLine} from 'common-tags';
-import {IAccountCollectionStats} from 'atomicassets/build/API/Explorer/Objects';
+import {IAccountCollectionStats} from '@atomichub/atomicassets';
 import {buildBoundaryFilter, RequestValues} from '../../utils';
 import {AtomicAssetsContext} from '../index';
 import QueryBuilder from '../../../builder';

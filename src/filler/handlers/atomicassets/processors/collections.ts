@@ -5,7 +5,7 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { AuthorSwapsTableRow, CollectionsTableRow } from '../types/tables';
-import { deserialize, ObjectSchema } from 'atomicassets';
+import { deserialize, ObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function collectionProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {

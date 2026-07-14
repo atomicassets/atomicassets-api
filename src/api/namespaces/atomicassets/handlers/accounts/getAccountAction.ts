@@ -3,9 +3,8 @@ import {AtomicAssetsContext} from '../../index';
 import {QueryResult} from 'pg';
 import QueryBuilder from '../../../../builder';
 import {buildGreylistFilter, buildHideOffersFilter} from '../../utils';
-import {ICollection, ITemplate} from 'atomicassets/build/API/Explorer/Objects';
+import {ICollection, ISchema, ITemplate} from '@atomichub/atomicassets';
 import {formatCollection, formatSchema, formatTemplate} from '../../format';
-import {ISchema} from 'atomicassets/build/Schema';
 import { arrayUnique } from '../../../../../utils';
 
 export async function getAccountAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<{

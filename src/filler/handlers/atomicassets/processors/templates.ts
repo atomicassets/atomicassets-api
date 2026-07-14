@@ -5,7 +5,7 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { MutableTemplatesTableRow, TemplatesTableRow } from '../types/tables';
-import { deserialize, ObjectSchema } from 'atomicassets';
+import { deserialize, ObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function templateProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {

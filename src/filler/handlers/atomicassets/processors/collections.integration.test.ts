@@ -1,7 +1,7 @@
 import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
-import { serialize, ObjectSchema } from 'atomicassets';
+import { serialize, ObjectSchema } from '@atomichub/atomicassets';
 import {
     createProcessorTestContext,
     createBlock,
