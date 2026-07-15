@@ -18,6 +18,10 @@ class RpcAdapter {
     async get_table_rows(params: any): Promise<any> {
         return await retryTransient(() => this.client.v1.chain.get_table_rows(params), { label: 'chain.get_table_rows' });
     }
+
+    async get_table_by_scope(params: any): Promise<any> {
+        return await retryTransient(() => this.client.v1.chain.get_table_by_scope(params), { label: 'chain.get_table_by_scope' });
+    }
 }
 
 export default class ChainApi {

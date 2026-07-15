@@ -89,7 +89,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     });
 
     (async (): Promise<void> => {
-        // The node (and DB/redis) can be transiently unreachable at boot — the
+        // The node (and DB/redis) can be transiently unreachable at boot - the
         // SHIP/RPC pod may be mid-restart even after the wait-for-ship init gate.
         // Wait it out with bounded backoff (~5 min) instead of letting an
         // ECONNREFUSED crash-loop the whole filler.
@@ -227,7 +227,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
 
     process.on('SIGTERM', () => {
-        logger.info('Primary received SIGTERM — shutting down workers');
+        logger.info('Primary received SIGTERM - shutting down workers');
 
         isShuttingDown = true;
 
@@ -246,7 +246,7 @@ if (cluster.isPrimary || cluster.isMaster) {
     let filler: Filler | null = null;
 
     process.on('SIGTERM', async () => {
-        logger.info(`Worker ${process.pid} received SIGTERM — stopping filler`);
+        logger.info(`Worker ${process.pid} received SIGTERM - stopping filler`);
 
         if (filler) {
             await filler.stopFiller();

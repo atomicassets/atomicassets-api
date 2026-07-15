@@ -4,6 +4,7 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { ConfigTableRow, TokenConfigsTableRow } from '../types/tables';
+import { parseContractMajorVersion } from '../v2-guard';
 
 export function configProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
@@ -64,6 +65,22 @@ export function configProcessor(core: AtomicAssetsHandler, processor: DataProces
                     str: 'contract = $1',
                     values: [contract]
                 }, ['contract']);
+            }
+
+            // v2 late-upgrader continuity marker (design.md "Startup guard"):
+            // a live tokenconfigs delta reporting v2+ is proof this reader was
+            // subscribed for the flip, so it could not have missed the v2
+            // table data. NULL-checked, not version-compared, so a rewound
+            // replay that reprocesses the same delta after the marker is
+            // already set (accept_v2_gap, or a prior pass of this same
+            // delta) is a no-op rather than re-triggering on old === new.
+            const majorVersion = parseContractMajorVersion(delta.value.version);
+
+            if (majorVersion !== null && majorVersion >= 2) {
+                await db.query(
+                    'UPDATE atomicassets_config SET v2_marker_block = $1 WHERE contract = $2 AND v2_marker_block IS NULL',
+                    [block.block_num, contract]
+                );
             }
 
             core.tokenconfigs = delta.value;

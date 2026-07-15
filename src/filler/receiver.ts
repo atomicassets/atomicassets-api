@@ -294,7 +294,7 @@ export default class StateReceiver {
                 if (resp.this_block.block_num < this.lastIrreversibleBlock) {
                     throw new Error(
                         'SHIP served block #' + resp.this_block.block_num + ' below the irreversible floor #' +
-                        this.lastIrreversibleBlock + ' — refusing to rollback past the reversible window. ' +
+                        this.lastIrreversibleBlock + ' - refusing to rollback past the reversible window. ' +
                         'The SHIP node is likely serving a rewound head (stale snapshot restore); ' +
                         'the reader will retry until it serves blocks at or above the checkpoint.'
                     );

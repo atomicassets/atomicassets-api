@@ -95,7 +95,7 @@ async function main(): Promise<void> {
         // CONCURRENTLY cannot run inside a transaction, but the indexes they
         // create are part of the schema the code relies on (e.g. the unique
         // mints index that ON CONFLICT targets). Apply them here autocommit,
-        // with CONCURRENTLY stripped — the test tables are empty.
+        // with CONCURRENTLY stripped - the test tables are empty.
         for (const handlerName of ['database', ...testHandlers]) {
             const deferredFile = handlerName === 'database'
                 ? `${versionDir}database-deferred.sql`

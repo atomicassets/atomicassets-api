@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS atomicassets_config (
     contract character varying(12) NOT NULL,
     version character varying(64) NOT NULL,
     collection_format jsonb[] NOT NULL,
+    v2_marker_block bigint,
     CONSTRAINT atomicassets_config_pkey PRIMARY KEY (contract)
 );
 
