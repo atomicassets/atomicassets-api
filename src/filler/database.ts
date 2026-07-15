@@ -424,6 +424,28 @@ export class ContractDB {
         };
     }
 
+    // Reversible bookkeeping below the fork-guard floor is unreachable by any
+    // legitimate rollback (LIB-driven pruning normally removes it; rows this old
+    // survive only when a past crash skipped that prune) and is pure fuel for an
+    // illegitimate deep rollback. Runs once per reader startup.
+    async cleanupStaleReversibleData(reader: string, floorBlock: number): Promise<void> {
+        const queries = await this.connection.database.query(
+            'DELETE FROM reversible_queries WHERE reader = $1 AND block_num < $2',
+            [reader, floorBlock]
+        );
+        const blocks = await this.connection.database.query(
+            'DELETE FROM reversible_blocks WHERE reader = $1 AND block_num < $2',
+            [reader, floorBlock]
+        );
+
+        if (queries.rowCount > 0 || blocks.rowCount > 0) {
+            logger.warn(
+                'Pruned stale reversible bookkeeping below block #' + floorBlock +
+                ' (' + queries.rowCount + ' queries, ' + blocks.rowCount + ' blocks) for reader ' + reader
+            );
+        }
+    }
+
     async getReaderPosition(): Promise<{ live: boolean, block_num: number, updated: number }> {
         const query = await this.connection.database.query('SELECT live, block_num, updated FROM contract_readers WHERE name = $1', [this.name]);
 

@@ -136,6 +136,20 @@ export default class StateReceiver {
         this.currentBlock = startBlock - 1;
         this.lastBlockUpdate = startBlock - 1;
 
+        // Arm the fork guard from the durable checkpoint. lastIrreversibleBlock
+        // otherwise stays 0 until the first processed block, so a SHIP serving a
+        // rewound head on the very first message after connect (e.g. a node
+        // restored from a stale snapshot) passes the guard and the fork path
+        // rewinds the reader arbitrarily far, un-doing whatever stale reversible
+        // rows it finds along the way. Nothing more than the reversible window
+        // below the checkpoint can be a real fork.
+        this.lastIrreversibleBlock = Math.max(0, this.currentBlock - StateReceiver.MAX_REVERSIBLE_WINDOW);
+
+        // Reversible bookkeeping older than the guard floor is unreachable by any
+        // legitimate fork rollback and only exists to fuel an illegitimate one:
+        // rows this stale survive when a past crash skipped the LIB-driven prune.
+        await this.database.cleanupStaleReversibleData(this.name, this.lastIrreversibleBlock);
+
         const prefetch = this.config.ship_prefetch_blocks || 10;
         const minConfirm = this.config.ship_min_block_confirmation || 1;
 
@@ -187,6 +201,12 @@ export default class StateReceiver {
 
     private static readonly MAX_BLOCK_RETRIES = 3;
     private static readonly RETRY_DELAY_MS = 1000;
+
+    // Upper bound on how far below the checkpoint a genuine fork can reach.
+    // Antelope LIB trails head by ~330 blocks (last_irreversible refines this
+    // upward as soon as the first block is processed); 1000 leaves margin
+    // without permitting a month-deep "fork" from a rewound SHIP node.
+    private static readonly MAX_REVERSIBLE_WINDOW = 1000;
 
     private async consumer(resp: ShipBlockResponse): Promise<void> {
         await this.dsLock.acquire();
@@ -272,7 +292,12 @@ export default class StateReceiver {
         try {
             if (resp.this_block.block_num <= this.currentBlock) {
                 if (resp.this_block.block_num < this.lastIrreversibleBlock) {
-                    throw new Error('Dont rollback more blocks than are reversible');
+                    throw new Error(
+                        'SHIP served block #' + resp.this_block.block_num + ' below the irreversible floor #' +
+                        this.lastIrreversibleBlock + ' — refusing to rollback past the reversible window. ' +
+                        'The SHIP node is likely serving a rewound head (stale snapshot restore); ' +
+                        'the reader will retry until it serves blocks at or above the checkpoint.'
+                    );
                 }
 
                 logger.info('Chain fork detected. Reverse all blocks which were affected');
@@ -315,7 +340,9 @@ export default class StateReceiver {
 
         this.currentBlock = resp.this_block.block_num;
         this.headBlock = resp.head.block_num;
-        this.lastIrreversibleBlock = resp.last_irreversible.block_num;
+        // max(): LIB never legitimately decreases, and a rewound SHIP's status
+        // must not be allowed to lower the fork-guard floor it reports against.
+        this.lastIrreversibleBlock = Math.max(this.lastIrreversibleBlock, resp.last_irreversible.block_num);
         this.blocksUntilHead = blocksUntilHead;
 
         if (this.collectedBlocks >= commitSize) {
