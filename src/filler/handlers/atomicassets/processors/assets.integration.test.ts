@@ -129,6 +129,33 @@ describe('assetProcessor', () => {
             expect(mint.minter).to.equal('minter1');
         });
 
+        it('should tolerate replaying a mint whose row already exists', async () => {
+            const block = createBlock();
+            const tx = createTx();
+            const data: LogMintAssetActionData = {
+                asset_id: '1099511627777',
+                authorized_minter: 'minter1',
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: 1,
+                new_asset_owner: 'owner1111111',
+                immutable_data: [],
+                mutable_data: [],
+                backed_tokens: [],
+                immutable_template_data: [],
+            };
+            const trace = createActionTrace(CONTRACT, 'logmint', data);
+
+            await processActionTrace(processor, db, block, tx, trace);
+            await processActionTrace(processor, db, block, tx, trace);
+
+            const mintResult = await client.query(
+                'SELECT * FROM atomicassets_mints WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, data.asset_id]
+            );
+            expect(mintResult.rowCount).to.equal(1);
+        });
+
         it('should set template_id to null when template_id is -1', async () => {
             const block = createBlock();
             const tx = createTx();

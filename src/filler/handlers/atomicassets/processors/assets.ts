@@ -74,7 +74,10 @@ export function assetProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 const chunks = arrayChunk(tableInserts.mints, 50);
 
                 for (const chunk of chunks) {
-                    await db.insert('atomicassets_mints', chunk, ['contract', 'asset_id']);
+                    // Mints are immutable facts keyed by (contract, asset_id); a replay
+                    // after a crash whose data committed past the reader checkpoint
+                    // re-inserts identical rows, so conflicts are skipped, not errors.
+                    await db.insert('atomicassets_mints', chunk, ['contract', 'asset_id'], true, true, 'nothing');
                 }
             }
 
