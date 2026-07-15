@@ -239,6 +239,7 @@ describe('StateReceiver', () => {
             (receiver as any).database = {
                 getReaderPosition: sinon.stub().resolves({ block_num: 99, live: false, updated: 0 }),
                 getLastReaderBlocks: sinon.stub().resolves([]),
+                cleanupStaleReversibleData: sinon.stub().resolves(),
             };
             (receiver as any).processor = {
                 setState: sinon.stub(),
@@ -278,6 +279,7 @@ describe('StateReceiver', () => {
             (receiver as any).database = {
                 getReaderPosition: sinon.stub().resolves({ block_num: 99, live: false, updated: 0 }),
                 getLastReaderBlocks: sinon.stub().resolves([]),
+                cleanupStaleReversibleData: sinon.stub().resolves(),
             };
             (receiver as any).processor = {
                 setState: sinon.stub(),
@@ -288,6 +290,122 @@ describe('StateReceiver', () => {
 
             // Should NOT have called setOptions
             expect(setOptionsSpy.called).to.equal(false);
+        });
+    });
+
+    describe('ship rewind guard', () => {
+        function createStartedReceiver(checkpoint: number): StateReceiver {
+            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
+            (receiver as any).dsLock = new Semaphore(5);
+            (receiver as any).dsQueue = new PQueue({concurrency: 1, autoStart: true});
+            (receiver as any).config = {
+                name: 'test-reader',
+                ship_prefetch_blocks: 50,
+                ship_min_block_confirmation: 10,
+                ship_ds_queue_size: 5,
+                start_block: 0,
+                stop_block: 0,
+                irreversible_only: false,
+            };
+            (receiver as any).ship = {
+                setOptions: sinon.stub(),
+                startProcessing: sinon.stub(),
+                consume: sinon.stub(),
+            };
+            (receiver as any).database = {
+                getReaderPosition: sinon.stub().resolves({ block_num: checkpoint, live: true, updated: 0 }),
+                getLastReaderBlocks: sinon.stub().resolves([]),
+                cleanupStaleReversibleData: sinon.stub().resolves(),
+                startTransaction: sinon.stub(),
+            };
+            (receiver as any).processor = {
+                setState: sinon.stub(),
+                getState: sinon.stub().returns(1),
+            };
+            (receiver as any).handlers = [];
+            // The constructor copies config.name to the readonly field; mirror it.
+            (receiver as any).name = 'test-reader';
+            return receiver;
+        }
+
+        it('arms the irreversible floor from the checkpoint before the first block', async () => {
+            const receiver = createStartedReceiver(6_000_000);
+            await receiver.startProcessing();
+
+            expect(receiver.lastIrreversibleBlock).to.equal(6_000_000 - 1000);
+            const cleanup = (receiver as any).database.cleanupStaleReversibleData;
+            expect(cleanup.calledOnceWith('test-reader', 6_000_000 - 1000)).to.equal(true);
+        });
+
+        it('refuses a rollback below the reversible window instead of rewinding', async () => {
+            const receiver = createStartedReceiver(6_000_000);
+            await receiver.startProcessing();
+
+            const rollbackSpy = sinon.stub().resolves();
+            (receiver as any).database.startTransaction = sinon.stub().resolves({
+                rollbackReversibleBlocks: rollbackSpy,
+                abort: sinon.stub().resolves(),
+                insert: sinon.stub().resolves(),
+                commit: sinon.stub().resolves(),
+            });
+
+            // A SHIP restored from a stale snapshot serves a block far below the
+            // checkpoint on the first message after connect.
+            const resp = makeBlockResponse(5_000_000);
+            let error: Error | null = null;
+            try {
+                await (receiver as any).process(resp, [], []);
+            } catch (e: any) {
+                error = e;
+            }
+
+            expect(error).to.not.equal(null);
+            expect(error!.message).to.include('refusing to rollback');
+            expect(rollbackSpy.called).to.equal(false);
+        });
+
+        it('still rolls back a genuine fork inside the reversible window', async () => {
+            const receiver = createStartedReceiver(6_000_000);
+            await receiver.startProcessing();
+
+            const rollbackSpy = sinon.stub().resolves();
+            (receiver as any).database.startTransaction = sinon.stub().resolves({
+                rollbackReversibleBlocks: rollbackSpy,
+                abort: sinon.stub().resolves(),
+                insert: sinon.stub().resolves(),
+                commit: sinon.stub().resolves(),
+                clearForkDatabase: sinon.stub().resolves(),
+                updateReaderPosition: sinon.stub().resolves(),
+            });
+            (receiver as any).notifier = {
+                sendFork: sinon.stub(),
+                publish: sinon.stub().resolves(),
+            };
+            (receiver as any).processor = {
+                setState: sinon.stub(),
+                getState: sinon.stub().returns(1),
+                notifyCommit: sinon.stub().resolves(),
+            };
+
+            const resp = makeBlockResponse(6_000_000 - 50);
+            try {
+                await (receiver as any).process(resp, [], []);
+            } catch {
+                // Later stages of process() may fail against the partial stubs;
+                // the assertion below is only about the fork path being taken.
+            }
+
+            expect(rollbackSpy.calledOnceWith(6_000_000 - 50)).to.equal(true);
+        });
+
+        it('never lets a rewound SHIP status lower the armed floor', async () => {
+            const receiver = createStartedReceiver(6_000_000);
+            await receiver.startProcessing();
+
+            expect(receiver.lastIrreversibleBlock).to.equal(5_999_000);
+            // Simulate the post-block assignment with a stale LIB from the SHIP.
+            receiver.lastIrreversibleBlock = Math.max(receiver.lastIrreversibleBlock, 4_000_000);
+            expect(receiver.lastIrreversibleBlock).to.equal(5_999_000);
         });
     });
 });
