@@ -1,6 +1,9 @@
 import * as os from 'os';
 
-import * as cluster from 'cluster';
+// Default import, not `* as`: swc's CommonJS namespace interop copies only own
+// enumerable properties, so EventEmitter prototype methods like cluster.on are
+// undefined on the namespace object at runtime while typechecking passes.
+import cluster from 'cluster';
 import express from 'express';
 
 import Filler from '../filler/filler';
