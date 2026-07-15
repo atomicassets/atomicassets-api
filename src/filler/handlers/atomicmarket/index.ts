@@ -73,13 +73,31 @@ const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WOR
 // holds the working set in memory with headroom; same single-conn + reclaimable-cache
 // safety as SALES_FILTERS_WORK_MEM_MB.
 const TEMPLATE_PRICES_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_WORK_MEM_MB', 1024);
+// Per-run statement_timeout (seconds) for the same recompute, applied via `SET LOCAL`
+// inside runWithWorkMem's transaction - the same PgBouncer-safe, txn-scoped mechanism
+// SALES_FILTERS_STATEMENT_TIMEOUT_MS uses (see drainOneBatch/runWithWorkMem above). This
+// value EXCEEDS longRunningPool's own connection-level statement_timeout (300s / 5min,
+// see the pool config below) by design: a cold full recompute (empty/evicted cache) takes
+// 7-8 minutes, past the pool's 5min ceiling, so the job needs its own longer per-transaction
+// override or a cache-evicting restart wedges it into timing out (57014) on every interval
+// forever. `SET LOCAL` - not a session-level `SET`, and not `ALTER FUNCTION ... SET
+// statement_timeout` - is what makes this both effective and safe: a session-level SET would
+// leak past this transaction under PgBouncer transaction pooling (the server backend is
+// shared across transactions), whereas `SET LOCAL` is scoped to the transaction and
+// PostgreSQL reverts it at transaction end regardless of pooling mode. A function-scoped ALTER FUNCTION
+// setting was ruled out because Postgres arms the statement timer from the session value in
+// effect when the top-level statement starts; a setting that only takes hold once execution
+// is already inside the function body cannot retroactively extend a timer armed before the
+// call began. Default 900s (15min), comfortably above the measured cold-run ceiling.
+const TEMPLATE_PRICES_STATEMENT_TIMEOUT_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S', 900);
 // Cadence (seconds) of the template-prices recompute. Shortened 1h -> 5min in 1.7.8 so
 // users see updated suggested/aggregate template prices ~12x sooner. Safe at this cadence
 // because: (a) the work_mem fix above keeps each run in memory (no spill), (b) it runs on
 // longRunningPool (max:1, so runs never overlap), and (c) the job is now reader-gated
 // (shouldDeferDrain) so it yields block-write priority while the reader is catching up.
-// The 300s statement_timeout is a worst-case CEILING, not the typical run time, so the gate
-// — not the interval — is what guarantees it can't starve the reader. Env-tunable.
+// The per-run statement_timeout above is a worst-case ceiling for a single COLD run, not the
+// typical run time - a warm run reuses cached pages and finishes in seconds - so the gate,
+// not the interval, is what guarantees the job can't starve the reader. Env-tunable.
 const TEMPLATE_PRICES_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S', 5 * 60);
 
 // Sliced cadence for refresh_atomicmarket_sales_filters_price(slice, total_slices).
@@ -161,19 +179,25 @@ async function drainOneBatch(
 
 /**
  * Run a single long-running maintenance statement in its own transaction with a
- * raised work_mem + async commit, generalizing drainOneBatch's SET LOCAL pattern
- * (same PgBouncer-safe, txn-scoped rationale; see drainOneBatch). For heavy
- * aggregations (PERCENTILE_DISC / hash-agg / sorts) this keeps the working set in
- * memory instead of spilling to pgsql_tmp and going IO-bound against the reader's
- * block-writes — the failure class found in the 2026-06 DB write-spill audit.
- * Use on longRunningPool (max:1) so the per-run work_mem ceiling is bounded.
+ * raised work_mem + statement_timeout + async commit, generalizing drainOneBatch's
+ * SET LOCAL pattern (same PgBouncer-safe, txn-scoped rationale; see drainOneBatch).
+ * For heavy aggregations (PERCENTILE_DISC / hash-agg / sorts) the raised work_mem
+ * keeps the working set in memory instead of spilling to pgsql_tmp and going
+ * IO-bound against the reader's block-writes - the failure class found in the
+ * 2026-06 DB write-spill audit. The raised statement_timeout lets a per-statement
+ * budget exceed the pool's own connection-level statement_timeout for statements
+ * whose cold-cache runtime is known to run longer than that ceiling; `SET LOCAL`
+ * reverts at COMMIT so it never leaks onto the connection's next use through
+ * PgBouncer transaction pooling. Use on longRunningPool (max:1) so the per-run
+ * work_mem and statement_timeout ceilings are bounded to one call at a time.
  */
-export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: number): Promise<void> {
+export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: number, statementTimeoutS: number): Promise<void> {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         try {
             await client.query(`SET LOCAL work_mem = '${Number(workMemMb)}MB'`);
+            await client.query(`SET LOCAL statement_timeout = '${Number(statementTimeoutS)}s'`);
             await client.query('SET LOCAL synchronous_commit = off');
             await client.query(sql);
             await client.query('COMMIT');
@@ -787,7 +811,12 @@ export default class AtomicMarketHandler extends ContractHandler {
             // Raised work_mem so the PERCENTILE_DISC + per-template hash-agg recompute
             // stays in memory instead of spilling ~284 MB to pgsql_tmp every run (write-spill audit);
             // that in-memory speedup + the gate are what let us run it every 5min instead of hourly.
-            await runWithWorkMem(longRunningPool, 'SELECT update_atomicmarket_template_prices()', TEMPLATE_PRICES_WORK_MEM_MB);
+            await runWithWorkMem(
+                longRunningPool,
+                'SELECT update_atomicmarket_template_prices()',
+                TEMPLATE_PRICES_WORK_MEM_MB,
+                TEMPLATE_PRICES_STATEMENT_TIMEOUT_S,
+            );
         });
 
         // reconcile_atomicmarket_listings disabled 2026-04-15. This job called

@@ -192,32 +192,57 @@ describe('runWithWorkMem', () => {
         return { pool: { connect: async () => client }, queries, released: () => released };
     }
 
-    it('wraps the statement in a txn with raised work_mem + async commit, in order, then COMMITs', async () => {
+    it('wraps the statement in a txn with raised work_mem + statement_timeout + async commit, in order, then COMMITs', async () => {
         const { pool, queries, released } = makeClient();
-        await runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024);
+        await runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024, 900);
 
         expect(queries).to.deep.equal([
             'BEGIN',
             "SET LOCAL work_mem = '1024MB'",
+            "SET LOCAL statement_timeout = '900s'",
             'SET LOCAL synchronous_commit = off',
             'SELECT update_atomicmarket_template_prices()',
             'COMMIT',
         ]);
-        // work_mem + synchronous_commit are SET BEFORE the heavy statement runs
+        // work_mem + statement_timeout + synchronous_commit are SET BEFORE the heavy statement runs
         expect(queries.indexOf("SET LOCAL work_mem = '1024MB'")).to.be.lessThan(
             queries.indexOf('SELECT update_atomicmarket_template_prices()'));
+        expect(queries.indexOf("SET LOCAL statement_timeout = '900s'")).to.be.lessThan(
+            queries.indexOf('SELECT update_atomicmarket_template_prices()'));
         expect(released()).to.equal(true);
+    });
+
+    it('threads a non-default statement_timeout through to the SET LOCAL (env-override path)', async () => {
+        const { pool, queries } = makeClient();
+        await runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024, 60);
+
+        expect(queries).to.include("SET LOCAL statement_timeout = '60s'");
+        expect(queries).to.not.include("SET LOCAL statement_timeout = '900s'");
     });
 
     it('rolls back and rethrows when the statement errors, and always releases the client', async () => {
         const { pool, queries, released } = makeClient('template_prices');
         await expect(
-            runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024),
+            runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024, 900),
         ).to.be.rejectedWith(/boom/);
 
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');
         expect(released()).to.equal(true);
+    });
+
+    it('coerces statementTimeoutS through Number() rather than interpolating it raw - an unvalidated/non-numeric value cannot inject SQL', async () => {
+        const { pool, queries } = makeClient();
+        // A caller that bypasses the `number` type (e.g. via `as any`, or an upstream
+        // validation bug) must still be neutralized here: Number() on a non-numeric
+        // string produces NaN, which templates to the literal 'NaNs' - a Postgres error,
+        // not injected SQL. This is the last line of defense; the env knob itself is
+        // already validated positive-integer by positiveIntEnv (see src/utils/env.ts).
+        const evil = '900; DROP TABLE wsc_statement_timeout_probe; --' as unknown as number;
+        await runWithWorkMem(pool, 'SELECT 1', 1024, evil);
+
+        expect(queries).to.include("SET LOCAL statement_timeout = 'NaNs'");
+        expect(queries.some(q => q.includes('DROP TABLE'))).to.equal(false);
     });
 });
 
