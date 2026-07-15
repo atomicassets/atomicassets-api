@@ -56,6 +56,21 @@ including operators coming from `eosio-contract-api`.
   maintenance pool's own 5-minute connection-level `statement_timeout`; without
   a per-transaction override the job would time out and retry on every
   interval indefinitely after any cache-evicting restart.
+- The filler's `unhandledRejection` / `uncaughtException` handlers now log and
+  `process.exit(1)` instead of swallowing the error and staying up. A
+  swallowed startup rejection (e.g. a `statement_timeout` during
+  `AtomicAssetsHandler.init`'s mint-gap check on a cold cache) left the
+  process alive but the reader never started, and Kubernetes had no crashed
+  process to restart - the filler fell behind at chain rate with no
+  liveness signal. The API server keeps its separate handlers unchanged since
+  a single stray rejection there should not take the whole API down. The
+  primary process also now exits on an unexpected reader-worker death: each
+  forked worker owns one reader config, and a worker killed by its own
+  unhandledRejection/uncaughtException handler exits without the
+  `failure`-message the primary otherwise relies on, so the primary used to
+  keep running with a dead reader and a still-passing `/healthc`. A normal
+  SIGTERM shutdown is exempted so it still exits cleanly instead of via this
+  escalation path.
 
 ## [1.7.18]
 
