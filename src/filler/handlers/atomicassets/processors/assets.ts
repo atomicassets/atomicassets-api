@@ -11,7 +11,7 @@ import {
 } from '../types/actions';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate, splitEosioToken } from '../../../../utils/eosio';
-import { convertAttributeMapToObject } from '../utils';
+import { convertAttributeMapToObject } from '@atomichub/atomicassets';
 import ApiNotificationSender from '../../../notifier';
 import { arrayChunk } from '../../../../utils';
 import { encodeDatabaseJson } from '../../../utils';

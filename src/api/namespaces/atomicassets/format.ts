@@ -1,3 +1,5 @@
+import type {IApiSchema} from '@atomichub/atomicassets';
+
 export function formatAsset(row: any): any {
     const data = {...row};
 
@@ -69,7 +71,7 @@ export interface FormatSchemaOptions {
     includeTypes?: boolean;
 }
 
-export function formatSchema(row: any, options: FormatSchemaOptions = {}): any {
+export function formatSchema(row: any, options: FormatSchemaOptions = {}): IApiSchema {
     const {collection_name: _collection_name, authorized_accounts: _authorized_accounts, ...data} = row;
 
     data.collection = formatCollection(data.collection);

@@ -1,5 +1,6 @@
-export type AttributeMap = Array<{key: string, value: [string, any]} | {first: string, second: [string, any]}>;
-export type Format = {name: string, type: string};
+import type {AttributeMap, Format, SchemaFormatType} from '@atomichub/atomicassets';
+
+export type {AttributeMap, Format};
 
 export type LogTransferActionData = {
     collection_name: string,
@@ -99,7 +100,7 @@ export type LogNewTemplateActionData = {
     transferable: boolean,
     burnable: boolean,
     max_supply: number,
-    immuntable_data: AttributeMap
+    immutable_data: DecodedAttributeMap
 };
 
 export type LockTemplateActionData = {
@@ -181,6 +182,6 @@ export type LogSetTemplateDataActionData = {
 export type LogSetSchemaTypeActionData = {
     authorized_editor: string,
     collection_name: string,
-    schema_name: number,
-    schema_format_type: any
+    schema_name: string,
+    schema_format_type: SchemaFormatType[]
 };
