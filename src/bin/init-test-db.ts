@@ -90,6 +90,23 @@ async function main(): Promise<void> {
 
         await migrClient.query('COMMIT');
         migrClient.release();
+
+        // Deferred migrations run out-of-band in production because
+        // CONCURRENTLY cannot run inside a transaction, but the indexes they
+        // create are part of the schema the code relies on (e.g. the unique
+        // mints index that ON CONFLICT targets). Apply them here autocommit,
+        // with CONCURRENTLY stripped — the test tables are empty.
+        for (const handlerName of ['database', ...testHandlers]) {
+            const deferredFile = handlerName === 'database'
+                ? `${versionDir}database-deferred.sql`
+                : `${versionDir}${handlerName}-deferred.sql`;
+            if (fs.existsSync(deferredFile)) {
+                const sql = fs.readFileSync(deferredFile, { encoding: 'utf8' })
+                    .replace(/\bCONCURRENTLY\b/gi, '');
+                await connection.query(sql);
+                logger.info(`Applied deferred migration ${deferredFile}`);
+            }
+        }
     }
 
     logger.info('Test database initialized successfully');
