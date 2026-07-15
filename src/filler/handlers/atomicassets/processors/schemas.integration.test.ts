@@ -11,7 +11,7 @@ import {
 import { schemaProcessor } from './schemas';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { SchemaTypesTableRow, SchemasTableRow } from '../types/tables';
+import { SchemaTypesTableRow, SchemasTableRow } from '@atomichub/atomicassets';
 import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';

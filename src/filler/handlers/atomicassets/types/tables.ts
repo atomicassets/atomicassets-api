@@ -1,4 +1,4 @@
-import type {Format, SchemaFormatType} from '@atomichub/atomicassets';
+import type {Format} from '@atomichub/atomicassets';
 
 export type AssetsTableRow = {
     asset_id: string,
@@ -24,13 +24,6 @@ export type CollectionsTableRow = {
     notify_accounts: string[],
     market_fee: number,
     serialized_data: number[]
-};
-
-export type AuthorSwapsTableRow = {
-    collection_name: string,
-    current_author: string,
-    new_author: string,
-    acceptance_date: number,
 };
 
 export type ConfigTableRow = {
@@ -63,16 +56,6 @@ export type MutableTemplatesTableRow = {
     template_id: string,
     schema_name: string,
     mutable_serialized_data: number[]
-};
-
-export type SchemasTableRow = {
-    schema_name: string,
-    format: Format[]
-};
-
-export type SchemaTypesTableRow = {
-    schema_name: string,
-    format_type: SchemaFormatType[]
 };
 
 export type TokenConfigsTableRow = {

@@ -1,4 +1,4 @@
-import type {IApiSchema} from '@atomichub/atomicassets';
+import {mergeSchemaFormatTypes, type IApiSchema, type SchemaFormatType} from '@atomichub/atomicassets';
 
 export function formatAsset(row: any): any {
     const data = {...row};
@@ -79,37 +79,8 @@ export function formatSchema(row: any, options: FormatSchemaOptions = {}): IApiS
     // v2: derive a per-field `mediatype`/`info`, preferring the explicit schema
     // `types` (set via the contract `schematypes` table) and falling back to a
     // name/type heuristic.
-    const types: Array<{name: string, mediatype: string, info: string}> = data.types || [];
-    data.format = (data.format || []).map((field: {name: string, type: string}) => {
-        const type = types.find((x) => x.name === field.name);
-
-        const checkName = (match: string): boolean =>
-            field.name.toLowerCase().startsWith(match) || field.name.toLowerCase().endsWith(match);
-
-        let adjustedType = null;
-
-        if (field.name === 'name') {
-            adjustedType = 'name';
-        }
-
-        if (checkName('image') || checkName('img') || field.type === 'image') {
-            adjustedType = 'image';
-        }
-
-        if (checkName('video')) {
-            adjustedType = 'video';
-        }
-
-        if (checkName('audio')) {
-            adjustedType = 'audio';
-        }
-
-        return {
-            ...field,
-            mediatype: type?.mediatype || adjustedType,
-            info: type?.info || null,
-        };
-    });
+    const types: SchemaFormatType[] = data.types || [];
+    data.format = mergeSchemaFormatTypes(data.format || [], types);
 
     if (options.includeTypes) {
         // A schema with no descriptors reports [] rather than null, so a client

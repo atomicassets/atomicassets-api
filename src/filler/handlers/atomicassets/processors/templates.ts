@@ -5,9 +5,8 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { MutableTemplatesTableRow, TemplatesTableRow } from '../types/tables';
-import { deserialize, ObjectSchema } from '@atomichub/atomicassets';
+import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
-import { toByteArray } from '../utils';
 
 export function templateProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
@@ -52,9 +51,7 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                     throw new Error('AtomicAssets: Schema of template not found. Should not be possible by contract');
                 }
 
-                const byteData = toByteArray(delta.value.immutable_serialized_data);
-
-                const immutableData = deserialize(byteData, ObjectSchema(schemaQuery.rows[0].format));
+                const immutableData = deserialize(delta.value.immutable_serialized_data, CachedObjectSchema(schemaQuery.rows[0].format));
 
                 await db.insert('atomicassets_templates', {
                     contract: contract,
@@ -105,9 +102,7 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                 throw new Error('AtomicAssets: Schema of template not found. Should not be possible by contract');
             }
 
-            const byteData = toByteArray(delta.value.mutable_serialized_data);
-
-            const mutableData = deserialize(byteData, ObjectSchema(schemaQuery.rows[0].format));
+            const mutableData = deserialize(delta.value.mutable_serialized_data, CachedObjectSchema(schemaQuery.rows[0].format));
 
             await db.update('atomicassets_templates', {
                 mutable_data: encodeDatabaseJson(mutableData),

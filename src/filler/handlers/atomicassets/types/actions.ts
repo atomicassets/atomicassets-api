@@ -1,4 +1,4 @@
-import type {AttributeMap, Format, SchemaFormatType} from '@atomichub/atomicassets';
+import type {AttributeMap, DecodedAttributeMap, Format, SchemaFormatType} from '@atomichub/atomicassets';
 
 export type {AttributeMap, Format};
 
@@ -17,10 +17,10 @@ export type LogMintAssetActionData = {
     schema_name: string,
     template_id: number,
     new_asset_owner: string,
-    immutable_data: AttributeMap,
-    mutable_data: AttributeMap,
+    immutable_data: DecodedAttributeMap,
+    mutable_data: DecodedAttributeMap,
     backed_tokens: string[],
-    immutable_template_data: AttributeMap
+    immutable_template_data: DecodedAttributeMap
 };
 
 export type LogBurnAssetActionData = {
@@ -31,8 +31,8 @@ export type LogBurnAssetActionData = {
     template_id: number,
     backed_tokens: string[],
     asset_ram_payer: string,
-    old_immutable_data: AttributeMap,
-    old_mutable_data: AttributeMap
+    old_immutable_data: DecodedAttributeMap,
+    old_mutable_data: DecodedAttributeMap
 };
 
 export type LogBackAssetActionData = {
@@ -44,8 +44,8 @@ export type LogBackAssetActionData = {
 export type LogSetDataActionData = {
     asset_owner: string,
     asset_id: string,
-    old_data: AttributeMap,
-    new_data: AttributeMap
+    old_data: DecodedAttributeMap,
+    new_data: DecodedAttributeMap
 };
 
 export type AddColAuthActionData = {
@@ -65,7 +65,7 @@ export type CreateColActionData = {
     authorized_accounts: string[],
     notify_accounts: string[],
     market_fee: number,
-    data: AttributeMap
+    data: DecodedAttributeMap
 };
 
 export type ForbidNotifyActionData = {
@@ -89,7 +89,7 @@ export type SetMarketFeeActionData = {
 
 export type SetColDataActionData = {
     collection_name: string,
-    data: AttributeMap
+    data: DecodedAttributeMap
 };
 
 export type LogNewTemplateActionData = {
@@ -175,8 +175,8 @@ export type LogSetTemplateDataActionData = {
     authorized_editor: string,
     collection_name: string,
     template_id: number,
-    old_data: AttributeMap,
-    new_data: AttributeMap
+    old_data: DecodedAttributeMap,
+    new_data: DecodedAttributeMap
 };
 
 export type LogSetSchemaTypeActionData = {
