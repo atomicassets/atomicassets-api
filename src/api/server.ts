@@ -354,7 +354,7 @@ export class WebServer {
                     redis: {
                         status: server.connection.redis.ioRedis.status === 'ready' ? 'OK' : 'ERROR'
                     },
-                    chain: chainHealth
+                    chain: {...chainHealth, chain_id: server.connection.chain.chainId}
                 }, query_time: Date.now()
             };
         }
