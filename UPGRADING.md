@@ -12,6 +12,12 @@ covers what changes, whether you need a new Postgres, and the exact steps.
 - Upgrading is **safe to do now, before the chain switches to the v2 contract.** A
   v2 indexer reads a still-v1 chain fine; the new features stay dormant until the
   contract is upgraded on-chain, then light up on their own.
+- **Recommended order: upgrade the indexer to 2.0 before the on-chain contract
+  flip.** A v2 filler subscribed for the flip records it as it happens, so no
+  gap can open. Upgrading after the contract has already flipped on-chain needs
+  an extra recovery step - see
+  [Upgrading after the contracts are already live](#upgrading-after-the-contracts-are-already-live)
+  below.
 - You do not hand-apply SQL. Point the filler at the v2 image and it runs every
   pending migration in order, all the way from a 1.3.x schema to 2.0.x. There
   are no manual steps; the v2 migrations are metadata-only and run in seconds
@@ -157,6 +163,74 @@ If you are standing up a new indexer rather than upgrading, do not sync from
 genesis. Start from `docker-compose.yml` and restore a published database dump
 first. See [Restore from a published dump](README.md#restore-from-a-published-dump)
 and [Keeping it running in production](README.md#keeping-it-running-in-production).
+
+## Upgrading after the contracts are already live
+
+If you moved to the 2.0 image only after the on-chain AtomicAssets contract
+already flipped to v2, a 1.x filler that ran across that flip missed something:
+it keeps indexing ownership, mints, transfers, offers, and sales correctly, but
+it never subscribed to the new v2 tables (`templates2`, `schematypes`,
+`authorswaps`), so mutable template data, schema media types, and pending
+author-succession changes from that window are simply absent from your
+database. Worse, a template deleted on-chain during the gap leaves a
+permanently stale row: `deltemplate` emits no log action, so there is nothing
+for a replay to recover from later, no matter how far back you rewind.
+
+**The startup guard.** Because of this, the 2.0 filler refuses to start
+against a contract when all of the following hold: the chain's `tokenconfigs`
+reports v2 or later, this reader already has a stored position (it is not a
+fresh sync), and no v2-continuity marker has been recorded for the contract.
+A fresh sync is unaffected - it proves the marker itself the moment its live
+reader observes the v2 flip (or starts after it, having replayed through it).
+The guard error names the recovery paths below.
+
+Pick one, in order of data correctness:
+
+1. **Restore a published dump (recommended).** A database restored from
+   [backups.atomichub.io](https://backups.atomichub.io) was indexed by a 2.0
+   filler that ran across the flip, so it has none of the gap: deletion blocks
+   are exact, gap-period log rows are present, and the continuity marker is
+   already set - the guard passes with no extra step.
+   See [Restore from a published dump](README.md#restore-from-a-published-dump).
+2. **Run `reconcile` (fallback when a dump restore is not an option).** Use
+   this when no published dump exists for your chain, your reader config
+   indexes contracts the published database does not, or you cannot replace
+   your database wholesale. Know what it cannot fix: templates deleted during
+   the gap are stamped at the reconcile run's snapshot block (the true
+   deletion block is unrecoverable), and log/history rows from the gap stay
+   missing - the skew is permanent, limited to those two areas. Stop the
+   filler, then run `pnpm start:reconcile` (or `pnpm dev:reconcile` from a
+   checkout). It reads your `connections.config.json` and
+   `readers.config.json`, refuses to run against a reader that is still live
+   or was updated in the last 60 seconds, and for each configured atomicassets
+   contract: seeds current on-chain state for `templates2` / `schematypes` /
+   `authorswaps`, diffs on-chain `templates` against your database to catch
+   anything deleted during the gap, and records the continuity marker. It is
+   safe to re-run; a second run over unchanged chain state makes no further
+   changes. Restart the filler once it finishes.
+3. **Rewind and replay (exact history, requires full-history SHIP).** If your
+   SHIP node retains history back to the v2 flip block, rewind this reader's
+   stored position to at or before that block, set `accept_v2_gap: true` in
+   its entry in `readers.config.json`, and restart. The replay itself heals
+   the missing v2 data by re-processing the flip and everything after it; the
+   override exists only because the guard has no way to distinguish a
+   deliberate rewind-and-replay from an unhealed gap at startup. This is the
+   only path that recovers exact history rather than current-state snapshots
+   (recovered deletion timestamps are exact, not approximate) - but it is not
+   automated and depends on SHIP retention you may not have.
+4. **Accept the gap.** Set `accept_v2_gap: true` alone in
+   `readers.config.json` and restart. The filler starts and records the marker
+   at its current block without repairing anything; mutable-template,
+   media-type, and author-succession data indexed before that point stays
+   whatever it was (mostly absent), and any template deleted during the gap
+   stays wrongly listed as live. Only reasonable if that data does not matter
+   for your deployment.
+
+A dump restore is the most correct recovery available to most operators;
+`reconcile` converges every current-state column but leaves the two permanent
+skews above, so prefer the dump whenever you can take it. The rewind replay is
+documented for when exact history matters and you hold full-history SHIP
+coverage, but it is not automated.
 
 ## Compatibility, in short
 

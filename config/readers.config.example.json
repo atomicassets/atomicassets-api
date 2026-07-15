@@ -25,7 +25,8 @@
         "args": {
           "atomicassets_account": "atomicassets",
           "store_transfers": true,
-          "store_logs": true
+          "store_logs": true,
+          "accept_v2_gap": false
         }
       },
       {

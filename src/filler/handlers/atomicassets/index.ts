@@ -17,6 +17,7 @@ import { templateProcessor } from './processors/templates';
 import Filler  from '../../filler';
 import { JobQueuePriority } from '../../jobqueue';
 import { positiveIntEnv } from '../../../utils/env';
+import { evaluateV2Guard, parseContractMajorVersion } from './v2-guard';
 
 export const ATOMICASSETS_BASE_PRIORITY = 0;
 
@@ -51,7 +52,14 @@ export enum AtomicAssetsUpdatePriority {
 export type AtomicAssetsReaderArgs = {
     atomicassets_account: string,
     store_transfers: boolean,
-    store_logs: boolean
+    store_logs: boolean,
+    /**
+     * Explicit operator override for the v2 late-upgrader startup guard (see
+     * init() below and design.md's "Startup guard" section). Setting this
+     * accepts a possible v2-tables gap and writes the continuity marker at
+     * the reader's current block so the guard passes on every future start.
+     */
+    accept_v2_gap?: boolean
 };
 
 export default class AtomicAssetsHandler extends ContractHandler {
@@ -240,7 +248,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         // Reader-priority gate: the reconciliation below loops `CALL update_atomicassets_mints`
         // (bounded 50k/call) + a full atomicassets_assets COUNT until the missing-mint backlog is
         // under 50k. While the reader is catching up the update_atomicassets_mints job is deferred
-        // (shouldDeferDrain), so on a large chain this backlog is millions of rows — running it at
+        // (shouldDeferDrain), so on a large chain this backlog is millions of rows - running it at
         // boot then blocks the reader from starting for a very long time AND busts the connection
         // statement_timeout on the COUNT, turning any restart mid-catchup into a crash-loop.
         // shouldDeferDrain() can't be used here (reader.blocksUntilHead is still 0 before the
@@ -251,9 +259,12 @@ export default class AtomicAssetsHandler extends ContractHandler {
             [this.filler.reader.name]
         );
         const readerBlock = Number(readerPositionQuery.rows[0]?.block_num);
+
+        await this.checkV2LateUpgraderGuard(client, readerBlock);
+
         const headBlock = Number(chainInfo.head_block_num);
         // Fail safe: if either position is unknown/non-numeric, treat the reader as far behind and
-        // skip — never fall open into the expensive reconciliation during catchup. Clamp at >= 0.
+        // skip - never fall open into the expensive reconciliation during catchup. Clamp at >= 0.
         const blocksBehindHead = (Number.isFinite(readerBlock) && Number.isFinite(headBlock))
             ? Math.max(headBlock - readerBlock, 0)
             : null;
@@ -290,6 +301,108 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 emptyMints = countQuery.rows[0].count;
             } while (emptyMints > 50000);
         }
+    }
+
+    /**
+     * Startup guard against the v2 late-upgrader gap: a 1.x filler running
+     * across the on-chain AtomicAssets v2 flip keeps indexing core data but
+     * silently drops every delta for the new v2 tables (templates2,
+     * schematypes, authorswaps) - and a template deleted during the gap
+     * leaves a permanently stale row, since deltemplate emits no log action
+     * for a replay to recover from. See design.md's "Startup guard" section.
+     *
+     * Re-fetches tokenconfigs from chain regardless of which init() branch
+     * ran above: the fresh-config branch's fetch reflects the version at
+     * first sync, and the existing-config branch does not fetch at all - the
+     * guard always needs the chain's *current* version, not a stored one.
+     */
+    private async checkV2LateUpgraderGuard(client: PoolClient, readerBlock: number): Promise<void> {
+        let currentVersion: string | null;
+
+        try {
+            const tokenconfigsTable = await this.connection.chain.rpc.get_table_rows({
+                json: true, code: this.args.atomicassets_account,
+                scope: this.args.atomicassets_account, table: 'tokenconfigs'
+            });
+
+            // tokenconfigs.version is free-form (not Antelope name-charset restricted, unlike
+            // scope/schema_name/template_id elsewhere in this reader), so strip control characters
+            // before it ever reaches a log line - a hostile or buggy contract could otherwise
+            // inject newlines/control sequences into log output.
+            const rawVersion: string | null = tokenconfigsTable.rows[0]?.version ?? null;
+            // eslint-disable-next-line no-control-regex
+            currentVersion = rawVersion === null ? null : rawVersion.replace(/[\x00-\x1F\x7F]/g, '');
+        } catch (error) {
+            logger.warn(
+                'AtomicAssets: could not fetch tokenconfigs to check the v2 late-upgrader guard for ' +
+                this.args.atomicassets_account + '; skipping the check for this start', error
+            );
+
+            return;
+        }
+
+        const majorVersion = parseContractMajorVersion(currentVersion);
+
+        if (majorVersion === null) {
+            logger.warn(
+                'AtomicAssets: could not parse tokenconfigs version "' + currentVersion + '" for ' +
+                this.args.atomicassets_account + '; skipping the v2 late-upgrader guard for this start'
+            );
+
+            return;
+        }
+
+        const hasReaderPosition = Number.isFinite(readerBlock) && readerBlock > 0;
+
+        const markerQuery = await client.query(
+            'SELECT v2_marker_block FROM atomicassets_config WHERE contract = $1',
+            [this.args.atomicassets_account]
+        );
+        const markerAlreadySet = markerQuery.rows[0]?.v2_marker_block !== null &&
+            markerQuery.rows[0]?.v2_marker_block !== undefined;
+
+        const decision = evaluateV2Guard({
+            majorVersion,
+            hasReaderPosition,
+            markerAlreadySet,
+            acceptGap: Boolean(this.args.accept_v2_gap)
+        });
+
+        if (decision === 'proceed') {
+            return;
+        }
+
+        if (decision === 'write-marker') {
+            logger.warn(
+                'AtomicAssets: accept_v2_gap set for ' + this.args.atomicassets_account +
+                ' - accepting a possible gap in v2 table data (templates2 / schematypes / authorswaps) ' +
+                'and recording the v2 continuity marker at block ' + readerBlock
+            );
+
+            await client.query(
+                'UPDATE atomicassets_config SET v2_marker_block = $1 WHERE contract = $2 AND v2_marker_block IS NULL',
+                [readerBlock, this.args.atomicassets_account]
+            );
+
+            return;
+        }
+
+        throw new Error(
+            'AtomicAssets: Contract not deployed on the account - refusing to start against ' +
+            this.args.atomicassets_account + ': the on-chain contract reports v' + majorVersion +
+            ' (tokenconfigs "' + currentVersion + '") but this reader already has a position ' +
+            '(block ' + readerBlock + ') and no v2-continuity marker, so this indexer may have missed ' +
+            'the v2 table data (templates2 / schematypes / authorswaps deltas, and any template deleted ' +
+            'during the gap) between its last v1 read and now. Resolve one of, in order of data correctness: ' +
+            '(1) restore a published database dump from backups.atomichub.io - its upstream indexed the ' +
+            'flip live, so it has no gap and already carries the marker; ' +
+            '(2) run the reconcile command to seed current v2 state and record the marker (fallback: ' +
+            'leaves approximate deletion timestamps and missing gap-period history); ' +
+            '(3) rewind this reader\'s position to at-or-before the v2 flip block on a full-history SHIP ' +
+            'node, set accept_v2_gap: true in readers.config.json, and restart so the replay heals the ' +
+            'data itself; or ' +
+            '(4) set accept_v2_gap: true alone in readers.config.json to knowingly run with the gap.'
+        );
     }
 
     async deleteDB(client: PoolClient): Promise<void> {

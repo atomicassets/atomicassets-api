@@ -1,4 +1,4 @@
-# Security Policy
+# Security policy
 
 The AtomicAssets API powers infrastructure that many users depend on.
 We take security reports seriously and appreciate responsible disclosure.

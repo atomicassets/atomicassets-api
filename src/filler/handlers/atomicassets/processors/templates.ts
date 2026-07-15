@@ -36,7 +36,7 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                 }, ['contract', 'template_id']);
             } else {
                 // A delete (deltemplate) delta for a template we never indexed has
-                // nothing to mark deleted — skip rather than insert a deleted
+                // nothing to mark deleted - skip rather than insert a deleted
                 // placeholder row.
                 if (!delta.present) {
                     return;
