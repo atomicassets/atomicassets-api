@@ -861,6 +861,85 @@ describe('AtomicMarket Sales API', () => {
             expect(result).to.haveOwnProperty('collection');
         });
 
+        context('price-sort GIN filter hint', () => {
+            // A GIN include-filter (here the `burned` flag, which produces the
+            // `filter @> create_atomicmarket_sales_filter(...)` containment) combined
+            // with a price sort must force the ' + 0' planner hint onto the ORDER BY so
+            // the bounded GIN bitmap path is used instead of a skew-unbounded backward
+            // price-btree scan. This must hold even though the flag never registers a
+            // strong filter, so the guard cannot depend on the strong-filter count probe.
+            // slowCount reproduces the production failure mode: on the large sold partition
+            // the strong-filter count probe exceeds its 1000ms budget, so limitExecutionTime
+            // resolves false and strongFilters stays empty. Delaying the count query here lets
+            // the multi-value `&&` case be isolated to hasMainGinFilter alone, since small test
+            // data would otherwise always classify the filter as strong.
+            function captureContext(opts: { slowCount?: boolean } = {}): { ctx: any, queries: string[] } {
+                const queries: string[] = [];
+                const db = {
+                    query: async (text: string, values?: any[]): Promise<any> => {
+                        queries.push(text);
+                        if (opts.slowCount && text.includes('COUNT(*)::INT ct')) {
+                            await new Promise(resolve => setTimeout(resolve, 1100));
+                        }
+                        return client.query(text, values);
+                    },
+                };
+                return { ctx: getTestContext(db as any), queries };
+            }
+
+            function listingQuery(queries: string[]): string {
+                return queries.find(q => q.includes('atomicmarket_sales_filters listing') && q.includes('ORDER BY listing.')) ?? '';
+            }
+
+            txit('forces the + 0 hint on a price sort with a GIN filter', async () => {
+                await client.createFullSale({}, { owner: null });
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'price', burned: 'true' }, ctx);
+
+                expect(listingQuery(queries)).to.include('ORDER BY listing.price + 0');
+            });
+
+            txit('leaves a created sort with the same GIN filter unhinted', async () => {
+                await client.createFullSale({}, { owner: null });
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'created', burned: 'true' }, ctx);
+
+                const listing = listingQuery(queries);
+                expect(listing).to.include('ORDER BY listing.created_at_time');
+                expect(listing).to.not.include('+ 0');
+            });
+
+            txit('forces the + 0 hint on a multi-value collection price sort when the count probe times out', async () => {
+                const { collection_name } = await client.createCollection();
+                await client.createFullSale({ collection_name });
+
+                await client.refreshSalesFilters();
+
+                // Two collection values take the multi-value `&&` branch; the timed-out count
+                // probe leaves strongFilters empty, so only hasMainGinFilter can apply the hint.
+                const { ctx, queries } = captureContext({ slowCount: true });
+                await getSalesV2Action({ sort: 'price', collection_name: `${collection_name},zzz` }, ctx);
+
+                expect(listingQuery(queries)).to.include('ORDER BY listing.price + 0');
+            });
+
+            txit('orders a GIN-filtered price sort descending', async () => {
+                const { sale_id: sale_id1 } = await client.createFullSale({ listing_price: 2 }, { owner: null });
+
+                const sale_id2 = `${client.getId()}`;
+                await client.createFullSale({ listing_price: 1, sale_id: sale_id2 }, { owner: null });
+
+                expect(await getSalesIds({ sort: 'price', burned: 'true' }))
+                    .to.deep.equal([sale_id1, sale_id2]);
+            });
+        });
+
         context('with template_blacklist arg', () => {
             txit('filters out sales that contain the template id', async () => {
                 const included = await client.createTemplate();
