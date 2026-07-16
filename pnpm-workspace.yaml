@@ -1,5 +1,12 @@
-onlyBuiltDependencies:
-  - '@scarf/scarf'
-  - '@swc/core'
+# pnpm-specific config lives here; .npmrc keeps registry/network settings only.
+shamefullyHoist: true
+enablePrePostScripts: true
+
+# Native modules cleared to run install scripts. Anything absent is blocked, so
+# a new dependency needing a build fails the install until it is listed here.
+allowBuilds:
+  '@scarf/scarf': true
+  '@swc/core': true
+
 overrides:
   serialize-javascript: ^7.0.5
