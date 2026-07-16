@@ -16,6 +16,7 @@ type SalesSearchOptions = {
     query: QueryBuilder;
     strongFilters: string[];
     saleStates: number[],
+    hasMainGinFilter: boolean,
 }
 
 const LISTING_ORDER_MARKER = '/*listing_order_marker*/';
@@ -51,6 +52,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         query,
         strongFilters: [],
         saleStates: args.state.map(toInt),
+        hasMainGinFilter: false,
     };
 
     await buildSaleFilterV2(search);
@@ -88,7 +90,18 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         query.addCondition('LOWER(listing.template_mint) IS NOT NULL');
     }
 
-    const preventIndexUsage = search.strongFilters.length > 0 && sortMapping[args.sort].numericIndex;
+    // Invariant: a main GIN include-filter combined with a price sort must never stream from
+    // the price btree. The btree is walked backwards for DESC and its rows are unordered with
+    // respect to the GIN predicate, so matches are skew-unbounded: the planner can scan the
+    // whole index before filling the limit. Forcing the `+ 0` hint discards the ordered-index
+    // option and keeps the bounded GIN bitmap path. This must not depend on the strong-filter
+    // count probe, which times out on the large sold partition and silently drops the guard.
+    // Accepted trade: this removes the old size-based escape hatch, so a genuinely large dense
+    // GIN-matched set now pays the bounded top-N sort instead of the streaming price scan;
+    // acceptable because that streaming premise is false under price skew (the catastrophe)
+    // and the top-N cost is bounded.
+    const preventIndexUsage = sortMapping[args.sort].numericIndex
+        && (search.strongFilters.length > 0 || (args.sort === 'price' && search.hasMainGinFilter));
 
     const orderBy = `ORDER BY ${sortMapping[args.sort].column}${preventIndexUsage ? ' + 0' : ''} ${args.order} ${sortMapping[args.sort].nullable ? 'NULLS LAST' : ''}, listing.sale_id`;
     query.append(orderBy);
@@ -314,9 +327,17 @@ async function buildMainFilterV2(search: SalesSearchOptions): Promise<void> {
             // when a single filter has multiple values, search ALL of them
             if (value.length > 1) {
                 if (value.length > 50 && filter === 'collection_name') {
+                    // Not a GIN-array predicate and unindexed (compares filter[1] per row),
+                    // so the hasMainGinFilter guard's bounded GIN-bitmap path does not exist
+                    // here; forcing the hint would only trade the backward btree scan for a
+                    // seq scan, so plan choice is left to the planner.
                     query.addCondition(`EXISTS (SELECT 1 FROM UNNEST(${query.addVariable(value)}::TEXT[]) u(collection_name) WHERE SUBSTR(listing.filter[1], 2) = u.collection_name)`);
                 } else {
+                    // `&&` is a lossy GIN-array predicate carrying the same skew-unbounded
+                    // price-sort hazard as the `@>` include path below, so it likewise forces
+                    // the bounded GIN bitmap top-N over a backward price-btree scan.
                     query.addCondition(`(listing.filter && create_atomicmarket_sales_filter(${filter}s := ${query.addVariable(value)}))`);
+                    search.hasMainGinFilter = true;
                 }
             } else {
                 // @ts-ignore
@@ -431,6 +452,7 @@ async function buildMainFilterV2(search: SalesSearchOptions): Promise<void> {
         query.addCondition(`(listing.filter @> create_atomicmarket_sales_filter(
             ${incFilterArgs.join(', ')}
         ))`);
+        search.hasMainGinFilter = true;
     }
 
     const excFilterArgs = Object.keys(exc)
@@ -644,6 +666,7 @@ export async function getSalesTemplatesV2Action(params: RequestValues, ctx: Atom
         query,
         strongFilters: [],
         saleStates: [SaleApiState.LISTED],
+        hasMainGinFilter: false,
     };
 
     await buildSaleFilterV2(search);
