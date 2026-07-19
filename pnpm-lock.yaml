@@ -45,8 +45,8 @@ importers:
         specifier: ^8.5.2
         version: 8.5.2(express@5.2.1(supports-color@8.1.1))
       int64-buffer:
-        specifier: ^1.0.1
-        version: 1.1.0
+        specifier: ^1.1.1
+        version: 1.1.1
       iovalkey:
         specifier: ^0.3.3
         version: 0.3.3(supports-color@8.1.1)
@@ -1625,8 +1625,8 @@ packages:
   inspect-with-kind@1.0.5:
     resolution: {integrity: sha512-MAQUJuIo7Xqk8EVNP+6d3CKq9c80hi4tjIbIAT6lmGW9W6WzlHiu9PS8uSuUYU+Do+j1baiFp3H25XEVxDIG2g==}
 
-  int64-buffer@1.1.0:
-    resolution: {integrity: sha512-94smTCQOvigN4d/2R/YDjz8YVG0Sufvv2aAh8P5m42gwhCsDAJqnbNOrxJsrADuAFAA69Q/ptGzxvNcNuIJcvw==}
+  int64-buffer@1.1.1:
+    resolution: {integrity: sha512-xp/v0/im2q7n7ISFJXcYsr/aVsUdZKPUZS1uYtoM9I9Cfmm5YuAi7SQts2TrEXwAKIE0wyn3KxJbo35goJgvwQ==}
 
   iovalkey@0.3.3:
     resolution: {integrity: sha512-4rTJX6Q5wTYEvxboXi8DsEiUo+OvqJGtLYOSGm37KpdRXsG5XJjbVtYKGJpPSWP+QT7rWscA4vsrdmzbEbenpw==}
@@ -4006,7 +4006,7 @@ snapshots:
     dependencies:
       kind-of: 6.0.3
 
-  int64-buffer@1.1.0: {}
+  int64-buffer@1.1.1: {}
 
   iovalkey@0.3.3(supports-color@8.1.1):
     dependencies:
