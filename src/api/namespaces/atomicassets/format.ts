@@ -53,7 +53,23 @@ export function formatTemplate(row: any): any {
     return data;
 }
 
-export function formatSchema(row: any): any {
+export interface FormatSchemaOptions {
+    // Keep the raw `types` array on the response instead of dropping it.
+    //
+    // `format[].mediatype` merges the stored descriptors with a name/type
+    // heuristic, so a reader cannot tell an authored value from a derived one.
+    // That is the right answer for a consumer asking "how do I render this
+    // field", and the wrong one for an author: `setschematyp` replaces the whole
+    // descriptor array, so a client that cannot see which entries are real will
+    // write the heuristic's guesses to chain on its first save.
+    //
+    // Opt in on the schema routes, where authors read. The nested schema inside
+    // an asset or template keeps the merged view alone: nobody authors from an
+    // asset response, and assets is the highest-volume endpoint in the API.
+    includeTypes?: boolean;
+}
+
+export function formatSchema(row: any, options: FormatSchemaOptions = {}): any {
     const {collection_name: _collection_name, authorized_accounts: _authorized_accounts, ...data} = row;
 
     data.collection = formatCollection(data.collection);
@@ -93,7 +109,17 @@ export function formatSchema(row: any): any {
         };
     });
 
-    delete data['types'];
+    if (options.includeTypes) {
+        // A schema with no descriptors reports [] rather than null, so a client
+        // never has to treat "no rows" and "no column" as the same input.
+        //
+        // The distinction that matters to an author, between "this schema has
+        // none" and "this response does not report them", is carried by the
+        // branch itself: present means the former, absent means the latter.
+        data.types = types;
+    } else {
+        delete data['types'];
+    }
 
     return data;
 }

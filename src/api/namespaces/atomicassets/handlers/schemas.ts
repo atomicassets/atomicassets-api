@@ -75,7 +75,9 @@ export async function getSchemasAction(params: RequestValues, ctx: AtomicAssetsC
 
     const result = await ctx.db.query(query.buildString(), query.buildValues());
 
-    return result.rows.map(formatSchema);
+    // Wrapped rather than passed by reference: map supplies the index as the
+    // second argument, which would land in the options object.
+    return result.rows.map(row => formatSchema(row, {includeTypes: true}));
 }
 
 export async function getSchemasCountAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {

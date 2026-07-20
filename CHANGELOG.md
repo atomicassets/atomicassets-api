@@ -19,6 +19,14 @@ including operators coming from `eosio-contract-api`.
   ports the partition-parallel sales-filter drain. (Custodial rentals - asset
   `holder`, `move` / `logmove`, and the `/atomicassets/v1/moves` endpoint -
   were descoped from the v2 release train and are not part of this release.)
+- `types` on the schema endpoints, carrying the media-type descriptors authored
+  through `setschematyp` exactly as stored. `format[].mediatype` merges those
+  descriptors with a name/type heuristic, which suits a reader asking how to
+  render a field but leaves an author unable to tell a stored value from a
+  derived one. Since `setschematyp` replaces the whole descriptor array, a client
+  working from the merged view alone writes the heuristic's guesses to chain on
+  its first save. An empty array means the schema has no descriptors; the field
+  is absent where a schema is nested inside another resource.
 - `GET /openapi.json` serving the assembled OpenAPI 3.0 document as plain JSON,
   for code generation and tooling. The Swagger UI at `/docs` already embeds this
   document but did not expose it at a stable URL.
