@@ -162,11 +162,34 @@ export const atomicassetsComponents = {
             schema_name: {type: 'string'},
             format: {
                 type: 'array',
+                description:
+                    'Field definitions. `mediatype` and `info` merge the authored descriptors with a ' +
+                    'name/type heuristic, so a value here may be derived rather than stored. Where `types` ' +
+                    'is present it reports what is actually on chain; this component is also referenced by ' +
+                    'endpoints that return a schema without it.',
                 items: {
                     type: 'object',
                     properties: {
                         name: {type: 'string'},
                         type: {type: 'string'},
+                        mediatype: {type: 'string', nullable: true},
+                        info: {type: 'string', nullable: true}
+                    }
+                }
+            },
+            types: {
+                type: 'array',
+                description:
+                    'Media-type descriptors authored through `setschematyp`, exactly as stored. Returned by ' +
+                    'the schema endpoints (`/schemas`, `/schemas/{collection_name}/{schema_name}`) and ' +
+                    'omitted elsewhere, including the account endpoints that reference this component and ' +
+                    'schemas nested inside an asset or template. Empty means the schema has none; absent ' +
+                    'means this response does not report them. `setschematyp` replaces the whole array, so ' +
+                    'an authoring client resubmits every entry it intends to keep.',
+                items: {
+                    type: 'object',
+                    properties: {
+                        name: {type: 'string'},
                         mediatype: {type: 'string'},
                         info: {type: 'string'}
                     }
