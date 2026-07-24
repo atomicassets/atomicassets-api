@@ -795,6 +795,16 @@ export default class AtomicMarketHandler extends ContractHandler {
         });
 
         this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {
+            // Reader-priority gate: skip the stats recompute while the reader is catching up.
+            // update_atomicmarket_stats_market() processes every due row in
+            // atomicmarket_stats_markets_updates in a single unbounded statement, so against a
+            // catchup-sized backlog it busts this connection's statement_timeout on every 2min
+            // tick (57014) and contends with block-writes. It refreshes on the next tick once the
+            // reader is live. Mirrors the gate on update_atomicmarket_template_prices below and
+            // the sales-filter drain above.
+            if (this.filler.shouldDeferDrain()) {
+                return;
+            }
             await this.connection.database.query(
                 'SELECT update_atomicmarket_stats_market()'
             );
