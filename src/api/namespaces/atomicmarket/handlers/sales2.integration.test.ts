@@ -861,13 +861,14 @@ describe('AtomicMarket Sales API', () => {
             expect(result).to.haveOwnProperty('collection');
         });
 
-        context('price-sort GIN filter hint', () => {
+        context('main-GIN-filter sort hint', () => {
             // A GIN include-filter (here the `burned` flag, which produces the
             // `filter @> create_atomicmarket_sales_filter(...)` containment) combined
-            // with a price sort must force the ' + 0' planner hint onto the ORDER BY so
-            // the bounded GIN bitmap path is used instead of a skew-unbounded backward
-            // price-btree scan. This must hold even though the flag never registers a
-            // strong filter, so the guard cannot depend on the strong-filter count probe.
+            // with a price, created, or updated sort must force the ' + 0' planner hint
+            // onto the ORDER BY so the bounded GIN bitmap path is used instead of a
+            // skew-unbounded backward btree scan of the sort column. This must hold even
+            // though the flag never registers a strong filter, so the guard cannot depend
+            // on the strong-filter count probe.
             // slowCount reproduces the production failure mode: on the large sold partition
             // the strong-filter count probe exceeds its 1000ms budget, so limitExecutionTime
             // resolves false and strongFilters stays empty. Delaying the count query here lets
@@ -902,7 +903,7 @@ describe('AtomicMarket Sales API', () => {
                 expect(listingQuery(queries)).to.include('ORDER BY listing.price + 0');
             });
 
-            txit('leaves a created sort with the same GIN filter unhinted', async () => {
+            txit('forces the + 0 hint on a created sort with a GIN filter', async () => {
                 await client.createFullSale({}, { owner: null });
 
                 await client.refreshSalesFilters();
@@ -910,8 +911,56 @@ describe('AtomicMarket Sales API', () => {
                 const { ctx, queries } = captureContext();
                 await getSalesV2Action({ sort: 'created', burned: 'true' }, ctx);
 
+                expect(listingQuery(queries)).to.include('ORDER BY listing.created_at_time + 0');
+            });
+
+            txit('forces the + 0 hint on an updated sort with a GIN filter', async () => {
+                await client.createFullSale({}, { owner: null });
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'updated', burned: 'true' }, ctx);
+
+                expect(listingQuery(queries)).to.include('ORDER BY listing.updated_at_time + 0');
+            });
+
+            txit('leaves a created sort without a main filter unhinted', async () => {
+                await client.createFullSale();
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'created' }, ctx);
+
                 const listing = listingQuery(queries);
                 expect(listing).to.include('ORDER BY listing.created_at_time');
+                expect(listing).to.not.include('+ 0');
+            });
+
+            txit('leaves an updated sort without a main filter unhinted', async () => {
+                await client.createFullSale();
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'updated' }, ctx);
+
+                const listing = listingQuery(queries);
+                expect(listing).to.include('ORDER BY listing.updated_at_time');
+                expect(listing).to.not.include('+ 0');
+            });
+
+            txit('leaves a sale_id sort with the same GIN filter unhinted', async () => {
+                await client.createFullSale({}, { owner: null });
+
+                await client.refreshSalesFilters();
+
+                const { ctx, queries } = captureContext();
+                await getSalesV2Action({ sort: 'sale_id', burned: 'true' }, ctx);
+
+                const listing = listingQuery(queries);
+                expect(listing).to.include('ORDER BY listing.sale_id');
                 expect(listing).to.not.include('+ 0');
             });
 
@@ -936,6 +985,26 @@ describe('AtomicMarket Sales API', () => {
                 await client.createFullSale({ listing_price: 1, sale_id: sale_id2 }, { owner: null });
 
                 expect(await getSalesIds({ sort: 'price', burned: 'true' }))
+                    .to.deep.equal([sale_id1, sale_id2]);
+            });
+
+            txit('orders a GIN-filtered created sort descending', async () => {
+                const created_at_time = `${client.getId()}`;
+                const { sale_id: sale_id1 } = await client.createFullSale({}, { owner: null });
+
+                const { sale_id: sale_id2 } = await client.createFullSale({ created_at_time }, { owner: null });
+
+                expect(await getSalesIds({ sort: 'created', burned: 'true' }))
+                    .to.deep.equal([sale_id1, sale_id2]);
+            });
+
+            txit('orders a GIN-filtered updated sort descending', async () => {
+                const updated_at_time = `${client.getId()}`;
+                const { sale_id: sale_id1 } = await client.createFullSale({}, { owner: null });
+
+                const { sale_id: sale_id2 } = await client.createFullSale({ updated_at_time }, { owner: null });
+
+                expect(await getSalesIds({ sort: 'updated', burned: 'true' }))
                     .to.deep.equal([sale_id1, sale_id2]);
             });
         });
