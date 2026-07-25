@@ -17,21 +17,21 @@ export type DelphiOracleArgs = {
 };
 
 type PairsTableRow = {
-    active: number,
-    bounty_awarded: number,
-    bounty_edited_by_custodians: number,
+    active: boolean,
+    bounty_awarded: boolean,
+    bounty_edited_by_custodians: boolean,
     proposer: string,
     name: string,
     bounty_amount: string,
     approving_custodians: string[],
     approving_oracles: string[],
     base_symbol: string,
-    base_type: 4,
+    base_type: number,
     base_contract: string,
     quote_symbol: string,
     quote_type: number,
     quote_contract: string,
-    quoted_precision: number
+    quoted_precision: string
 };
 
 type DatapointsTableRow = {
