@@ -12,7 +12,7 @@
  * to the real ConnectionManager.chain.rpc in production.
  */
 import { PoolClient } from 'pg';
-import { deserialize, ObjectSchema } from 'atomicassets';
+import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../utils';
 import logger from '../../../utils/winston';
 
@@ -70,12 +70,6 @@ export function assertReaderStopped(
             'ms). Wait for the filler to fully stop before running reconcile.'
         );
     }
-}
-
-function decodeBytes(data: string | number[]): Uint8Array {
-    return typeof data === 'string'
-        ? Uint8Array.from(Buffer.from(data, 'hex'))
-        : new Uint8Array(data);
 }
 
 // Generous per-table ceiling on rows walked in a single walkTable call - guards against a
@@ -233,7 +227,7 @@ export async function reconcileAtomicAssetsContract(
                 continue;
             }
 
-            const mutableData = deserialize(decodeBytes(row.mutable_serialized_data), ObjectSchema(schemaQuery.rows[0].format));
+            const mutableData = deserialize(row.mutable_serialized_data, CachedObjectSchema(schemaQuery.rows[0].format));
 
             const result = await client.query(
                 'UPDATE atomicassets_templates SET mutable_data = $1 ' +
