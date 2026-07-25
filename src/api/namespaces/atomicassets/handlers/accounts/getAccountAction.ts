@@ -3,9 +3,8 @@ import {AtomicAssetsContext} from '../../index';
 import {QueryResult} from 'pg';
 import QueryBuilder from '../../../../builder';
 import {buildGreylistFilter, buildHideOffersFilter} from '../../utils';
-import {ICollection, ITemplate} from 'atomicassets/build/API/Explorer/Objects';
+import {ICollection, IApiSchema, ITemplate} from '@atomichub/atomicassets';
 import {formatCollection, formatSchema, formatTemplate} from '../../format';
-import {ISchema} from 'atomicassets/build/Schema';
 import { arrayUnique } from '../../../../../utils';
 
 export async function getAccountAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<{
@@ -14,7 +13,7 @@ export async function getAccountAction(params: RequestValues, ctx: AtomicAssetsC
         assets: string;
     }>;
     schemas: Array<{
-        schema: ISchema;
+        schema: IApiSchema;
         assets: string;
     }>;
     templates: Array<{
@@ -96,7 +95,7 @@ export async function getAccountAction(params: RequestValues, ctx: AtomicAssetsC
         return acc;
     }, {
         collections: {} as Record<string, { collection: ICollection; assets: number }>,
-        schemas: {} as Record<string, { schema: ISchema; assets: number }>,
+        schemas: {} as Record<string, { schema: IApiSchema; assets: number }>,
         templates: {} as Record<string, { template: ITemplate; assets: number }>,
         assets: 0,
     });

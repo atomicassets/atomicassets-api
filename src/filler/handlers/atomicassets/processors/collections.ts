@@ -4,8 +4,8 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
-import { AuthorSwapsTableRow, CollectionsTableRow } from '../types/tables';
-import { deserialize, ObjectSchema } from 'atomicassets';
+import { CollectionsTableRow } from '../types/tables';
+import { AuthorSwapsTableRow, deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function collectionProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
@@ -19,14 +19,7 @@ export function collectionProcessor(core: AtomicAssetsHandler, processor: DataPr
                 throw new Error('AtomicAssets: A collection was deleted. Should not be possible by contract');
             }
 
-            let byteData;
-            if (typeof delta.value.serialized_data === 'string') {
-                byteData = Uint8Array.from(Buffer.from(delta.value.serialized_data, 'hex'));
-            } else {
-                byteData = new Uint8Array(delta.value.serialized_data);
-            }
-
-            const deserializedData = deserialize(byteData, ObjectSchema(core.config.collection_format));
+            const deserializedData = deserialize(delta.value.serialized_data, CachedObjectSchema(core.config.collection_format));
 
             await db.replace('atomicassets_collections', {
                 contract: contract,

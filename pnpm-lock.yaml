@@ -11,15 +11,15 @@ importers:
 
   .:
     dependencies:
+      '@atomichub/atomicassets':
+        specifier: ^2.0.0
+        version: 2.0.0
       '@wharfkit/antelope':
         specifier: ^1.1.1
         version: 1.2.0
       async-exit-hook:
         specifier: ^2.0.1
         version: 2.0.1
-      atomicassets:
-        specifier: ^1.4.2
-        version: 1.5.1
       await-lock:
         specifier: ^2.2.1
         version: 2.2.2
@@ -179,6 +179,10 @@ importers:
         version: 8.59.3(eslint@10.3.0(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
 
 packages:
+
+  '@atomichub/atomicassets@2.0.0':
+    resolution: {integrity: sha512-4H/BTZqHPXOZ09rtQiQ7Yda+W+e//1NF4BiVEkCNRJ/M4DSR4sbGB1WzMUmODDTy2Y+Mp4uYG7d+GQLqTbbvmw==}
+    engines: {node: '>=20'}
 
   '@bcoe/v8-coverage@1.0.2':
     resolution: {integrity: sha512-6zABk/ECA/QYSCQ1NGiVwwbQerUCZ+TQbp64Q3AgmfNvurHH0j8TtXa1qbShXA6qqkpAj4V5W8pP6mLe1mcMqA==}
@@ -956,9 +960,6 @@ packages:
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
 
-  atomicassets@1.5.1:
-    resolution: {integrity: sha512-KZI/NghU68t2jEykR9KI6CVoDeErcMiNYMLHz3F7mrkFWlTXVjiJ6tbT3y2VDaF/tcDqmLd0szNnVl1/QgTTNw==}
-
   await-lock@2.2.2:
     resolution: {integrity: sha512-aDczADvlvTGajTDjcjpJMqRkOF6Qdz3YbPZm/PyW6tKPkx2hlYBzxMhEywM/tU72HrVZjgl5VCdRuMlA7pZ8Gw==}
 
@@ -991,10 +992,6 @@ packages:
   base64id@2.0.0:
     resolution: {integrity: sha512-lGe34o6EHj9y3Kts9R4ZYs/Gr+6N7MCaMlIFA3F1R2O5/m7K06AxfSeO5530PEERE6/WyEg3lsuyw4GHlPZHog==}
     engines: {node: ^4.5.0 || >= 5.9}
-
-  big-integer@1.6.52:
-    resolution: {integrity: sha512-QxD8cf2eVqJOOz63z6JIN9BzvVs/dlySa5HGSBH5xtR8dPteIRQnBxxKqkNTiT6jbDTF6jAfrd4oMcND9RGbQg==}
-    engines: {node: '>=0.6'}
 
   binary-version-check@6.1.0:
     resolution: {integrity: sha512-REKdLKmuViV2WrtWXvNSiPX04KbIjfUV3Cy8batUeOg+FtmowavzJorfFhWq95cVJzINnL/44ixP26TrdJZACA==}
@@ -2527,6 +2524,8 @@ packages:
 
 snapshots:
 
+  '@atomichub/atomicassets@2.0.0': {}
+
   '@bcoe/v8-coverage@1.0.2': {}
 
   '@borewit/text-codec@0.2.2': {}
@@ -3297,10 +3296,6 @@ snapshots:
 
   asynckit@0.4.0: {}
 
-  atomicassets@1.5.1:
-    dependencies:
-      big-integer: 1.6.52
-
   await-lock@2.2.2: {}
 
   b4a@1.8.1: {}
@@ -3314,8 +3309,6 @@ snapshots:
   base64-js@1.5.1: {}
 
   base64id@2.0.0: {}
-
-  big-integer@1.6.52: {}
 
   binary-version-check@6.1.0:
     dependencies:

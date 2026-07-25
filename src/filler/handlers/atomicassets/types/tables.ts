@@ -1,3 +1,5 @@
+import type {Format} from '@atomichub/atomicassets';
+
 export type AssetsTableRow = {
     asset_id: string,
     collection_name: string,
@@ -24,17 +26,10 @@ export type CollectionsTableRow = {
     serialized_data: number[]
 };
 
-export type AuthorSwapsTableRow = {
-    collection_name: string,
-    current_author: string,
-    new_author: string,
-    acceptance_date: number,
-};
-
 export type ConfigTableRow = {
     asset_counter: number,
     offer_counter: number,
-    collection_format: Array<{ name: string, type: string }>,
+    collection_format: Format[],
     supported_tokens: Array<{ contract: string, sym: string } >
 };
 
@@ -61,16 +56,6 @@ export type MutableTemplatesTableRow = {
     template_id: string,
     schema_name: string,
     mutable_serialized_data: number[]
-};
-
-export type SchemasTableRow = {
-    schema_name: string,
-    format: Array<{ name: string, type: string }>
-};
-
-export type SchemaTypesTableRow = {
-    schema_name: string,
-    format_type: Array<{ name: string, mediatype: string, info: string }>
 };
 
 export type TokenConfigsTableRow = {

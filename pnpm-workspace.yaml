@@ -10,3 +10,12 @@ allowBuilds:
 
 overrides:
   serialize-javascript: ^7.0.5
+
+# The release-age gate exists to keep a freshly published third-party package
+# out of the lockfile before anyone has had a chance to notice it is hostile.
+# This entry is first-party: the version is pinned, published from a tag in our
+# own repository, and its tarball contents were checked against that tag. It can
+# be dropped once the version is older than the gate; nothing depends on it
+# staying.
+minimumReleaseAgeExclude:
+  - '@atomichub/atomicassets@2.0.0'

@@ -3,7 +3,7 @@ import DataProcessor from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
-import { AuthorSwapsTableRow } from '../types/tables';
+import { AuthorSwapsTableRow } from '@atomichub/atomicassets';
 import logger from '../../../../utils/winston';
 import {
     AcceptAuthorSwapActionData,

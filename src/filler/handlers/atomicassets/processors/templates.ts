@@ -5,7 +5,7 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { MutableTemplatesTableRow, TemplatesTableRow } from '../types/tables';
-import { deserialize, ObjectSchema } from 'atomicassets';
+import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function templateProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
@@ -51,14 +51,7 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                     throw new Error('AtomicAssets: Schema of template not found. Should not be possible by contract');
                 }
 
-                let byteData;
-                if (typeof delta.value.immutable_serialized_data === 'string') {
-                    byteData = Uint8Array.from(Buffer.from(delta.value.immutable_serialized_data, 'hex'));
-                } else {
-                    byteData = new Uint8Array(delta.value.immutable_serialized_data);
-                }
-
-                const immutableData = deserialize(byteData, ObjectSchema(schemaQuery.rows[0].format));
+                const immutableData = deserialize(delta.value.immutable_serialized_data, CachedObjectSchema(schemaQuery.rows[0].format));
 
                 await db.insert('atomicassets_templates', {
                     contract: contract,
@@ -109,14 +102,7 @@ export function templateProcessor(core: AtomicAssetsHandler, processor: DataProc
                 throw new Error('AtomicAssets: Schema of template not found. Should not be possible by contract');
             }
 
-            let byteData;
-            if (typeof delta.value.mutable_serialized_data === 'string') {
-                byteData = Uint8Array.from(Buffer.from(delta.value.mutable_serialized_data, 'hex'));
-            } else {
-                byteData = new Uint8Array(delta.value.mutable_serialized_data);
-            }
-
-            const mutableData = deserialize(byteData, ObjectSchema(schemaQuery.rows[0].format));
+            const mutableData = deserialize(delta.value.mutable_serialized_data, CachedObjectSchema(schemaQuery.rows[0].format));
 
             await db.update('atomicassets_templates', {
                 mutable_data: encodeDatabaseJson(mutableData),

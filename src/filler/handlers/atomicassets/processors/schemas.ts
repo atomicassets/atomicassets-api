@@ -4,7 +4,7 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
-import { SchemasTableRow, SchemaTypesTableRow } from '../types/tables';
+import { SchemasTableRow, SchemaTypesTableRow } from '@atomichub/atomicassets';
 
 export function schemaProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
