@@ -109,6 +109,19 @@ including operators coming from `eosio-contract-api`.
   keep running with a dead reader and a still-passing `/healthc`. A normal
   SIGTERM shutdown is exempted so it still exits cleanly instead of via this
   escalation path.
+- Migrations no longer run under the runtime pool's statement timeout, which
+  made upgrading a populated database impossible. That 30-second cap exists to
+  cancel zombie API and filler queries, but the migration client came from the
+  same pool, so every migration statement inherited it. Upgrading a 1.3.x
+  database died at `1.3.31`, whose B-tree over `contract_traces` cannot be built
+  in 30 seconds on any populated chain, and roughly thirty migrations on that
+  path build indexes inside their transaction, so a larger chain failed even
+  earlier. Migrations now run on their own connection with the statement timeout
+  disabled and `lock_timeout` bounded at 60 seconds, and the deferred-SQL pool
+  takes the same budget instead of a fixed hour. `MIGRATION_STATEMENT_TIMEOUT_MS`
+  sets a ceiling in milliseconds for operators who want one. `UPGRADING.md`
+  covers the durations, the disk this needs, and what an interrupted upgrade
+  leaves behind.
 - A database error during block processing stops the filler with the error that
   actually occurred. The block retry could never succeed: the traces and deltas
   are prepared once and consumed destructively, so a second attempt deserialized
