@@ -1,15 +1,3 @@
-export type SalesTableRow = {
-    sale_id: string,
-    seller: string,
-    asset_ids: string[],
-    offer_id: string,
-    listing_price: string,
-    settlement_symbol: string,
-    maker_marketplace: string,
-    collection_fee: number
-    collection_name: string
-};
-
 export type AuctionsTableRow = {
     auction_id: string,
     seller: string,
@@ -66,18 +54,6 @@ export type BonusfeesTableRow = {
     fee_recipient: string,
     fee: number,
     counter_ranges: Array<{counter_name: string, start_id: string, end_id: string}>
-}
-
-export type BuyoffersTableRow = {
-    buyoffer_id: string,
-    buyer: string,
-    recipient: string,
-    price: string,
-    asset_ids: string[],
-    memo: string,
-    maker_marketplace: string,
-    collection_name: string,
-    collection_fee: number
 }
 
 export type RoyaltyPairTableRow = {
