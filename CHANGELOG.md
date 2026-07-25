@@ -48,12 +48,42 @@ including operators coming from `eosio-contract-api`.
   response gains `current_collection_fee`: the collection's live `market_fee`,
   since the v2 contract reads the fee at settlement and the stored
   `collection_fee` is only the listing-time snapshot.
+- Gap detection for indexers upgraded after the on-chain v2 flip, plus a
+  `reconcile` command to heal them. An indexer that ran the 1.x line across the
+  upgrade keeps core indexing working but silently drops every `templates2`,
+  `schematypes`, and `authorswaps` delta, and `deltemplate` emits no log action,
+  so templates deleted during the gap leave stale rows that no trace replay can
+  correct. Migration `2.0.3` adds a per-contract continuity marker, written when
+  the config processor observes a v2 `tokenconfigs` delta, when `reconcile`
+  completes, or when the operator sets `accept_v2_gap`. On a v2 chain with an
+  existing reader position and no marker the filler refuses to start and names
+  the recovery paths in order of data correctness. `reconcile` pages current
+  chain state, reseeds the v2 tables, and stamps templates missing on chain as
+  deleted at the snapshot block; it refuses to run against a reader that is not
+  stopped, and its destructive branches abort when an enumeration returns empty
+  against live rows.
+- `chain_id` in the `chain` block of `GET /health`. Only the `/alive`
+  plain-text response echoes the configured chain, so the structured endpoint
+  that monitoring consumes carried no chain identity, leaving an instance
+  pointed at the wrong chain with nothing to assert against.
+- Author-swap participants in the `auswap` log metadata. `acceptauswap` and
+  `rejectauswap` carry nothing but `collection_name` on chain, so a consumer of
+  `contract_traces` could not tell who the prior author was, who the proposed
+  author was, or who acted. `createauswap` now records `acceptance_date` when
+  the block's `authorswaps` delta surfaces it, and accept and reject record
+  `new_author`, `prior_author`, and `actor`. Fields that are not derivable are
+  omitted.
 
 ### Changed
 
 - The express cache "skipping SET" notice for oversized responses moved from
   warn to debug. It is expected for large responses (the body is still served,
   just not cached) and was flooding operator logs.
+- The toolchain builds on pnpm 11. pnpm's own settings move from `.npmrc` to
+  `pnpm-workspace.yaml` in camelCase, `onlyBuiltDependencies` becomes the
+  `allowBuilds` map, and `.npmrc` keeps registry and network config. Version 11
+  blocks exotic subdependencies and withholds freshly published releases by
+  default.
 
 ### Fixed
 
@@ -79,6 +109,44 @@ including operators coming from `eosio-contract-api`.
   keep running with a dead reader and a still-passing `/healthc`. A normal
   SIGTERM shutdown is exempted so it still exits cleanly instead of via this
   escalation path.
+- `/v2/sales` requests that combine a main collection filter with a price,
+  created, or updated sort take the bounded GIN path. The sort column's btree
+  streams in an order unrelated to the GIN predicate, so a sparse collection
+  walked most of a partition before filling the `LIMIT`; on a production replica
+  that shape ran to the statement timeout and its client retries sustained an IO
+  brownout.
+- Mint rows are skipped rather than rejected when a replay re-inserts them. A
+  crash that commits block data past the reader checkpoint makes replay
+  re-insert identical rows into `atomicassets_mints`, and the unique
+  `(contract, asset_id)` index wedged the filler on that block permanently.
+  Mints are immutable facts, so a replay conflict carries no information.
+- The filler refuses a fork rollback below the reversible window instead of
+  rewinding to it. A SHIP node restored from a stale snapshot serves a head far
+  below the reader checkpoint, which the fork path would otherwise treat as a
+  deep reorg and roll back to.
+- The reader-worker fork uses a default `cluster` import, so `cluster.on` exists
+  at runtime under the compiled build.
+- `reconcile` treats a reader row that has been silent past the safety threshold
+  as stopped even when its `live` flag survived. A filler that crashes or is
+  deleted never clears that flag, and a filler refused by the v2 gap guard
+  always dies uncleanly, so honoring a stale flag blocked the exact recovery the
+  command exists for.
+
+### Security
+
+- The client-facing websocket transport runs on a patched `ws`. The socket.io
+  transport terminates untrusted client connections and reached `ws` 8.18.3
+  through `engine.io` and `socket.io-adapter`, exposing memory-exhaustion DoS
+  from tiny fragments (CVE-2026-48779) and uninitialized memory disclosure
+  (CVE-2026-45736). Updating both parents collapses every copy onto the patched
+  release with no override left to unwind. `qs`, reachable through express and
+  body-parser, is patched alongside.
+- Build and test toolchain advisories are cleared in dev-only transitives that
+  no shipped image runs. They cover archive extraction outside the target
+  directory in `@xhmikosr/decompress` (CVE-2026-53486) and prototype-pollution
+  RCE in `piscina` (CVE-2026-55388), both under `@swc/cli`'s binary downloader,
+  plus CRLF injection in `form-data` via supertest and quadratic-complexity
+  parsing in `js-yaml` via mocha.
 
 ## [1.7.18]
 
