@@ -52,11 +52,11 @@ export function buyoffersEndpoints(core: AtomicMarketNamespace, server: HTTPServ
                             name: 'state',
                             in: 'query',
                             description: 'Filter by buyoffer state (' +
-                                BuyofferApiState.PENDING.valueOf() + ': WAITING: Buyoffer created and pending, ' +
-                                BuyofferApiState.DECLINED.valueOf() + ': LISTED - Buyoffer was declined, ' +
+                                BuyofferApiState.PENDING.valueOf() + ': PENDING - Buyoffer created and pending, ' +
+                                BuyofferApiState.DECLINED.valueOf() + ': DECLINED - Buyoffer was declined by the recipient, ' +
                                 BuyofferApiState.CANCELED.valueOf() + ': CANCELED - Buyoffer was canceled, ' +
-                                BuyofferApiState.ACCEPTED.valueOf() + ': SOLD - Buyoffer has been sold, ' +
-                                BuyofferApiState.INVALID.valueOf() + ': INVALID - Buyoffer invalid because recipient does not own all assets anymore' +
+                                BuyofferApiState.ACCEPTED.valueOf() + ': ACCEPTED - Buyoffer was accepted, ' +
+                                BuyofferApiState.INVALID.valueOf() + ': INVALID - Buyoffer is invalid because the recipient no longer owns every asset it covers' +
                                 ') - separate multiple with ","',
                             required: false,
                             schema: {type: 'string'}
