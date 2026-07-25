@@ -10,9 +10,14 @@ describe('assertReaderStopped', () => {
         expect(() => assertReaderStopped(undefined, 'reader-1', NOW)).to.throw(/no contract_readers row/);
     });
 
-    it('throws when the reader is still live', () => {
-        const reader = { live: true, updated: NOW - RECONCILE_STOPPED_READER_SAFETY_THRESHOLD_MS - 1 };
+    it('throws when the reader is live and its row is fresh', () => {
+        const reader = { live: true, updated: NOW - 1000 };
         expect(() => assertReaderStopped(reader, 'reader-1', NOW)).to.throw(/still live/);
+    });
+
+    it('passes when the live flag is set but the row is stale beyond the threshold - a crashed filler never clears the flag', () => {
+        const reader = { live: true, updated: NOW - RECONCILE_STOPPED_READER_SAFETY_THRESHOLD_MS - 1 };
+        expect(() => assertReaderStopped(reader, 'reader-1', NOW)).to.not.throw();
     });
 
     it('throws when the reader was updated too recently', () => {
