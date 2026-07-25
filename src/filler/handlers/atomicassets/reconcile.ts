@@ -48,16 +48,22 @@ export function assertReaderStopped(
         throw new Error('AtomicAssets reconcile: no contract_readers row found for reader "' + readerName + '"');
     }
 
-    if (reader.live) {
+    const updatedAt = Number(reader.updated);
+    const ageMs = now - updatedAt;
+    const staleBeyondThreshold = Number.isFinite(updatedAt) && ageMs >= thresholdMs;
+
+    // The live flag is only trustworthy while the row is fresh: a filler that
+    // crashes (or is deleted) never clears it, and a guard-refused filler
+    // always dies uncleanly, so honoring a stale flag would block the exact
+    // recovery this command exists for. A reader silent for the full safety
+    // threshold is stopped no matter what the flag says.
+    if (reader.live && !staleBeyondThreshold) {
         throw new Error(
             'AtomicAssets reconcile: reader "' + readerName + '" is still live. Stop the filler before running reconcile.'
         );
     }
 
-    const updatedAt = Number(reader.updated);
-    const ageMs = now - updatedAt;
-
-    if (!Number.isFinite(updatedAt) || ageMs < thresholdMs) {
+    if (!staleBeyondThreshold) {
         throw new Error(
             'AtomicAssets reconcile: reader "' + readerName + '" was updated too recently (' +
             (Number.isFinite(ageMs) ? ageMs + 'ms' : 'unknown time') + ' ago; needs >= ' + thresholdMs +
