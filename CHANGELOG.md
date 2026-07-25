@@ -109,6 +109,19 @@ including operators coming from `eosio-contract-api`.
   keep running with a dead reader and a still-passing `/healthc`. A normal
   SIGTERM shutdown is exempted so it still exits cleanly instead of via this
   escalation path.
+- A database error during block processing stops the filler with the error that
+  actually occurred. The block retry could never succeed: the traces and deltas
+  are prepared once and consumed destructively, so a second attempt deserialized
+  fields the first attempt had already replaced. It also re-entered with the
+  transaction its own abort had returned to the pool, and that double release
+  raised a pool error carrying no Postgres code, which read as fatal and stopped
+  the consumer queue. Every duplicate key, deadlock, and serialization failure
+  therefore became a crash loop reporting an unexplained release error instead of
+  its cause. The retry is removed rather than repaired, since restarting from the
+  durable `contract_readers` checkpoint performs the same replay with the whole
+  in-memory state rebuilt. A transaction now finalizes exactly once, an aborted
+  transaction is never reused, and an abort that fails while unwinding is logged
+  without displacing the error it was unwinding.
 - `/v2/sales` requests that combine a main collection filter with a price,
   created, or updated sort take the bounded GIN path. The sort column's btree
   streams in an order unrelated to the GIN predicate, so a sparse collection

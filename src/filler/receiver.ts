@@ -183,25 +183,6 @@ export default class StateReceiver {
         logger.info('Reader stopped at block #' + this.currentBlock);
     }
 
-    // Codes worth retrying because they're contention-/connection-transient: the
-    // same block can succeed on a retry. Deliberately EXCLUDES 57014 (statement
-    // timeout): a timeout is a resource/time verdict, not contention - retrying
-    // the same batch with the same budget just times out again (wasted attempts).
-    // The real lever for 57014 is the writer's raised statement_timeout (see
-    // database.ts WRITER_STATEMENT_TIMEOUT_MS); a 57014 that still reaches the
-    // terminal path means something is genuinely wrong (cold cache / bad plan /
-    // bloat) and should fast-fail into a restart (queueStopped), not silently retry.
-    private static readonly TRANSIENT_PG_CODES = new Set([
-        '23505', // duplicate key (fork replay)
-        '40001', // serialization failure
-        '40P01', // deadlock detected
-        '57P01', // admin shutdown
-        '08006', // connection failure
-    ]);
-
-    private static readonly MAX_BLOCK_RETRIES = 3;
-    private static readonly RETRY_DELAY_MS = 1000;
-
     // Upper bound on how far below the checkpoint a genuine fork can reach.
     // Antelope LIB trails head by ~330 blocks (last_irreversible refines this
     // upward as soon as the first block is processed); 1000 leaves margin
@@ -223,40 +204,22 @@ export default class StateReceiver {
         }
 
         this.dsQueue.add(async () => {
-            for (let attempt = 1; attempt <= StateReceiver.MAX_BLOCK_RETRIES; attempt++) {
-                try {
-                    await this.process(resp, actionTraces, contractRows);
-                    this.dsLock.release();
-                    return;
-                } catch (error) {
-                    const pgCode = (error as any)?.code;
-                    const isTransient = typeof pgCode === 'string'
-                        && StateReceiver.TRANSIENT_PG_CODES.has(pgCode);
+            try {
+                await this.process(resp, actionTraces, contractRows);
+                this.dsLock.release();
+            } catch (error) {
+                this.dsLock.release();
+                this.dsLock.purge();
+                this.dsQueue.clear();
+                this.dsQueue.pause();
 
-                    if (isTransient && attempt < StateReceiver.MAX_BLOCK_RETRIES) {
-                        logger.warn(
-                            `Transient DB error (${pgCode}) at block #${resp.this_block.block_num}, ` +
-                            `retry ${attempt}/${StateReceiver.MAX_BLOCK_RETRIES}`
-                        );
-                        await new Promise(resolve => setTimeout(resolve, StateReceiver.RETRY_DELAY_MS * attempt));
-                        continue;
-                    }
+                // Known-dead state: signal the watchdog to restart the pod NOW
+                // instead of waiting out the multi-minute stall timer. Recovery
+                // is a clean restart (the failed block's txn is already aborted;
+                // we replay from the durable contract_readers checkpoint).
+                this.queueStopped = true;
 
-                    this.dsLock.release();
-                    this.dsLock.purge();
-                    this.dsQueue.clear();
-                    this.dsQueue.pause();
-
-                    // Known-dead state: signal the watchdog to restart the pod NOW
-                    // instead of waiting out the multi-minute stall timer. Recovery
-                    // is a clean restart (the failed block's txn is already aborted;
-                    // we replay from the durable contract_readers checkpoint).
-                    this.queueStopped = true;
-
-                    logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
-
-                    return;
-                }
+                logger.error('Consumer queue stopped due to an error at #' + resp.this_block.block_num, error);
             }
         }).catch((error: any) => {
             logger.error('Block processing error in ds queue at #' + resp.this_block.block_num, error);
@@ -330,7 +293,19 @@ export default class StateReceiver {
         } catch (e) {
             logger.error('Error occurred while processing block #' + resp.this_block.block_num);
 
-            await db.abort();
+            // An abort that itself throws (e.g. ROLLBACK against a connection
+            // that is already gone for 57P01/08006) must not replace the
+            // error being unwound - log it as secondary and keep going so the
+            // original error is what reaches the terminal path and the log.
+            try {
+                await db.abort();
+            } catch (abortError) {
+                logger.error('Error occurred while aborting transaction for block #' + resp.this_block.block_num, abortError);
+            }
+
+            // The transaction is finalized either way; never let a later block
+            // pick up an aborted transaction for reuse.
+            this.lastDatabaseTransaction = null;
 
             throw e;
         }
@@ -374,7 +349,13 @@ export default class StateReceiver {
                     logger.error('Error occurred while executing block range from #' + (resp.this_block.block_num - this.collectedBlocks + 1) + ' to ' + resp.this_block.block_num);
                 }
 
-                await db.abort();
+                try {
+                    await db.abort();
+                } catch (abortError) {
+                    logger.error('Error occurred while aborting transaction for block #' + resp.this_block.block_num, abortError);
+                }
+
+                this.lastDatabaseTransaction = null;
 
                 throw e;
             }

@@ -478,7 +478,13 @@ export class ContractDBTransaction {
     readonly lock: AwaitLock;
 
     inTransaction: boolean;
-    committed: boolean;
+
+    // Set once commit() or abort() has released the client and deregistered
+    // this instance. Whichever of the two completes first sets this; the
+    // other (or a repeat call to either) then returns immediately, before
+    // acquiring the lock or touching the client - a finalized transaction's
+    // client may already be back in the pool serving another consumer.
+    private finalized: boolean;
 
     actionLogs: any[];
     writeBuffer: WriteBuffer | null;
@@ -488,7 +494,7 @@ export class ContractDBTransaction {
         readonly client: PoolClient, readonly name: string, readonly stats: {operations: number}, readonly currentBlock?: number
     ) {
         this.lock = new AwaitLock();
-        this.committed = false;
+        this.finalized = false;
         this.inTransaction = false;
 
         this.actionLogs = [];
@@ -1179,6 +1185,15 @@ export class ContractDBTransaction {
     }
 
     async commit(): Promise<void> {
+        // The early return must precede lock acquisition. Guarding only the
+        // release step while still calling acquireLock() would let this call
+        // take the lock and then skip releasing it (because the release is
+        // gated on the same flag), stranding the AwaitLock for every later
+        // operation on this instance.
+        if (this.finalized) {
+            return;
+        }
+
         await this.flushBuffers(true);
 
         if (this.actionLogs.length > 0) {
@@ -1194,23 +1209,31 @@ export class ContractDBTransaction {
         await this.acquireLock();
 
         try {
+            // Re-checked under the lock: a concurrent abort() may have
+            // finalized this instance while commit() awaited the lock.
+            if (this.finalized) {
+                return;
+            }
+
             if (this.inTransaction) {
                 await this.clientQuery('COMMIT');
             }
         } finally {
-            this.client.release();
+            if (!this.finalized) {
+                this.finalized = true;
+                this.client.release();
+                this.deregister();
+            }
 
             this.releaseLock();
-
-            const index = ContractDB.transactions.indexOf(this);
-
-            if (index >= 0) {
-                ContractDB.transactions.splice(index, 1);
-            }
         }
     }
 
     async abort(): Promise<void> {
+        if (this.finalized) {
+            return;
+        }
+
         if (this.writeBuffer) {
             this.writeBuffer.clear();
         }
@@ -1221,17 +1244,35 @@ export class ContractDBTransaction {
         await this.acquireLock();
 
         try {
+            if (this.finalized) {
+                return;
+            }
+
             if (this.inTransaction) {
                 await this.clientQuery('ROLLBACK');
             }
         } finally {
-            this.releaseLock();
-            this.client.release();
-
-            const index = ContractDB.transactions.indexOf(this);
-            if (index >= 0) {
-                ContractDB.transactions.splice(index, 1);
+            if (!this.finalized) {
+                this.finalized = true;
+                this.client.release();
+                this.deregister();
             }
+
+            this.releaseLock();
+        }
+    }
+
+    // Removes every occurrence of this instance from ContractDB.transactions.
+    // begin() re-pushes after each chunked commit inside
+    // rollbackReversibleBlocks, so a fork rollback of N chunks registers the
+    // same instance N+1 times; splicing only the first occurrence would leave
+    // later ones reachable by the shutdown sweep after finalization.
+    private deregister(): void {
+        let index = ContractDB.transactions.indexOf(this);
+
+        while (index >= 0) {
+            ContractDB.transactions.splice(index, 1);
+            index = ContractDB.transactions.indexOf(this);
         }
     }
 
@@ -1267,8 +1308,15 @@ export class ContractDBTransaction {
 exitHook(async (callback: () => void) => {
     logger.info('Process stopping - cleaning up transactions...');
 
-    for (const transaction of ContractDB.transactions) {
-        await transaction.abort();
+    // abort() deregisters by splicing ContractDB.transactions in place, so
+    // walking the live array here would skip entries as they shift down.
+    // Iterate a copy instead.
+    for (const transaction of [...ContractDB.transactions]) {
+        try {
+            await transaction.abort();
+        } catch (abortError) {
+            logger.error('Error occurred while aborting transaction during shutdown', abortError);
+        }
     }
 
     logger.info('All transactions aborted');
