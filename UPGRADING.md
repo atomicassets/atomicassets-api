@@ -19,9 +19,11 @@ covers what changes, whether you need a new Postgres, and the exact steps.
   [Upgrading after the contracts are already live](#upgrading-after-the-contracts-are-already-live)
   below.
 - You do not hand-apply SQL. Point the filler at the v2 image and it runs every
-  pending migration in order, all the way from a 1.3.x schema to 2.0.x. There
-  are no manual steps; the v2 migrations are metadata-only and run in seconds
-  on any chain size.
+  pending migration in order, all the way from a 1.3.x schema to 2.0.x. Budget
+  time rather than steps: coming from 1.3.x the run rebuilds indexes on your
+  largest tables, and on a large chain that is hours, not seconds. Migrations
+  run without a statement timeout so a long build finishes instead of being
+  cancelled part way. See [How long it takes](#how-long-it-takes).
 - Already crash-looping on `AtomicAssets: A template was deleted`? Your indexer
   predates 1.7.18 and hit a v2 `deltemplate` on-chain. See
   [Compatibility, in short](#compatibility-in-short) - upgrading the image
@@ -92,8 +94,11 @@ older deploy will cross:
    exact release-candidate tag while testing one).
 2. Stop the filler. Leave the server up if you want to keep serving reads.
 3. Start the filler against the v2 image. It runs all pending migrations before
-   it begins reading. On large chains the 1.7.x index rebuilds can take a
-   while; the 2.0.x steps are metadata-only and finish in seconds.
+   it begins reading. On large chains this is the long pole: the 1.3.x and
+   1.7.x steps rebuild indexes on `contract_traces` and the market tables, and
+   `2.0.1` builds one on the partitioned `atomicmarket_sales_filters`. Only the
+   remaining 2.0.x steps are metadata-only. Read
+   [How long it takes](#how-long-it-takes) before choosing a maintenance window.
 4. Restart the server on the v2 image so it can serve the new fields and the
    `/atomicmarket/v1/royalties/*` endpoints.
 5. Verify: `dbinfo` shows version `2.0.x`, the filler is advancing, and
@@ -102,6 +107,54 @@ older deploy will cross:
 You can do all of this while the chain is still on the v1 contracts. The v2
 indexer runs cleanly against a v1 chain; the new tables stay empty until the
 contracts are upgraded on-chain.
+
+## How long it takes
+
+Coming from 1.3.x, the migration chain rebuilds indexes on the largest tables in
+the schema. The heaviest are `1.3.31`, which builds a B-tree over
+`contract_traces` (`1.3.9` had dropped that table's primary key to reclaim disk,
+so it is built from nothing), `1.3.34`, which replaces that B-tree with a hash,
+and `2.0.1` on the partitioned `atomicmarket_sales_filters`. On a mainnet-sized
+chain each is measured in hours: `contract_traces` on WAX mainnet is roughly
+2.14 billion rows across about 750 GB.
+
+That pair is also the disk spike. The B-tree runs about 81 GB and the hash that
+replaces it 30 to 50 GB, and both exist at once during the changeover. Check
+free space before starting.
+
+Migrations run with `statement_timeout` disabled, so a long build finishes
+instead of being cancelled part way, while `lock_timeout` stays bounded so a
+migration blocked behind another session fails rather than waiting forever. Set
+`MIGRATION_STATEMENT_TIMEOUT_MS` to impose a ceiling in milliseconds. It is a
+default, not a guarantee: `1.6.4`, `1.7.11`, `1.7.12` and `2.0.1` each disable
+the statement timeout for their own transaction, so no ceiling applies while
+those run.
+
+Several migrations carry a header describing how to pre-build their indexes
+`CONCURRENTLY` ahead of the upgrade: `1.3.31`, `1.3.32`, `1.3.34`, `1.7.17` and
+`2.0.1`. Doing so shortens the window in which the filler is down. It is an
+optimisation, not a prerequisite. Some of those headers also state that the
+deferred runner enforces a one-hour cap; it does not.
+
+### Interrupting an upgrade
+
+Each version's schema changes and its `dbinfo` bump commit together, so an
+upgrade killed between versions resumes at the next one and repeats nothing.
+
+Deferred SQL is the exception. `CREATE INDEX CONCURRENTLY` cannot run inside a
+transaction, so those statements run after their own version has already
+committed and advanced `dbinfo`. A process killed during one leaves an invalid
+index behind, and because `dbinfo` has moved past that version the runner never
+returns to it: restarting the filler does not rebuild the index, whatever the
+deferred files say about re-runs being idempotent. Recovery is manual. List the
+invalid indexes with
+
+```sql
+SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;
+```
+
+then drop each one and re-create it with the statement from that version's
+`*-deferred.sql`. Prefer letting a deferred phase finish.
 
 ## Ran a 2.0.0 release candidate before rc4?
 
