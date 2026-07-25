@@ -32,8 +32,8 @@ export type MarketplacesTableRow = {
 };
 
 export type ConfigTableRow = {
-    sale_counter: number,
-    auction_counter: number,
+    sale_counter: string,
+    auction_counter: string,
     minimum_bid_increase: number,
     minimum_auction_duration: number,
     maximum_auction_duration: number,

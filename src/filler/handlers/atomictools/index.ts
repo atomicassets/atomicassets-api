@@ -111,7 +111,7 @@ export default class AtomicToolsHandler extends ContractHandler {
 
             this.config = {
                 ...configQuery.rows[0],
-                link_counter: 0,
+                link_counter: '0',
                 atomicassets_account: this.args.atomicassets_account
             };
         }
