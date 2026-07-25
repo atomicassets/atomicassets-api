@@ -27,8 +27,8 @@ export type PacksTableRow = {
     pack_id: string,
     collection_name: string,
     unlock_time: number,
-    pack_template_id: string | number,  // -1 if not yet completepack'd
-    roll_counter: string | number,
+    pack_template_id: number,  // -1 if not yet completepack'd
+    roll_counter: string,
     display_data: string,
 };
 

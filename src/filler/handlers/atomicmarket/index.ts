@@ -661,8 +661,8 @@ export default class AtomicMarketHandler extends ContractHandler {
                     token_contract: row.token_contract,
                     token_symbol: row.token_precision + ',' + row.token_symbol
                 })),
-                auction_counter: 0,
-                sale_counter: 0,
+                auction_counter: '0',
+                sale_counter: '0',
                 delphioracle_account: this.args.delphioracle_account,
                 atomicassets_account: this.args.atomicassets_account
             };

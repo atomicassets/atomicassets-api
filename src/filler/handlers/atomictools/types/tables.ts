@@ -10,5 +10,5 @@ export type LinksTableRow = {
 export type ConfigTableRow = {
     version: string,
     atomicassets_account: string,
-    link_counter: number
+    link_counter: string
 };
