@@ -6,6 +6,8 @@ import PQueue from 'p-queue';
 import Semaphore from '../utils/semaphore';
 import StateReceiver from './receiver';
 import { ShipBlockResponse } from '../types/ship';
+import { ProcessingState } from './processor';
+import logger from '../utils/winston';
 
 /**
  * Build a minimal StateReceiver-like object that has the fields used
@@ -406,6 +408,157 @@ describe('StateReceiver', () => {
             // Simulate the post-block assignment with a stale LIB from the SHIP.
             receiver.lastIrreversibleBlock = Math.max(receiver.lastIrreversibleBlock, 4_000_000);
             expect(receiver.lastIrreversibleBlock).to.equal(5_999_000);
+        });
+    });
+
+    describe('terminal failure path (no retry)', () => {
+        afterEach(() => {
+            sinon.restore();
+        });
+
+        it('does not retry a block whose processing throws a 40P01 deadlock error', async () => {
+            const dsLock = new Semaphore(3);
+            const dsQueue = new PQueue({concurrency: 1, autoStart: true});
+
+            // A pg deadlock code gets no second attempt: block processing
+            // failures are terminal regardless of the error code.
+            const transientLookingError: any = new Error('deadlock detected');
+            transientLookingError.code = '40P01';
+
+            const processSpy = sinon.stub().rejects(transientLookingError);
+
+            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
+            (receiver as any).dsLock = dsLock;
+            (receiver as any).dsQueue = dsQueue;
+            (receiver as any).queueStopped = false;
+            (receiver as any).config = { name: 'test-reader' };
+            (receiver as any).prepareActionTraces = sinon.stub().resolves([]);
+            (receiver as any).prepareContractRows = sinon.stub().resolves([]);
+            (receiver as any).process = processSpy;
+
+            await (receiver as any).consumer(makeBlockResponse(9100));
+            await dsQueue.onIdle();
+
+            expect(processSpy.callCount).to.equal(1);
+            expect((receiver as any).queueStopped).to.equal(true);
+        });
+
+        function createProcessReceiver(db: any): StateReceiver {
+            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
+            (receiver as any).config = { name: 'test-reader', db_group_blocks: 12, irreversible_only: false };
+            (receiver as any).currentBlock = 0;
+            (receiver as any).headBlock = 0;
+            (receiver as any).lastIrreversibleBlock = 0;
+            (receiver as any).collectedBlocks = 0;
+            (receiver as any).lastBlockUpdate = 0;
+            (receiver as any).lastCommittedBlock = 0;
+            (receiver as any).blocksUntilHead = 0;
+            (receiver as any).lastDatabaseTransaction = undefined;
+            (receiver as any).processor = {
+                getState: sinon.stub().returns(ProcessingState.HEAD),
+                setState: sinon.stub(),
+                executeHeadQueue: sinon.stub().resolves(),
+                notifyCommit: sinon.stub().resolves(),
+            };
+            (receiver as any).notifier = {
+                sendFork: sinon.stub(),
+                publish: sinon.stub().resolves(),
+            };
+            (receiver as any).modules = {
+                checkTrace: sinon.stub().returns(true),
+                checkDelta: sinon.stub().returns(true),
+            };
+            (receiver as any).database = {
+                startTransaction: sinon.stub().resolves(db),
+            };
+            return receiver;
+        }
+
+        it('an abort that itself throws does not replace the error being unwound, and the transaction is not retained', async () => {
+            const insertError = new Error('duplicate key value violates unique constraint');
+            const abortError = new Error('ROLLBACK failed: terminating connection due to administrator command');
+
+            const db = {
+                insert: sinon.stub().rejects(insertError),
+                abort: sinon.stub().rejects(abortError),
+                rollbackReversibleBlocks: sinon.stub().resolves(),
+                clearForkDatabase: sinon.stub().resolves(),
+                commit: sinon.stub().resolves(),
+                updateReaderPosition: sinon.stub().resolves(),
+                inTransaction: true,
+            };
+
+            const errorSpy = sinon.stub(logger, 'error');
+            const receiver = createProcessReceiver(db);
+            (receiver as any).lastDatabaseTransaction = db;
+
+            const resp = makeBlockResponse(1);
+
+            let thrown: Error | null = null;
+            try {
+                await (receiver as any).process(resp, [], []);
+            } catch (e: any) {
+                thrown = e;
+            }
+
+            // The original error propagates; the one raised while unwinding does not replace it.
+            expect(thrown).to.equal(insertError);
+
+            // The abort failure is logged as a secondary event rather than silently swallowed.
+            const secondaryLogged = errorSpy.getCalls().some(call => call.args.some(arg => arg === abortError));
+            expect(secondaryLogged).to.equal(true);
+
+            // An aborted transaction must not be retained for a later block to pick up.
+            expect((receiver as any).lastDatabaseTransaction).to.equal(null);
+        });
+
+        it('the commit-stage abort path also swallows an abort failure and clears the retained transaction', async () => {
+            const commitStageError = new Error('statement timeout');
+            const abortError = new Error('ROLLBACK failed: connection terminated');
+
+            const db = {
+                insert: sinon.stub().resolves({ rowCount: 0, rows: [] }),
+                abort: sinon.stub().rejects(abortError),
+                commit: sinon.stub().resolves(),
+                updateReaderPosition: sinon.stub().resolves(),
+                inTransaction: true,
+            };
+
+            const errorSpy = sinon.stub(logger, 'error');
+            const receiver = createProcessReceiver(db);
+            (receiver as any).processor.executeHeadQueue = sinon.stub().rejects(commitStageError);
+            (receiver as any).lastDatabaseTransaction = db;
+            // Must sit directly below this_block.block_num or the "Skipped a
+            // block" guard at the top of process() throws first.
+            (receiver as any).currentBlock = 4;
+
+            // block_num === last_irreversible.block_num keeps isReversible falsy
+            // (skips the fork/insert branch); head close to this_block keeps
+            // blocksUntilHead small so commitSize is 1 and the commit-stage
+            // try/catch runs on this single block.
+            const resp: ShipBlockResponse = {
+                this_block: { block_num: 5, block_id: '5'.padStart(64, '0') },
+                head: { block_num: 15, block_id: 'f'.repeat(64) },
+                last_irreversible: { block_num: 5, block_id: 'e'.repeat(64) },
+                prev_block: { block_num: 4, block_id: 'd'.repeat(64) },
+                block: { block_num: 5, block_id: '5'.padStart(64, '0'), timestamp: '2023-01-01T00:00:00.000' } as any,
+                traces: [],
+                deltas: [],
+            };
+
+            let thrown: Error | null = null;
+            try {
+                await (receiver as any).process(resp, [], []);
+            } catch (e: any) {
+                thrown = e;
+            }
+
+            expect(thrown).to.equal(commitStageError);
+
+            const secondaryLogged = errorSpy.getCalls().some(call => call.args.some(arg => arg === abortError));
+            expect(secondaryLogged).to.equal(true);
+
+            expect((receiver as any).lastDatabaseTransaction).to.equal(null);
         });
     });
 });
