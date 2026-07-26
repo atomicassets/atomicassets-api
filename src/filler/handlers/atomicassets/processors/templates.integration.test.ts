@@ -53,12 +53,12 @@ function createMockModuleLoader(): ModuleLoader {
 }
 
 /**
- * Serialize template mutable/immutable data into the contract byte format (hex string).
+ * Serialize template mutable/immutable data into the contract byte format.
  */
-function serializeSchemaData(data: Record<string, any>): string {
+function serializeSchemaData(data: Record<string, any>): number[] {
     const schema = ObjectSchema(SCHEMA_FORMAT);
     const serialized = serialize(data, schema);
-    return Buffer.from(serialized).toString('hex');
+    return Array.from(serialized);
 }
 
 describe('templateProcessor', () => {
@@ -113,7 +113,7 @@ describe('templateProcessor', () => {
      * Seed an existing base template row (mutable_data NULL) so the templates2
      * handler has a row to UPDATE by template_id.
      */
-    async function seedTemplate(templateId: string, mutableData: string | null = null): Promise<void> {
+    async function seedTemplate(templateId: number, mutableData: string | null = null): Promise<void> {
         await client.query(
             `INSERT INTO atomicassets_templates
                 (contract, template_id, collection_name, schema_name, transferable, burnable,
@@ -126,7 +126,7 @@ describe('templateProcessor', () => {
 
     describe('templates2 mutable_data delta', () => {
         it('sets mutable_data to the deserialized non-null payload (B-API-TABLE-NAME)', async () => {
-            const templateId = '1001';
+            const templateId = 1001;
             await seedTemplate(templateId);
 
             const block = createBlock({ timestamp: '2023-05-01T10:00:00.000' });
@@ -135,7 +135,7 @@ describe('templateProcessor', () => {
             const deltaValue: MutableTemplatesTableRow = {
                 template_id: templateId,
                 schema_name: SCHEMA,
-                mutable_serialized_data: serialized as any,
+                mutable_serialized_data: serialized,
             };
             const delta = createContractRow(CONTRACT, 'templates2', deltaValue, true, {
                 scope: COLLECTION,
@@ -155,7 +155,7 @@ describe('templateProcessor', () => {
         });
 
         it('clears mutable_data back to NULL when present=false (A-MUT-ROW-DELETE)', async () => {
-            const templateId = '1002';
+            const templateId = 1002;
             // Seed with pre-existing non-null mutable_data.
             await seedTemplate(templateId, JSON.stringify({ name: 'Stale', level: '3' }));
 
@@ -170,7 +170,7 @@ describe('templateProcessor', () => {
             const deltaValue: MutableTemplatesTableRow = {
                 template_id: templateId,
                 schema_name: SCHEMA,
-                mutable_serialized_data: [] as any,
+                mutable_serialized_data: [],
             };
             const delta = createContractRow(CONTRACT, 'templates2', deltaValue, false, {
                 scope: COLLECTION,
@@ -187,7 +187,7 @@ describe('templateProcessor', () => {
         });
 
         it('does NOT populate mutable_data when fed the wrong/old table name tmplmutables (anti-regression)', async () => {
-            const templateId = '1003';
+            const templateId = 1003;
             await seedTemplate(templateId);
 
             const block = createBlock();
@@ -196,7 +196,7 @@ describe('templateProcessor', () => {
             const deltaValue: MutableTemplatesTableRow = {
                 template_id: templateId,
                 schema_name: SCHEMA,
-                mutable_serialized_data: serialized as any,
+                mutable_serialized_data: serialized,
             };
             // Feed the legacy/wrong table name. The processor subscribes to 'templates2',
             // so this delta must be ignored entirely.
@@ -215,7 +215,7 @@ describe('templateProcessor', () => {
         });
 
         it('is a sane no-op for an orphan template_id with no existing templates row', async () => {
-            const templateId = '9999999';
+            const templateId = 9999999;
             // Intentionally do NOT seed a template row.
 
             const block = createBlock();
@@ -224,7 +224,7 @@ describe('templateProcessor', () => {
             const deltaValue: MutableTemplatesTableRow = {
                 template_id: templateId,
                 schema_name: SCHEMA,
-                mutable_serialized_data: serialized as any,
+                mutable_serialized_data: serialized,
             };
             const delta = createContractRow(CONTRACT, 'templates2', deltaValue, true, {
                 scope: COLLECTION,
@@ -244,7 +244,7 @@ describe('templateProcessor', () => {
 
     describe('templates immutable delta (deltemplate / deleted_at)', () => {
         it('sets deleted_at_block/deleted_at_time when present=false for an existing template', async () => {
-            const templateId = '2001';
+            const templateId = 2001;
             await seedTemplate(templateId);
 
             const block = createBlock({ timestamp: '2023-08-20T08:30:00.000' });
@@ -253,9 +253,9 @@ describe('templateProcessor', () => {
                 schema_name: SCHEMA,
                 transferable: true,
                 burnable: true,
-                max_supply: '0',
-                issued_supply: '5',
-                immutable_serialized_data: [] as any,
+                max_supply: 0,
+                issued_supply: 5,
+                immutable_serialized_data: [],
             };
             const delta = createContractRow(CONTRACT, 'templates', deltaValue, false, {
                 scope: COLLECTION,
@@ -275,7 +275,7 @@ describe('templateProcessor', () => {
         });
 
         it('SKIPS rather than inserting a deleted placeholder for a never-indexed template (B-TMPL-DELETE-INSERT-EDGE)', async () => {
-            const templateId = '2002';
+            const templateId = 2002;
             // Intentionally do NOT seed a template row (rowCount === 0 branch).
 
             const block = createBlock();
@@ -284,9 +284,9 @@ describe('templateProcessor', () => {
                 schema_name: SCHEMA,
                 transferable: true,
                 burnable: true,
-                max_supply: '0',
-                issued_supply: '0',
-                immutable_serialized_data: [] as any,
+                max_supply: 0,
+                issued_supply: 0,
+                immutable_serialized_data: [],
             };
             const delta = createContractRow(CONTRACT, 'templates', deltaValue, false, {
                 scope: COLLECTION,

@@ -54,10 +54,10 @@ function createMockModuleLoader(): ModuleLoader {
 /**
  * Serialize collection data into the byte format expected by the AtomicAssets contract.
  */
-function serializeCollectionData(data: Record<string, string>): string {
+function serializeCollectionData(data: Record<string, string>): number[] {
     const schema = ObjectSchema(COLLECTION_FORMAT);
     const serialized = serialize(data, schema);
-    return Buffer.from(serialized).toString('hex');
+    return Array.from(serialized);
 }
 
 describe('collectionProcessor', () => {
@@ -105,11 +105,11 @@ describe('collectionProcessor', () => {
             const deltaValue: CollectionsTableRow = {
                 collection_name: 'coolcol11111',
                 author: 'creator11111',
-                allow_notify: 1,
+                allow_notify: true,
                 authorized_accounts: ['creator11111', 'helper111111'],
                 notify_accounts: ['notifier1111'],
                 market_fee: 0.05,
-                serialized_data: serializedData as any,
+                serialized_data: serializedData,
             };
 
             const delta = createContractRow(CONTRACT, 'collections', deltaValue, true);
@@ -146,11 +146,11 @@ describe('collectionProcessor', () => {
             const deltaValue1: CollectionsTableRow = {
                 collection_name: 'upsertcol111',
                 author: 'creator11111',
-                allow_notify: 1,
+                allow_notify: true,
                 authorized_accounts: ['creator11111'],
                 notify_accounts: [],
                 market_fee: 0.02,
-                serialized_data: serializedData1 as any,
+                serialized_data: serializedData1,
             };
 
             const delta1 = createContractRow(CONTRACT, 'collections', deltaValue1, true);
@@ -169,11 +169,11 @@ describe('collectionProcessor', () => {
             const deltaValue2: CollectionsTableRow = {
                 collection_name: 'upsertcol111',
                 author: 'creator11111',
-                allow_notify: 1,
+                allow_notify: true,
                 authorized_accounts: ['creator11111', 'newauth11111'],
                 notify_accounts: [],
                 market_fee: 0.03,
-                serialized_data: serializedData2 as any,
+                serialized_data: serializedData2,
             };
 
             const delta2 = createContractRow(CONTRACT, 'collections', deltaValue2, true);
@@ -199,11 +199,11 @@ describe('collectionProcessor', () => {
             const deltaValue: CollectionsTableRow = {
                 collection_name: 'deleted11111',
                 author: 'creator11111',
-                allow_notify: 0,
+                allow_notify: false,
                 authorized_accounts: [],
                 notify_accounts: [],
                 market_fee: 0,
-                serialized_data: [] as any,
+                serialized_data: [],
             };
 
             const delta = createContractRow(CONTRACT, 'collections', deltaValue, false);

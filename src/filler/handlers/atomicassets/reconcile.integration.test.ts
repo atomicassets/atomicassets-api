@@ -15,9 +15,9 @@ const SCHEMA_FORMAT = [
     { name: 'level', type: 'uint64' },
 ];
 
-function serializeSchemaData(data: Record<string, any>): string {
+function serializeSchemaData(data: Record<string, any>): number[] {
     const schema = ObjectSchema(SCHEMA_FORMAT);
-    return Buffer.from(serialize(data, schema)).toString('hex');
+    return Array.from(serialize(data, schema));
 }
 
 /** Builds a mock RPC pager that serves fixed rows for each (code, scope, table) and a fixed scope list per table - no live chain involved. */
@@ -104,11 +104,11 @@ describe('reconcileAtomicAssetsContract', () => {
     it('seeds mutable_data for a template present on-chain and absent in DB', async () => {
         await insertTemplate(1);
 
-        const mutableHex = serializeSchemaData({ name: 'seeded', level: 3 });
+        const mutableBytes = serializeSchemaData({ name: 'seeded', level: 3 });
         const rpc = createMockRpc({
             scopesByTable: { templates2: [COLLECTION], templates: [COLLECTION], schematypes: [] },
             rowsByScope: {
-                templates2: { [COLLECTION]: [{ template_id: 1, schema_name: SCHEMA, mutable_serialized_data: mutableHex }] },
+                templates2: { [COLLECTION]: [{ template_id: 1, schema_name: SCHEMA, mutable_serialized_data: mutableBytes }] },
                 templates: { [COLLECTION]: [{ template_id: 1 }] },
             },
         });
@@ -125,11 +125,11 @@ describe('reconcileAtomicAssetsContract', () => {
     it('overwrites stale DB mutable_data with on-chain templates2 state', async () => {
         await insertTemplate(2, { mutable_data: JSON.stringify({ name: 'stale', level: 1 }) });
 
-        const mutableHex = serializeSchemaData({ name: 'fresh', level: 9 });
+        const mutableBytes = serializeSchemaData({ name: 'fresh', level: 9 });
         const rpc = createMockRpc({
             scopesByTable: { templates2: [COLLECTION], templates: [COLLECTION], schematypes: [] },
             rowsByScope: {
-                templates2: { [COLLECTION]: [{ template_id: 2, schema_name: SCHEMA, mutable_serialized_data: mutableHex }] },
+                templates2: { [COLLECTION]: [{ template_id: 2, schema_name: SCHEMA, mutable_serialized_data: mutableBytes }] },
                 templates: { [COLLECTION]: [{ template_id: 2 }] },
             },
         });
@@ -145,11 +145,11 @@ describe('reconcileAtomicAssetsContract', () => {
         await insertTemplate(3, { mutable_data: JSON.stringify({ name: 'gone', level: 1 }) });
         await insertTemplate(30, { mutable_data: JSON.stringify({ name: 'survivor', level: 2 }) });
 
-        const survivorHex = serializeSchemaData({ name: 'survivor', level: 2 });
+        const survivorBytes = serializeSchemaData({ name: 'survivor', level: 2 });
         const rpc = createMockRpc({
             scopesByTable: { templates2: [COLLECTION], templates: [COLLECTION], schematypes: [] },
             rowsByScope: {
-                templates2: { [COLLECTION]: [{ template_id: 30, schema_name: SCHEMA, mutable_serialized_data: survivorHex }] },
+                templates2: { [COLLECTION]: [{ template_id: 30, schema_name: SCHEMA, mutable_serialized_data: survivorBytes }] },
                 templates: { [COLLECTION]: [{ template_id: 3 }, { template_id: 30 }] },
             },
         });
@@ -232,11 +232,11 @@ describe('reconcileAtomicAssetsContract', () => {
     it('is a no-op on a second run over unchanged chain state', async () => {
         await insertTemplate(6);
 
-        const mutableHex = serializeSchemaData({ name: 'stable', level: 5 });
+        const mutableBytes = serializeSchemaData({ name: 'stable', level: 5 });
         const rpc = createMockRpc({
             scopesByTable: { templates2: [COLLECTION], templates: [COLLECTION], schematypes: [] },
             rowsByScope: {
-                templates2: { [COLLECTION]: [{ template_id: 6, schema_name: SCHEMA, mutable_serialized_data: mutableHex }] },
+                templates2: { [COLLECTION]: [{ template_id: 6, schema_name: SCHEMA, mutable_serialized_data: mutableBytes }] },
                 templates: { [COLLECTION]: [{ template_id: 6 }] },
             },
         });
@@ -336,11 +336,11 @@ describe('reconcileAtomicAssetsContract', () => {
     it('preserves mutable_data for a templates2 row whose schema is locally unknown instead of nulling it out', async () => {
         await insertTemplate(9, { mutable_data: JSON.stringify({ name: 'unknown-schema-data', level: 1 }) });
 
-        const mutableHex = serializeSchemaData({ name: 'irrelevant', level: 1 });
+        const mutableBytes = serializeSchemaData({ name: 'irrelevant', level: 1 });
         const rpc = createMockRpc({
             scopesByTable: { templates2: [COLLECTION], templates: [COLLECTION], schematypes: [] },
             rowsByScope: {
-                templates2: { [COLLECTION]: [{ template_id: 9, schema_name: 'unknownschema', mutable_serialized_data: mutableHex }] },
+                templates2: { [COLLECTION]: [{ template_id: 9, schema_name: 'unknownschema', mutable_serialized_data: mutableBytes }] },
                 templates: { [COLLECTION]: [{ template_id: 9 }] },
             },
         });
