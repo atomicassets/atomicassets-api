@@ -19,7 +19,7 @@ import { buyoffersEndpoints, buyofferSockets } from './routes/buyoffers';
 import { assetsEndpoints } from './routes/assets';
 import { ActionHandlerContext } from '../../actionhandler';
 import { ILimits } from '../../../types/config';
-import { templateBuyoffersEndpoints } from './routes/template-buyoffers';
+import { templateBuyoffersEndpoints, templateBuyofferSockets } from './routes/template-buyoffers';
 import { royaltiesEndpoints } from './routes/royalties';
 
 export interface AtomicMarketNamespaceArgs {
@@ -187,5 +187,6 @@ export class AtomicMarketNamespace extends ApiNamespace {
         salesSockets(this, server, notification);
         auctionSockets(this, server, notification);
         buyofferSockets(this, server, notification);
+        templateBuyofferSockets(this, server, notification);
     }
 }
