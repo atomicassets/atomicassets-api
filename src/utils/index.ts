@@ -22,13 +22,6 @@ export function arrayUnique<T>(array: T[], compare: (a: T, b: T) => boolean = (a
     return array.filter((v, i, a) => a.findIndex(x => compare(v, x)) === i);
 }
 
-export function getStackTrace(): any {
-    const obj: any = {};
-    Error.captureStackTrace(obj, getStackTrace);
-
-    return obj.stack;
-}
-
 export function compareVersionString(s1: string, s2: string): number {
     const split1 = s1.split('.');
     const split2 = s2.split('.');

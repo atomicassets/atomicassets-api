@@ -127,7 +127,7 @@ export class HTTPServer implements DB {
     }
 }
 
-export class WebServer {
+class WebServer {
     readonly express: express.Application;
 
     readonly limiter: express.Handler;
@@ -422,7 +422,7 @@ export class WebServer {
 
 }
 
-export class SocketServer {
+class SocketServer {
     readonly io: Server;
 
     constructor(readonly server: HTTPServer) {

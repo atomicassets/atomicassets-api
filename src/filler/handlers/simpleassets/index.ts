@@ -10,7 +10,7 @@ import { authorProcessor } from './processors/authors';
 import { TokenConfigsTableRow } from './types/tables';
 import { configProcessor } from './processors/config';
 
-export const SIMPLEASSETS_BASE_PRIORITY = 0;
+const SIMPLEASSETS_BASE_PRIORITY = 0;
 
 export enum SimpleAssetsUpdatePriority {
     INDEPENDENT = SIMPLEASSETS_BASE_PRIORITY + 10,

@@ -11,7 +11,7 @@ import { rollsProcessor } from './processors/rolls';
 import { claimsProcessor } from './processors/claims';
 import { logProcessor } from './processors/logs';
 
-export const ATOMICPACKS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 1000;
+const ATOMICPACKS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 1000;
 
 export type AtomicPacksArgs = {
     atomicpacksx_account: string,
