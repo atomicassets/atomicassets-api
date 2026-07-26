@@ -48,7 +48,7 @@ export function templateBuyofferProcessor(core: AtomicMarketHandler, processor: 
                 created_at_time: eosioTimestampToDate(block.timestamp).getTime()
             }, ['market_contract', 'buyoffer_id'], true, true, 'update');
 
-            notifier.sendActionTrace('template_buyoffer', block, tx, trace);
+            notifier.sendActionTrace('template_buyoffers', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_CREATE_TEMPLATE_BUYOFFER.valueOf()
     ));
 
@@ -64,7 +64,7 @@ export function templateBuyofferProcessor(core: AtomicMarketHandler, processor: 
                 values: [core.args.atomicmarket_account, trace.act.data.buyoffer_id]
             }, ['market_contract', 'buyoffer_id']);
 
-            notifier.sendActionTrace('template_buyoffer', block, tx, trace);
+            notifier.sendActionTrace('template_buyoffers', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_UPDATE_TEMPLATE_BUYOFFER.valueOf()
     ));
 
@@ -90,7 +90,7 @@ export function templateBuyofferProcessor(core: AtomicMarketHandler, processor: 
                 asset_id: trace.act.data.asset_id
             }, ['market_contract', 'buyoffer_id', 'assets_contract', 'asset_id'], true, true, 'update');
 
-            notifier.sendActionTrace('template_buyoffer', block, tx, trace);
+            notifier.sendActionTrace('template_buyoffers', block, tx, trace);
         }, AtomicMarketUpdatePriority.ACTION_UPDATE_TEMPLATE_BUYOFFER.valueOf()
     ));
 
