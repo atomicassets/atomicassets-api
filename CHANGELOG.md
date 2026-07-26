@@ -93,6 +93,21 @@ including operators coming from `eosio-contract-api`.
   lookup dereferenced undefined and threw. Neither listing type has an expiry to
   order by, and the endpoint documentation only ever offered `ending` for
   auctions, so the value is gone from both handlers and auctions is unchanged.
+- Migration `2.0.4` pins `n_distinct` on `atomicmarket_buyoffers_assets.asset_id`
+  and `atomicmarket_auctions_assets.asset_id`, correcting the cardinality
+  estimate behind the sequential scans that buyoffer listings filtered by
+  template or asset pay today. Postgres sampled 69,195 distinct values on wax
+  mainnet against 1,468,586 actual, so it expected 154 junction rows per asset
+  instead of 7 and priced the nested loop over the existing `asset_id` index
+  about 21x above its true cost. On a production replica that nested loop, when
+  forced, runs in 52ms against 4,854 buffers where the sequential plan takes
+  2,046ms and 110,132. Which plan the corrected statistics actually produce is a
+  planner decision on the deployed dataset, so operators should confirm it after
+  upgrading; `definitions/migrations/2.0.4/README.md` records the check.
+- The same migration lowers `autovacuum_analyze_threshold` on
+  `atomicmarket_buyoffers_assets` from a million modifications to 100000, the
+  throttle its sibling junction tables already use. Autoanalyze had never fired
+  on the table, leaving every column's statistics frozen at the last manual run.
 - The `update_atomicmarket_template_prices()` recompute now raises its own
   per-transaction `statement_timeout` via `SET LOCAL`, tunable through
   `ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S` (default 900s). A cold
