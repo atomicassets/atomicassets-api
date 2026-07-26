@@ -67,14 +67,14 @@ export async function getAuctionsAction(params: RequestValues, ctx: AtomicMarket
         return countQuery.rows[0].counter;
     }
 
-    const sortMapping: { [key: string]: { column: string, nullable: boolean, numericIndex: boolean } } = {
-        auction_id: {column: 'listing.auction_id', nullable: false, numericIndex: true},
-        ending: {column: 'listing.end_time', nullable: false, numericIndex: true},
-        created: {column: 'listing.created_at_time', nullable: false, numericIndex: true},
-        updated: {column: 'listing.updated_at_time', nullable: false, numericIndex: true},
-        price: {column: 'listing.price', nullable: true, numericIndex: true},
-        template_mint: {column: 'LOWER(listing.template_mint)', nullable: true, numericIndex: true},
-        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true, numericIndex: false},
+    const sortMapping: { [key: string]: { column: string, nullable: boolean } } = {
+        auction_id: {column: 'listing.auction_id', nullable: false},
+        ending: {column: 'listing.end_time', nullable: false},
+        created: {column: 'listing.created_at_time', nullable: false},
+        updated: {column: 'listing.updated_at_time', nullable: false},
+        price: {column: 'listing.price', nullable: true},
+        template_mint: {column: 'LOWER(listing.template_mint)', nullable: true},
+        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
     };
 
     query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.auction_id ASC');

@@ -59,13 +59,13 @@ export async function getTemplateBuyOffersAction(params: RequestValues, ctx: Ato
         return countQuery.rows[0].counter;
     }
 
-    const sortMapping: {[key: string]: {column: string, nullable: boolean, numericIndex: boolean}} = {
-        buyoffer_id: {column: 'listing.buyoffer_id', nullable: false, numericIndex: true},
-        created: {column: 'listing.created_at_time', nullable: false, numericIndex: true},
-        updated: {column: 'listing.updated_at_time', nullable: false, numericIndex: true},
-        price: {column: 'listing.price', nullable: false, numericIndex: true},
-        template_mint: {column: 'LOWER(listing.template_mint)', nullable: true, numericIndex: true},
-        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true, numericIndex: false},
+    const sortMapping: {[key: string]: {column: string, nullable: boolean}} = {
+        buyoffer_id: {column: 'listing.buyoffer_id', nullable: false},
+        created: {column: 'listing.created_at_time', nullable: false},
+        updated: {column: 'listing.updated_at_time', nullable: false},
+        price: {column: 'listing.price', nullable: false},
+        template_mint: {column: 'LOWER(listing.template_mint)', nullable: true},
+        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
     };
 
     query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.buyoffer_id ASC');
