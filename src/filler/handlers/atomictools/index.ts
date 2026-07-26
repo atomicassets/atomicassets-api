@@ -11,7 +11,7 @@ import { linkProcessor } from './processors/links';
 import { ATOMICASSETS_BASE_PRIORITY } from '../atomicassets';
 import { logProcessor } from './processors/logs';
 
-export const ATOMICTOOLS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 1000;
+const ATOMICTOOLS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 1000;
 
 export type AtomicToolsArgs = {
     atomictools_account: string,

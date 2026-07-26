@@ -22,7 +22,7 @@ import { JobQueuePriority } from '../../jobqueue';
 import { templateBuyofferProcessor } from './processors/template-buyoffers';
 import { royaltyProcessor } from './processors/royalties';
 
-export const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, DELPHIORACLE_BASE_PRIORITY) + 1000;
+const ATOMICMARKET_BASE_PRIORITY = Math.max(ATOMICASSETS_BASE_PRIORITY, DELPHIORACLE_BASE_PRIORITY) + 1000;
 
 // Bounded sales-filters drain (see definitions/migrations/1.6.3). Each
 // update_atomicmarket_sales_filters() call consumes at most BATCH_SIZE queue

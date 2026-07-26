@@ -21,7 +21,7 @@ export function hasListingFilter(values: FilterValues, blacklist: string[] = [])
     return false;
 }
 
-export async function buildListingFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
+async function buildListingFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
     const args = await filterQueryArgs(values, {
         show_seller_contracts: {type: 'bool', default: true},
         contract_whitelist: {type: 'list[name]', default: ['']},

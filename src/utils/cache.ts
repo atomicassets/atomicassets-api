@@ -20,7 +20,7 @@ export type ExpressRedisCacheHandler = (options?: ExpressRedisCacheOptions) => e
 // Valkey is single-threaded; a SET on a 20+ MB value blocks every other client for 40-60 ms.
 // Skip caching responses larger than this; serves them uncached instead of poisoning the shard.
 // Operators can raise this via server.config `cache_max_value_bytes` if their Valkey can take it.
-export const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
+const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
 
 export function expressRedisCache(
     redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[],

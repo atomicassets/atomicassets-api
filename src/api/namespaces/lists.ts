@@ -2,7 +2,7 @@ import { DB } from '../server';
 import moize from 'moize';
 import { addValidationType, parseTypeString, validateId, validateName, validateString } from './validation';
 
-export async function expandLists(strings: string[], db: DB): Promise<string[]> {
+async function expandLists(strings: string[], db: DB): Promise<string[]> {
     const result: string[] = [];
 
     for (const s of strings) {

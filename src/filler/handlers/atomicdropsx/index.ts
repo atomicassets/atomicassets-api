@@ -10,7 +10,7 @@ import { dropsProcessor } from './processors/drops';
 import { claimsProcessor } from './processors/claims';
 import { logProcessor } from './processors/logs';
 
-export const ATOMICDROPS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 2000;
+const ATOMICDROPS_BASE_PRIORITY = ATOMICASSETS_BASE_PRIORITY + 2000;
 
 export type AtomicDropsArgs = {
     atomicdropsx_account: string,
