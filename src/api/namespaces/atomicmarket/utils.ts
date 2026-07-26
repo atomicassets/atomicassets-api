@@ -6,21 +6,6 @@ import QueryBuilder from '../../builder';
 import {ApiError} from '../../error';
 import {filterQueryArgs, FilterValues} from '../validation';
 
-export function hasListingFilter(values: FilterValues, blacklist: string[] = []): boolean {
-    const keys = Object.keys(values);
-
-    for (const key of keys) {
-        if (
-            ['account', 'seller', 'buyer'].includes(key) &&
-            !blacklist.includes(key)
-        ) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
 async function buildListingFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
     const args = await filterQueryArgs(values, {
         show_seller_contracts: {type: 'bool', default: true},

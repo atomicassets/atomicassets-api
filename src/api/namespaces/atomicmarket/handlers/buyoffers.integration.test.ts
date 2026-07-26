@@ -3,6 +3,7 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getBuyOfferAction, getBuyOffersAction} from './buyoffers';
+import {ApiError} from '../../../error';
 
 // TODO add more tests
 describe('buy offer handler', () => {
@@ -52,6 +53,53 @@ describe('buy offer handler', () => {
 
             expect(await getBuyOffersIds({sort: 'name', order: 'asc'}))
                 .to.deep.equal([buyOffer2.buyoffer_id, buyOffer3.buyoffer_id, buyOffer1.buyoffer_id]);
+        });
+
+        txit('rejects the ending sort, which buyoffers have no column for', async () => {
+            let err;
+            try {
+                await getBuyOffersAction({sort: 'ending'}, getTestContext(client));
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Invalid value for parameter sort');
+        });
+
+        context('sort hint', () => {
+            // Buyoffer filters are btree-checkable equalities, so Postgres streams the
+            // ordered price index under an Incremental Sort and stops once the limit is
+            // filled. An arithmetic hint on the ORDER BY would discard that plan for a full
+            // scan plus top-N sort, so its absence is pinned here rather than left to
+            // inference. `seller` is the filter the listing-filter heuristic keyed on, so a
+            // restore of that heuristic in particular is caught. The opposite case lives in
+            // sales2: a lossy GIN containment has no ordered index that satisfies it, and
+            // there the hint is correct.
+            function captureContext(): { ctx: any, queries: string[] } {
+                const queries: string[] = [];
+                const db = {
+                    query: async (text: string, values?: any[]): Promise<any> => {
+                        queries.push(text);
+                        return client.query(text, values);
+                    },
+                };
+                return {ctx: getTestContext(db as any), queries};
+            }
+
+            txit('leaves a price sort with a seller filter unhinted', async () => {
+                const {seller} = await client.createBuyOffer();
+
+                const {ctx, queries} = captureContext();
+                await getBuyOffersAction({sort: 'price', seller}, ctx);
+
+                const listing = queries.find(q =>
+                    q.includes('FROM atomicmarket_buyoffers listing') && q.includes('ORDER BY listing.')) ?? '';
+
+                expect(listing).to.include('ORDER BY listing.price');
+                expect(listing).to.not.include('+ 0');
+                expect(listing).to.not.include('+ 1');
+            });
         });
 
     });

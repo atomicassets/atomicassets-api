@@ -2,6 +2,22 @@ import express from 'express';
 import QueryBuilder from '../builder';
 import {filterQueryArgs, FiltersDefinition, FilterValues} from './validation';
 
+/**
+ * A column a list endpoint may ORDER BY.
+ *
+ * `numericIndex` marks a column whose ORDER BY may carry an arithmetic hint (`+ 0` or
+ * `+ 1`), which makes the planner abandon that column's btree. Honour it only where the
+ * WHERE clause cannot be answered from an ordered index: the lossy GIN array containment
+ * on `atomicmarket_sales_filters` (`atomicmarket/handlers/sales2.ts`) and the JSONB and
+ * trigram searches on assets (`atomicassets/handlers/assets.ts`). Matching rows there are
+ * unordered with respect to the sort key, so streaming the ordered index is skew-unbounded
+ * and the bounded bitmap-plus-top-N plan wins.
+ *
+ * Where the filters are btree-checkable equalities the hint is a pessimization: Postgres
+ * streams the ordered index under an Incremental Sort and stops once the limit is filled,
+ * and the hint discards that plan for a full scan plus a top-N sort. Set the flag only
+ * next to a filter of the first kind.
+ */
 export type SortColumn = {column: string, nullable?: boolean, numericIndex?: boolean};
 export type SortColumnMapping = {[key: string]: SortColumn};
 
