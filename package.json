@@ -99,7 +99,7 @@
     "chai-as-promised": "^8.0.2",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.6.0",
+    "globals": "^17.8.0",
     "knip": "5.88.1",
     "mocha": "^11.7.5",
     "sinon": "^22.0.0",
