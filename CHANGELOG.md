@@ -87,6 +87,14 @@ including operators coming from `eosio-contract-api`.
 
 ### Fixed
 
+- Migration `2.0.5` re-asserts the sliced signature of
+  `refresh_atomicmarket_sales_filters_price`. `1.7.13` changed that function from
+  no arguments to `(slice, total_slices)`, which a signature change forces to be a
+  drop plus create rather than a `CREATE OR REPLACE`. A database left carrying only
+  the no-argument form fails every tick of the bulk price refresh with `function
+  refresh_atomicmarket_sales_filters_price(unknown, unknown) does not exist`, so
+  that refresh never runs. Both statements are no-ops where the schema is already
+  correct.
 - `sort=ending` on `/atomicmarket/v1/buyoffers` and
   `/atomicmarket/v1/template_buyoffers` returned a 500 instead of a 400. Both
   handlers accepted the value while neither had a sort column for it, so the
