@@ -56,20 +56,20 @@ function createMockModuleLoader(): ModuleLoader {
     return loader;
 }
 
-function serializeCollectionData(data: Record<string, string>): string {
+function serializeCollectionData(data: Record<string, string>): number[] {
     const schema = ObjectSchema(COLLECTION_FORMAT);
-    return Buffer.from(serialize(data, schema)).toString('hex');
+    return Array.from(serialize(data, schema));
 }
 
 function createCollectionsDelta(collectionName: string, author: string): any {
     const deltaValue: CollectionsTableRow = {
         collection_name: collectionName,
         author,
-        allow_notify: 1,
+        allow_notify: true,
         authorized_accounts: [author],
         notify_accounts: [],
         market_fee: 0.05,
-        serialized_data: serializeCollectionData({ name: 'Swap Test', img: 'QmSwap' }) as any,
+        serialized_data: serializeCollectionData({ name: 'Swap Test', img: 'QmSwap' }),
     };
     return createContractRow(CONTRACT, 'collections', deltaValue, true);
 }
