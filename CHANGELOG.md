@@ -104,10 +104,6 @@ including operators coming from `eosio-contract-api`.
   2,046ms and 110,132. Which plan the corrected statistics actually produce is a
   planner decision on the deployed dataset, so operators should confirm it after
   upgrading; `definitions/migrations/2.0.4/README.md` records the check.
-- The same migration lowers `autovacuum_analyze_threshold` on
-  `atomicmarket_buyoffers_assets` from a million modifications to 100000, the
-  throttle its sibling junction tables already use. Autoanalyze had never fired
-  on the table, leaving every column's statistics frozen at the last manual run.
 - The `update_atomicmarket_template_prices()` recompute now raises its own
   per-transaction `statement_timeout` via `SET LOCAL`, tunable through
   `ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S` (default 900s). A cold
