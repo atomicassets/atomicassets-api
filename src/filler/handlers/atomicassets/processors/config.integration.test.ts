@@ -11,7 +11,7 @@ import {
 import { configProcessor } from './config';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { TokenConfigsTableRow } from '../types/tables';
+import type { TokenConfigsTableRow } from '@atomichub/atomicassets';
 import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';

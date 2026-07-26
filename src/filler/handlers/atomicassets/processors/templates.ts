@@ -4,8 +4,8 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
-import { MutableTemplatesTableRow, TemplatesTableRow } from '../types/tables';
 import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
+import type { MutableTemplatesTableRow, TemplatesTableRow } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function templateProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {

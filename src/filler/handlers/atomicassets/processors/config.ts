@@ -3,7 +3,7 @@ import DataProcessor from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
-import { ConfigTableRow, TokenConfigsTableRow } from '../types/tables';
+import type { ConfigTableRow, TokenConfigsTableRow } from '@atomichub/atomicassets';
 import { parseContractMajorVersion } from '../v2-guard';
 
 export function configProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {

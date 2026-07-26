@@ -4,8 +4,8 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
-import { CollectionsTableRow } from '../types/tables';
-import { AuthorSwapsTableRow, deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
+import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
+import type { AuthorSwapsTableRow, CollectionsTableRow } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../../utils';
 
 export function collectionProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {

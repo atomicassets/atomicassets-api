@@ -1,7 +1,8 @@
 import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
-import { serialize, ObjectSchema, AuthorSwapsTableRow } from '@atomichub/atomicassets';
+import { serialize, ObjectSchema } from '@atomichub/atomicassets';
+import type { AuthorSwapsTableRow, CollectionsTableRow } from '@atomichub/atomicassets';
 import {
     createProcessorTestContext,
     createBlock,
@@ -14,7 +15,6 @@ import { collectionProcessor } from './collections';
 import { logProcessor } from './logs';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { CollectionsTableRow } from '../types/tables';
 import {
     CreateAuthorSwapActionData,
     AcceptAuthorSwapActionData,
