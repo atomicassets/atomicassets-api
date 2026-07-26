@@ -2,6 +2,7 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import { serialize, ObjectSchema } from '@atomichub/atomicassets';
+import type { CollectionsTableRow } from '@atomichub/atomicassets';
 import {
     createProcessorTestContext,
     createBlock,
@@ -12,7 +13,6 @@ import {
 import { collectionProcessor } from './collections';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { CollectionsTableRow } from '../types/tables';
 import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';

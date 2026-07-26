@@ -4,7 +4,7 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate, splitEosioToken } from '../../../../utils/eosio';
-import { BalancesTableRow } from '../types/tables';
+import type { BalancesTableRow } from '@atomichub/atomicassets';
 
 export function balanceProcessor(core: AtomicAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];

@@ -3,7 +3,7 @@ import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
 import logger from '../../../utils/winston';
-import { ConfigTableRow, TokenConfigsTableRow } from './types/tables';
+import type { ConfigTableRow, TokenConfigsTableRow } from '@atomichub/atomicassets';
 import DataProcessor from '../../processor';
 import ApiNotificationSender from '../../notifier';
 import { assetProcessor } from './processors/assets';
@@ -208,10 +208,14 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 );
             }
 
+            // The three counters are placeholders: nothing reads them and no
+            // column stores them. They are carried only because the contract
+            // row declares them.
             this.config = {
                 supported_tokens: configTable.rows[0].supported_tokens,
-                asset_counter: 0,
-                offer_counter: 0,
+                asset_counter: '0',
+                template_counter: 0,
+                offer_counter: '0',
                 collection_format: configTable.rows[0].collection_format
             };
         } else {
@@ -225,8 +229,9 @@ export default class AtomicAssetsHandler extends ContractHandler {
                     contract: row.token_contract,
                     sym: row.token_precision + ',' + row.token_symbol
                 })),
-                asset_counter: 0,
-                offer_counter: 0,
+                asset_counter: '0',
+                template_counter: 0,
+                offer_counter: '0',
                 collection_format: configQuery.rows[0].collection_format
             };
 

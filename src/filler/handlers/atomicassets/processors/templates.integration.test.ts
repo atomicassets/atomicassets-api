@@ -2,6 +2,7 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import { serialize, ObjectSchema } from '@atomichub/atomicassets';
+import type { MutableTemplatesTableRow, TemplatesTableRow } from '@atomichub/atomicassets';
 import {
     createProcessorTestContext,
     createBlock,
@@ -12,7 +13,6 @@ import {
 import { templateProcessor } from './templates';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { MutableTemplatesTableRow, TemplatesTableRow } from '../types/tables';
 import { ModuleLoader } from '../../../modules';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 
