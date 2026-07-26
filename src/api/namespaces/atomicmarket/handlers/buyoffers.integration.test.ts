@@ -3,6 +3,7 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getBuyOfferAction, getBuyOffersAction} from './buyoffers';
+import {ApiError} from '../../../error';
 
 // TODO add more tests
 describe('buy offer handler', () => {
@@ -52,6 +53,18 @@ describe('buy offer handler', () => {
 
             expect(await getBuyOffersIds({sort: 'name', order: 'asc'}))
                 .to.deep.equal([buyOffer2.buyoffer_id, buyOffer3.buyoffer_id, buyOffer1.buyoffer_id]);
+        });
+
+        txit('rejects the ending sort, which buyoffers have no column for', async () => {
+            let err;
+            try {
+                await getBuyOffersAction({sort: 'ending'}, getTestContext(client));
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Invalid value for parameter sort');
         });
 
         context('sort hint', () => {

@@ -87,6 +87,12 @@ including operators coming from `eosio-contract-api`.
 
 ### Fixed
 
+- `sort=ending` on `/atomicmarket/v1/buyoffers` and
+  `/atomicmarket/v1/template_buyoffers` returned a 500 instead of a 400. Both
+  handlers accepted the value while neither had a sort column for it, so the
+  lookup dereferenced undefined and threw. Neither listing type has an expiry to
+  order by, and the endpoint documentation only ever offered `ending` for
+  auctions, so the value is gone from both handlers and auctions is unchanged.
 - The `update_atomicmarket_template_prices()` recompute now raises its own
   per-transaction `statement_timeout` via `SET LOCAL`, tunable through
   `ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S` (default 900s). A cold

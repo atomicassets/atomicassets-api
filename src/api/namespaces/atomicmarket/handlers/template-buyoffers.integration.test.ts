@@ -3,6 +3,7 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getTemplateBuyOfferAction, getTemplateBuyOffersAction} from './template-buyoffers';
+import {ApiError} from '../../../error';
 
 // TODO add more tests
 describe('template buy offer handler', () => {
@@ -109,6 +110,18 @@ describe('template buy offer handler', () => {
 
             expect(await getBuyOffersIds({sort: 'template_mint', order: 'asc'}))
                 .to.deep.equal([buyoffer_id1, buyoffer_id2]);
+        });
+
+        txit('rejects the ending sort, which template buyoffers have no column for', async () => {
+            let err;
+            try {
+                await getTemplateBuyOffersAction({sort: 'ending'}, getTestContext(client));
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err).to.be.instanceof(ApiError);
+            expect((err as any).message).to.equal('Invalid value for parameter sort');
         });
 
         context('sort hint', () => {

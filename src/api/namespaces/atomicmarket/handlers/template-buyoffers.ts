@@ -17,7 +17,7 @@ export async function getTemplateBuyOffersAction(params: RequestValues, ctx: Ato
         sort: {
             type: 'string',
             allowedValues: [
-                'created', 'updated', 'ending', 'buyoffer_id', 'price',
+                'created', 'updated', 'buyoffer_id', 'price',
                 'template_mint', 'name',
             ],
             default: 'created'
