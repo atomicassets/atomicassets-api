@@ -40,13 +40,15 @@ ALTER TABLE atomicmarket_buyoffers_assets ALTER COLUMN asset_id SET (n_distinct 
 -- filtered traffic, so this is preventive rather than a fix for observed harm.
 ALTER TABLE atomicmarket_auctions_assets ALTER COLUMN asset_id SET (n_distinct = -0.171);
 
--- An override only reaches the planner once the column's statistics are rebuilt.
+-- An override only reaches the planner once the column's statistics are rebuilt,
+-- which is what these do. They also make the setting self-sustaining: every later
+-- ANALYZE reads the override again, and the value it writes into pg_statistic
+-- stands between runs, so the correction does not decay with analyze frequency.
+-- That matters most where the junction table is large. setAutoVacSettings derives
+-- autovacuum_analyze_threshold from row count as threshold * 10, so once a table
+-- passes five million rows autoanalyze needs a million modifications before it
+-- will run, and on wax mainnet it has not yet done so; a smaller chain lands on a
+-- lower branch and is analysed normally. Manual ANALYZE is not subject to that
+-- threshold on any of them, so the statements below apply the override everywhere.
 ANALYZE atomicmarket_buyoffers_assets;
 ANALYZE atomicmarket_auctions_assets;
-
--- atomicmarket_buyoffers_assets gates ANALYZE at a million modifications with no
--- scale factor, ten times the throttle its sibling junction tables use, and
--- autoanalyze has consequently never fired on it: every column's statistics sit
--- frozen at whatever the last manual run produced. 100000 is the value 1.3.33
--- records as the deliberate throttle for tables of this class.
-ALTER TABLE atomicmarket_buyoffers_assets SET (autovacuum_analyze_threshold = 100000);

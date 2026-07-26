@@ -1,8 +1,7 @@
 # ECA 2.0.4: asset_id cardinality overrides on the market junction tables
 
 Pins `n_distinct` on `atomicmarket_buyoffers_assets.asset_id` and
-`atomicmarket_auctions_assets.asset_id`, and lowers the ANALYZE throttle on the
-former so its statistics can refresh on their own.
+`atomicmarket_auctions_assets.asset_id`.
 
 ## Why
 
@@ -47,6 +46,20 @@ The ratios are measured on wax mainnet, which holds the overwhelming majority of
 the data. Other chains have different offer-to-asset ratios and will not match
 exactly; they will still land within a small factor of the truth instead of the
 21x the sampler produced.
+
+The override does not decay between ANALYZE runs. Each ANALYZE reads it and
+writes the resulting value into `pg_statistic`, where it stands until the next
+one, so the correction holds regardless of how often the table is analysed. That
+matters most where the table is large. `setAutoVacSettings` derives
+`autovacuum_analyze_threshold` from row count as `threshold * 10`, so once the
+table passes five million rows autoanalyze needs a million modifications before
+it will run. On wax mainnet it has not yet done so: `autoanalyze_count` on this
+table is zero. A smaller chain lands on a lower branch and is analysed normally.
+Manual `ANALYZE` is not subject to that threshold on any of them, which is why
+the statement in this migration is what puts the override into effect, and
+nothing erodes it afterwards.
+Note that `setAutoVacSettings` also reasserts every column's statistics target on
+each run, which leaves `n_distinct` untouched.
 
 ## Verification
 
