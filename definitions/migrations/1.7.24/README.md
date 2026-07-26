@@ -1,4 +1,4 @@
-# ECA 1.7.23: asset_id cardinality overrides on the market junction tables
+# ECA 1.7.24: asset_id cardinality overrides on the market junction tables
 
 Pins `n_distinct` on `atomicmarket_buyoffers_assets.asset_id` and
 `atomicmarket_auctions_assets.asset_id`.

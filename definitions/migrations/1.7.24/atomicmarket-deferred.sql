@@ -1,4 +1,4 @@
--- 1.7.23 deferred - correct the planner's asset_id cardinality estimate on the
+-- 1.7.24 deferred - correct the planner's asset_id cardinality estimate on the
 -- buyoffer and auction junction tables. Runs OUTSIDE the migration transaction
 -- so each catalog update commits and releases its lock before the ANALYZE that
 -- follows it; the deferred runner strips line comments, splits on the

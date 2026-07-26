@@ -7,11 +7,11 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
-## [1.7.23] - unreleased
+## [1.7.24] - unreleased
 
 ### Fixed
 
-- Migration `1.7.23` pins `n_distinct` on `atomicmarket_buyoffers_assets.asset_id`
+- Migration `1.7.24` pins `n_distinct` on `atomicmarket_buyoffers_assets.asset_id`
   and `atomicmarket_auctions_assets.asset_id`, correcting the cardinality
   estimate behind the sequential scans that buyoffer listings filtered by
   template or asset pay today. Postgres sampled 69,195 distinct values on wax
@@ -21,7 +21,7 @@ and this project follows semantic versioning.
   forced, runs in 52ms against 4,854 buffers where the sequential plan takes
   2,046ms and 110,132. Which plan the corrected statistics actually produce is a
   planner decision on the deployed dataset, so operators should confirm it after
-  upgrading; `definitions/migrations/1.7.23/README.md` records the check.
+  upgrading; `definitions/migrations/1.7.24/README.md` records the check.
 
 ## [1.7.19] - unreleased
 
