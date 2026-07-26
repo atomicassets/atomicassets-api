@@ -1,5 +1,5 @@
 /*
-  1.7.23 - see atomicmarket-deferred.sql: pin n_distinct on the asset_id column of
+  1.7.24 - see atomicmarket-deferred.sql: pin n_distinct on the asset_id column of
   atomicmarket_buyoffers_assets and atomicmarket_auctions_assets, so the planner
   stops pricing a nested loop over the existing asset_id index above a sequential
   scan of the whole junction table. Sampled n_distinct read 69,195 distinct values
@@ -7,4 +7,4 @@
   no schema change in this file or any handler.
 */
 
-UPDATE dbinfo SET "value" = '1.7.23' WHERE name = 'version';
+UPDATE dbinfo SET "value" = '1.7.24' WHERE name = 'version';
