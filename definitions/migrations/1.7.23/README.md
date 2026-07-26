@@ -50,9 +50,14 @@ exactly; they will still land within a small factor of the truth instead of the
 The override does not decay between ANALYZE runs. Each ANALYZE reads it and
 writes the resulting value into `pg_statistic`, where it stands until the next
 one, so the correction holds regardless of how often the table is analysed. That
-matters here because `setAutoVacSettings` gates ANALYZE on this table at a
-million modifications, so autoanalyze does not fire on it; the migration's own
-ANALYZE is what puts the override into effect, and nothing erodes it afterwards.
+matters most where the table is large. `setAutoVacSettings` derives
+`autovacuum_analyze_threshold` from row count as `threshold * 10`, so once the
+table passes five million rows autoanalyze needs a million modifications before
+it will run. On wax mainnet it has not yet done so: `autoanalyze_count` on this
+table is zero. A smaller chain lands on a lower branch and is analysed normally.
+Manual `ANALYZE` is not subject to that threshold on any of them, which is why
+the statement in this migration is what puts the override into effect, and
+nothing erodes it afterwards.
 Note that `setAutoVacSettings` also reasserts every column's statistics target on
 each run, which leaves `n_distinct` untouched.
 
