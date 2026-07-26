@@ -12,8 +12,8 @@ importers:
   .:
     dependencies:
       '@atomichub/atomicassets':
-        specifier: ^2.0.0
-        version: 2.0.0
+        specifier: ^2.0.2
+        version: 2.0.2
       '@wharfkit/antelope':
         specifier: ^1.1.1
         version: 1.2.0
@@ -180,8 +180,8 @@ importers:
 
 packages:
 
-  '@atomichub/atomicassets@2.0.0':
-    resolution: {integrity: sha512-4H/BTZqHPXOZ09rtQiQ7Yda+W+e//1NF4BiVEkCNRJ/M4DSR4sbGB1WzMUmODDTy2Y+Mp4uYG7d+GQLqTbbvmw==}
+  '@atomichub/atomicassets@2.0.2':
+    resolution: {integrity: sha512-ae6L8+SDhQ9dtDozu/A8Qwkax06V80BCVrqkT180FWhG9gDkIWvkYREN4nE7OsWeil6Lf42vVlDdfRl1gzjuag==}
     engines: {node: '>=20'}
 
   '@bcoe/v8-coverage@1.0.2':
@@ -2524,7 +2524,7 @@ packages:
 
 snapshots:
 
-  '@atomichub/atomicassets@2.0.0': {}
+  '@atomichub/atomicassets@2.0.2': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 

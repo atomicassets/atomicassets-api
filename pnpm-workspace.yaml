@@ -18,4 +18,4 @@ overrides:
 # be dropped once the version is older than the gate; nothing depends on it
 # staying.
 minimumReleaseAgeExclude:
-  - '@atomichub/atomicassets@2.0.0'
+  - '@atomichub/atomicassets@2.0.2'
