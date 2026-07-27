@@ -7,6 +7,24 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [1.7.25] - unreleased
+
+### Added
+
+- An opt-in partition-parallel drain for large `atomicmarket_sales_filters_updates`
+  backlogs, backported from the v2 line's `2.0.1`. The stock drain is deliberately
+  single-flight, so a backlog left by a deep catchup or an extended outage clears at
+  single-connection speed while `/v2/sales` filters go stale; a WAX backlog of 24.9M
+  rows was draining at roughly 17 rows/s. Migration `1.7.25` adds
+  `update_atomicmarket_sales_filters_partition(part_count, part_index, batch_size)`,
+  which is the stock recompute restricted to `sale_id % part_count = part_index`, plus
+  `normalize_atomicmarket_sales_filters_offers(batch_size)` and an index on
+  `atomicmarket_sales_filters (assets_contract, offer_id)` that also speeds the stock
+  drain's offer resolution. `node build/bin/drain-sales-filters.js` runs the workers.
+  Nothing changes in steady state: the functions are inert until an operator launches
+  them, and workers hold a shared lock that the stock drain takes exclusively, so the
+  two never run against the queue at once.
+
 ## [1.7.24] - unreleased
 
 ### Fixed
