@@ -73,7 +73,7 @@ compression, the MIT relicense), so its migration path is identical to a 1.3.24
 deploy's. The database lineage is shared, so there is no re-sync and no schema
 rewrite. The migration runner walks your current `dbinfo` version forward
 through every release in order, for example
-`1.3.24 -> ... -> 1.7.17 -> 2.0.0 -> 2.0.1 -> 2.0.2`, applying only the steps
+`1.3.24 -> ... -> 1.7.17 -> 2.0.0 -> ... -> 2.0.5`, applying only the steps
 newer than what you have.
 
 To switch, change your image from
@@ -87,6 +87,16 @@ older deploy will cross:
 - The v2 schema: mutable templates, schema media types, and author succession
   (2.0.0), the partition-parallel sales-filter drain (2.0.1), then the
   AtomicMarket royalty tables (2.0.2).
+- The v2 continuity marker (2.0.3). If your chain has already switched to the v2
+  contracts and this reader carries a position from before the switch, a startup
+  guard refuses to start until you resolve the gap it cannot rule out. A reader
+  syncing from scratch is unaffected. Read
+  [Upgrading after the contracts are already live](#upgrading-after-the-contracts-are-already-live)
+  before you begin.
+- Two catalog-only steps that rewrite no data: `n_distinct` overrides on the
+  market junction tables (2.0.4), and a re-assert of the sliced price-refresh
+  function signature (2.0.5), which is a no-op where your schema is already
+  correct.
 
 ## Upgrade runbook (existing deploy)
 
