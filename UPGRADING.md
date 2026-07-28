@@ -100,8 +100,10 @@ older deploy will cross:
 
 ## Upgrade runbook (existing deploy)
 
-1. Pull the image: `ghcr.io/atomicassets/atomicassets-api:2.0` (or pin the
-   exact release-candidate tag while testing one).
+1. Pull the image: `ghcr.io/atomicassets/atomicassets-api:2.0`. In production,
+   pin the exact patch you tested (`2.0.0`, `2.0.1`, and so on) rather than the
+   moving `2.0`. The README's [Releases](./README.md#releases) section covers what
+   each tag tracks.
 2. Stop the filler. Leave the server up if you want to keep serving reads.
 3. Start the filler against the v2 image. It runs all pending migrations before
    it begins reading. On large chains this is the long pole: the 1.3.x and
