@@ -7,7 +7,7 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
-## [1.7.25] - unreleased
+## [1.7.25] - 2026-07-27
 
 ### Added
 
@@ -25,7 +25,7 @@ and this project follows semantic versioning.
   them, and workers hold a shared lock that the stock drain takes exclusively, so the
   two never run against the queue at once.
 
-## [1.7.24] - unreleased
+## [1.7.24] - 2026-07-26
 
 ### Fixed
 
@@ -41,7 +41,7 @@ and this project follows semantic versioning.
   planner decision on the deployed dataset, so operators should confirm it after
   upgrading; `definitions/migrations/1.7.24/README.md` records the check.
 
-## [1.7.19] - unreleased
+## [1.7.19] - 2026-07-15
 
 ### Fixed
 
@@ -68,7 +68,7 @@ and this project follows semantic versioning.
   SIGTERM shutdown is exempted so it still exits cleanly instead of via this
   escalation path.
 
-## [1.7.18]
+## [1.7.18] - 2026-07-09
 
 ### Fixed
 
@@ -85,7 +85,7 @@ and this project follows semantic versioning.
   schema media types, author succession, royalty configuration) - that requires
   2.0.0.
 
-## [1.7.17]
+## [1.7.17] - 2026-06-21
 
 ### Changed
 
