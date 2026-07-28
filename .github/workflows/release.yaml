@@ -40,7 +40,14 @@ jobs:
             type=sha,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # `latest` follows the current major, which is the 2.x line. Its release
+            # tags are unprefixed (`2.0.0`) while the 1.7 maintenance line keeps its
+            # `v` prefix, so a maintenance release cannot pull unpinned operators back
+            # a major. The `2.` test also keeps branch builds out: `github.ref_name` is
+            # `main` there, and this job runs on pushes to main as well as on tags.
+            # A `-` means a semver prerelease, which never becomes `latest`.
+            # Widen the prefix at the next major.
+            type=raw,value=latest,enable=${{ startsWith(github.ref_name, '2.') && !contains(github.ref_name, '-') }}
 
       - name: Build and push
         uses: docker/build-push-action@v7
