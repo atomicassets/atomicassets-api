@@ -65,40 +65,48 @@ const SALES_FILTERS_STATEMENT_TIMEOUT_MS = positiveIntEnv('ATOMICMARKET_SALES_FI
 // displaces cache, not anon — no OOM risk). Smaller chains never approach the
 // ceiling (work_mem is a cap, only used if the operation needs it).
 const SALES_FILTERS_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_SALES_FILTERS_WORK_MEM_MB', 5120);
-// Per-run work_mem (MB) for the hourly update_atomicmarket_template_prices() recompute.
+// Per-batch work_mem (MB) for the update_atomicmarket_template_prices() drain.
 // 1.7.8 (DB write-spill audit): its PERCENTILE_DISC sorts + per-template hash-agg over
 // atomicmarket_stats_prices_master spilled ~284 MB to pgsql_tmp every run at the default
 // work_mem (working set ~0.4 GB), going IO-bound against the reader's block-writes. It runs
 // on longRunningPool (max:1) but, unlike sales_filters, had NO SET LOCAL work_mem. 1024 MB
 // holds the working set in memory with headroom; same single-conn + reclaimable-cache
-// safety as SALES_FILTERS_WORK_MEM_MB.
+// safety as SALES_FILTERS_WORK_MEM_MB. A batch recomputes at most BATCH_SIZE templates,
+// so this is a generous cap rather than a tight one: it holds an unusually heavy batch
+// (a hot template with many symbols across a long price history) in memory.
 const TEMPLATE_PRICES_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_WORK_MEM_MB', 1024);
-// Per-run statement_timeout (seconds) for the same recompute, applied via `SET LOCAL`
+// Per-batch statement_timeout (seconds) for the same drain, applied via `SET LOCAL`
 // inside runWithWorkMem's transaction - the same PgBouncer-safe, txn-scoped mechanism
 // SALES_FILTERS_STATEMENT_TIMEOUT_MS uses (see drainOneBatch/runWithWorkMem above). This
-// value EXCEEDS longRunningPool's own connection-level statement_timeout (300s / 5min,
-// see the pool config below) by design: a cold full recompute (empty/evicted cache) takes
-// 7-8 minutes, past the pool's 5min ceiling, so the job needs its own longer per-transaction
-// override or a cache-evicting restart wedges it into timing out (57014) on every interval
-// forever. `SET LOCAL` - not a session-level `SET`, and not `ALTER FUNCTION ... SET
-// statement_timeout` - is what makes this both effective and safe: a session-level SET would
-// leak past this transaction under PgBouncer transaction pooling (the server backend is
-// shared across transactions), whereas `SET LOCAL` is scoped to the transaction and
-// PostgreSQL reverts it at transaction end regardless of pooling mode. A function-scoped ALTER FUNCTION
-// setting was ruled out because Postgres arms the statement timer from the session value in
-// effect when the top-level statement starts; a setting that only takes hold once execution
-// is already inside the function body cannot retroactively extend a timer armed before the
-// call began. Default 900s (15min), comfortably above the measured cold-run ceiling.
+// value EXCEEDS longRunningPool's own connection-level statement_timeout (300s / 5min, see
+// the pool config below) by design: a cold-cache batch pays the index and page warm-up
+// that a full recompute on an evicted cache measures at 7-8 minutes, past the pool's 5min
+// ceiling, and without a per-transaction override the pool cancels it (57014) on every
+// interval after any cache-evicting restart. `SET LOCAL` - not a session-level `SET`, and
+// not `ALTER FUNCTION ... SET statement_timeout` - is what makes this both effective and
+// safe: a session-level SET would leak past this transaction under
+// PgBouncer transaction pooling (the server backend is shared across transactions), whereas
+// `SET LOCAL` is scoped to the transaction and PostgreSQL reverts it at transaction end
+// regardless of pooling mode. A function-scoped ALTER FUNCTION setting was ruled out because
+// Postgres arms the statement timer from the session value in effect when the top-level
+// statement starts; a setting that only takes hold once execution is already inside the
+// function body cannot retroactively extend a timer armed before the call began. It is a
+// ceiling, not a target: a steady-state batch of BATCH_SIZE templates runs in seconds.
 const TEMPLATE_PRICES_STATEMENT_TIMEOUT_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_STATEMENT_TIMEOUT_S', 900);
-// Cadence (seconds) of the template-prices recompute. Shortened 1h -> 5min in 1.7.8 so
-// users see updated suggested/aggregate template prices ~12x sooner. Safe at this cadence
-// because: (a) the work_mem fix above keeps each run in memory (no spill), (b) it runs on
-// longRunningPool (max:1, so runs never overlap), and (c) the job is now reader-gated
-// (shouldDeferDrain) so it yields block-write priority while the reader is catching up.
-// The per-run statement_timeout above is a worst-case ceiling for a single COLD run, not the
-// typical run time - a warm run reuses cached pages and finishes in seconds - so the gate,
-// not the interval, is what guarantees the job can't starve the reader. Env-tunable.
-const TEMPLATE_PRICES_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S', 5 * 60);
+// Bounded template-prices drain (see definitions/migrations/1.7.26). The recompute is
+// queue-driven: atomicmarket_template_prices_updates carries the templates whose price
+// inputs changed, and update_atomicmarket_template_prices($1) claims at most $1 of them per
+// call, recomputes, and returns the number of queue rows released. The job loops until the
+// due queue is empty (released = 0), the per-tick budget elapses, or the reader-priority
+// gate flips - the same shape as the sales-filter drain above, and for the same reason: an
+// unbounded recompute is ONE uninterruptible statement (128s on WAX at 1s sampling) holding
+// the max-1 longRunningPool client, so every other maintenance job queues behind it and the
+// reader-lag gate, evaluated at job start, cannot stop a run already in flight. A batch is
+// bounded, so the gate is effective mid-backlog. Defaults: 60s cadence, 200 templates per
+// batch, 55s budget (the idle remainder of a 60s tick).
+const TEMPLATE_PRICES_DRAIN_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_DRAIN_INTERVAL_S', 60);
+const TEMPLATE_PRICES_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_BATCH_SIZE', 200);
+const TEMPLATE_PRICES_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_DRAIN_BUDGET_MS', 55_000);
 
 // Sliced cadence for refresh_atomicmarket_sales_filters_price(slice, total_slices).
 // 1.7.13: the former hourly single call bulk-enqueued every variable_price listing
@@ -120,8 +128,15 @@ const SALES_FILTERS_PRICE_REFRESH_INTERVAL_S = positiveIntEnv('ATOMICMARKET_SALE
 const MINTS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_MINTS_BATCH_SIZE', 2000);
 const MINTS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_MINTS_DRAIN_BUDGET_MS', 25_000);
 
+// `consumed` is the sales-filter drain's return column, `released` the
+// template-prices drain's; both come back as a string when pg maps the BIGINT/
+// numeric form, hence the union.
+export interface DrainResultRow {
+    consumed?: number | string;
+    released?: number | string;
+}
 interface DrainClient {
-    query(sql: string, params?: any[]): Promise<{ rows: Array<{ consumed?: number | string }> }>;
+    query(sql: string, params?: any[]): Promise<{ rows: DrainResultRow[] }>;
     release(): void;
 }
 interface DrainPool {
@@ -190,8 +205,19 @@ async function drainOneBatch(
  * reverts at COMMIT so it never leaks onto the connection's next use through
  * PgBouncer transaction pooling. Use on longRunningPool (max:1) so the per-run
  * work_mem and statement_timeout ceilings are bounded to one call at a time.
+ *
+ * Returns the statement's own rows so a caller can read a bounded drain's
+ * released/consumed count (the template-prices batch loop below); `params` is
+ * bound rather than interpolated, and is omitted entirely when empty so the
+ * no-parameter call keeps its original simple-query shape.
  */
-export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: number, statementTimeoutS: number): Promise<void> {
+export async function runWithWorkMem(
+    pool: DrainPool,
+    sql: string,
+    workMemMb: number,
+    statementTimeoutS: number,
+    params: any[] = [],
+): Promise<DrainResultRow[]> {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -199,8 +225,9 @@ export async function runWithWorkMem(pool: DrainPool, sql: string, workMemMb: nu
             await client.query(`SET LOCAL work_mem = '${Number(workMemMb)}MB'`);
             await client.query(`SET LOCAL statement_timeout = '${Number(statementTimeoutS)}s'`);
             await client.query('SET LOCAL synchronous_commit = off');
-            await client.query(sql);
+            const res = params.length > 0 ? await client.query(sql, params) : await client.query(sql);
             await client.query('COMMIT');
+            return res.rows;
         } catch (e) {
             await client.query('ROLLBACK').catch(() => undefined);
             throw e;
@@ -245,6 +272,66 @@ export async function drainAtomicmarketSalesFilters(
         consumed = await drainOneBatch(pool, batchSize, statementTimeoutMs, workMemMb);
         total += consumed;
     } while (consumed > 0 && now() < deadline && !shouldYield());
+    return total;
+}
+
+// Cheap EXISTS probe gating the template-prices drain (1.7.26). Due-ness is
+// measured against the READER'S BLOCK TIME, exactly as the claim inside
+// update_atomicmarket_template_prices() measures it, and never against wall
+// clock: on a lagging filler the two diverge by the lag, so a wall-clock probe
+// would report work for aging rows the claim will not take yet and wake the
+// drain into an empty batch every tick. Live rows carry refresh_at 0 and are
+// always due, so a queue holding real work always probes true.
+export const TEMPLATE_PRICES_WORK_PROBE_SQL = `SELECT EXISTS(
+                    SELECT 1 FROM atomicmarket_template_prices_updates
+                    WHERE refresh_at <= (SELECT MAX(block_time) FROM contract_readers)
+                    LIMIT 1
+                ) AS has_work`;
+
+/**
+ * Drain atomicmarket_template_prices_updates in bounded batches. Each
+ * `SELECT update_atomicmarket_template_prices($1)` claims at most batchSize due
+ * queue rows, recomputes those templates, releases the claimed rows guarded on
+ * their captured seq, and returns the number of QUEUE ROWS RELEASED, not the
+ * price rows written, which is why a batch of already-current templates still
+ * reports progress and the burn-down is not capped at one batch per tick.
+ *
+ * Each batch runs in its own transaction via runWithWorkMem (same SET LOCAL
+ * treatment as before: raised work_mem, per-batch statement_timeout, async
+ * commit), so locks and the max-1 longRunningPool client release between
+ * batches. The loop stops when the due queue is empty (released = 0), the time
+ * budget elapses, OR `shouldYield()` turns true.
+ *
+ * `shouldYield` is checked BETWEEN batches, which is what bounding the work buys:
+ * a single-statement recompute cannot be interrupted once started, so a reader
+ * falling behind mid-run waits out the whole run (128s measured on WAX), while a
+ * batch loop releases at the next boundary. Wiring passes
+ * `() => filler.shouldDeferDrain()`.
+ * `shouldYield` and `now` are injectable for tests.
+ */
+export async function drainAtomicmarketTemplatePrices(
+    pool: DrainPool,
+    batchSize: number,
+    budgetMs: number,
+    statementTimeoutS: number,
+    workMemMb: number,
+    shouldYield: () => boolean = () => false,
+    now: () => number = Date.now,
+): Promise<number> {
+    const deadline = now() + budgetMs;
+    let total = 0;
+    let released: number;
+    do {
+        const rows = await runWithWorkMem(
+            pool,
+            'SELECT update_atomicmarket_template_prices($1) AS released',
+            workMemMb,
+            statementTimeoutS,
+            [batchSize],
+        );
+        released = Number(rows[0]?.released ?? 0);
+        total += released;
+    } while (released > 0 && now() < deadline && !shouldYield());
     return total;
 }
 
@@ -810,24 +897,39 @@ export default class AtomicMarketHandler extends ContractHandler {
             );
         });
 
-        this.filler.jobs.add('update_atomicmarket_template_prices', TEMPLATE_PRICES_INTERVAL_S, JobQueuePriority.LOW, async () => {
-            // Reader-priority gate: at the shortened 5min cadence, skip this tick while the
-            // reader is catching up so the ungated heavy recompute can't contend with
-            // block-writes during a burst/post-restart. Prices just refresh on the next tick
-            // once the reader is live again.
-            if (this.filler.shouldDeferDrain()) {
-                return;
-            }
-            // Raised work_mem so the PERCENTILE_DISC + per-template hash-agg recompute
-            // stays in memory instead of spilling ~284 MB to pgsql_tmp every run (write-spill audit);
-            // that in-memory speedup + the gate are what let us run it every 5min instead of hourly.
-            await runWithWorkMem(
-                longRunningPool,
-                'SELECT update_atomicmarket_template_prices()',
-                TEMPLATE_PRICES_WORK_MEM_MB,
-                TEMPLATE_PRICES_STATEMENT_TIMEOUT_S,
-            );
-        });
+        // Queue-driven, gated, bounded template-prices recompute (1.7.26). Same
+        // runGatedDrain sequencing as the sales-filter drain: defer while the reader
+        // is catching up, else a cheap EXISTS probe, else the bounded batch loop, and
+        // for the same reason: an unbounded recompute holds the max-1 longRunningPool
+        // client for minutes at a time, stalling block processing and queueing every
+        // other maintenance job behind it. The probe measures due-ness against the
+        // reader's block time, matching the claim (see TEMPLATE_PRICES_WORK_PROBE_SQL).
+        //
+        // LOW is a tier, not a throttle, and it buys no parallelism: this drain, the
+        // sales-filter drain and the bulk price refresh all draw the same max-1
+        // longRunningPool client, so they serialize on it batch by batch whatever tier
+        // they sit in. What the tier decides is which jobs take turns in the job queue's
+        // one-job-per-tier slot: LOW shares that slot with the bulk price refresh (both
+        // are background maintenance) and leaves the HIGH slot to the sales-filter drain.
+        // Retuning DRAIN_BUDGET_MS therefore divides one client's time between the
+        // long-running jobs; it does not add capacity.
+        this.filler.jobs.add('update_atomicmarket_template_prices', TEMPLATE_PRICES_DRAIN_INTERVAL_S, JobQueuePriority.LOW, () =>
+            runGatedDrain(
+                this.filler,
+                async () => (await longRunningPool.query(
+                    TEMPLATE_PRICES_WORK_PROBE_SQL
+                )).rows[0]?.has_work === true,
+                () => drainAtomicmarketTemplatePrices(
+                    longRunningPool,
+                    TEMPLATE_PRICES_BATCH_SIZE,
+                    TEMPLATE_PRICES_DRAIN_BUDGET_MS,
+                    TEMPLATE_PRICES_STATEMENT_TIMEOUT_S,
+                    TEMPLATE_PRICES_WORK_MEM_MB,
+                    // yield between batches the moment the reader falls behind, so the
+                    // backlog waits instead of the reader
+                    () => this.filler.shouldDeferDrain(),
+                ),
+            ));
 
         // reconcile_atomicmarket_listings disabled 2026-04-15. This job called
         // get_table_rows on atomicmarket.{tbuyo,buyoffers,sales,auctions} every
