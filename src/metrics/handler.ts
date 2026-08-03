@@ -11,6 +11,8 @@ interface IMetrics {
     readers_blocks_behind_count?: Gauge<any>,
     readers_time_behind_chain_sec?: Gauge<any>,
     sales_filters_updates_pending_count?: Gauge<any>,
+    template_prices_updates_pending_count?: Gauge<any>,
+    template_prices_updates_due_count?: Gauge<any>,
 }
 
 export interface ICollectOptions {
@@ -19,6 +21,7 @@ export interface ICollectOptions {
     psql_pool?: boolean;
     readers?: boolean;
     sales_filters_backlog?: boolean;
+    template_prices_backlog?: boolean;
 }
 
 export class MetricsCollectorHandler {
@@ -39,7 +42,8 @@ export class MetricsCollectorHandler {
             this.collectPoolClientsCount(),
             this.collectRedisState(),
             this.collectReadersState(),
-            this.collectSalesFiltersBacklog()
+            this.collectSalesFiltersBacklog(),
+            this.collectTemplatePricesBacklog()
         ]);
 
         return registry.metrics();
@@ -105,6 +109,36 @@ export class MetricsCollectorHandler {
                 registers: [registry],
                 labelNames: ['process', 'hostname', 'prio'],
                 help: 'Pending rows in atomicmarket_sales_filters_updates (the sales-filter drain queue) per priority lane'
+            });
+        }
+
+        if (this.collectFrom.template_prices_backlog !== false) {
+            // Drain-health signals for the 2.0.6 queue-driven template-price recompute,
+            // the sales-filter gauge's counterpart. Neither series is emitted on chains
+            // without the table (pre-2.0.6 or non-atomicmarket).
+            //
+            // The composition series. Both labels are load-bearing. prio: '0' = real-time
+            // trigger enqueues (must stay near zero), '1' = the cutover seed and every
+            // aging row. kind: '0' = live, '1' = aging, an armed future boundary. A
+            // healthy queue holds one aging row per active template indefinitely by
+            // design, so kind '1' is a population count rather than backlog, and a
+            // threshold on the unlabeled total would fire on a perfectly drained queue.
+            this.metrics.template_prices_updates_pending_count = new Gauge({
+                name: 'eos_contract_api_template_prices_updates_pending_count',
+                registers: [registry],
+                labelNames: ['process', 'hostname', 'prio', 'kind'],
+                help: 'Pending rows in atomicmarket_template_prices_updates (the template-prices drain queue) per priority lane and row kind'
+            });
+            // The alert-facing series: rows the next claim would actually take, which is
+            // the only number that means "the drain is behind". Due-ness is measured
+            // against the reader's block time, the same expression the claim and the
+            // filler's work probe use, so a lagging filler does not report armed aging
+            // rows as backlog.
+            this.metrics.template_prices_updates_due_count = new Gauge({
+                name: 'eos_contract_api_template_prices_updates_due_count',
+                registers: [registry],
+                labelNames: ['process', 'hostname'],
+                help: 'Rows in atomicmarket_template_prices_updates due at the reader block time (the claimable backlog)'
             });
         }
 
@@ -220,6 +254,59 @@ export class MetricsCollectorHandler {
             }
         } catch (e) {
             logger.debug('Error reading the sales-filter backlog', e);
+        }
+    }
+
+    private async collectTemplatePricesBacklog(): Promise<void> {
+        if (this.collectFrom.template_prices_backlog === false) return Promise.resolve();
+
+        try {
+            // Same self-guard as the sales-filter backlog above: only atomicmarket
+            // chains running 2.0.6 or later have the table, and referencing a missing
+            // one errors at parse time, so probe with to_regclass and emit nothing when
+            // it is absent.
+            const present = await this.connections.database.query<{ present: boolean }>(
+                'SELECT to_regclass(\'atomicmarket_template_prices_updates\') IS NOT NULL AS present'
+            );
+            if (!present.rows[0]?.present) return;
+
+            // Dedup bounds the queue at two rows per active template, so an exact count
+            // is cheap.
+            const res = await this.connections.database.query<{ prio: number, kind: number, pending: string }>(
+                'SELECT prio, kind, count(*)::bigint AS pending FROM atomicmarket_template_prices_updates GROUP BY prio, kind'
+            );
+            // Reset every lane/kind series before setting so an emptied one drops to 0
+            // instead of holding its last value (GROUP BY emits no row for an empty one).
+            for (const prio of ['0', '1']) {
+                for (const kind of ['0', '1']) {
+                    this.metrics.template_prices_updates_pending_count
+                        .labels(this.process, this.hostname, prio, kind).set(0);
+                }
+            }
+            for (const row of res.rows) {
+                // count(*)::bigint comes back as a string; clamp to MAX_SAFE_INTEGER so a
+                // pathological backlog can't silently lose precision in the conversion.
+                const pending = Number(row.pending);
+                this.metrics.template_prices_updates_pending_count
+                    .labels(this.process, this.hostname, String(row.prio), String(row.kind))
+                    .set(Number.isSafeInteger(pending) ? pending : Number.MAX_SAFE_INTEGER);
+            }
+
+            // The claimable backlog, gated on the reader's block time exactly as the
+            // claim in update_atomicmarket_template_prices() is. With no reader rows the
+            // MAX is NULL, the comparison is NULL for every row and the count is 0, which
+            // is also what the claim would take.
+            const dueRes = await this.connections.database.query<{ due: string }>(
+                `SELECT count(*)::bigint AS due
+                 FROM atomicmarket_template_prices_updates
+                 WHERE refresh_at <= (SELECT MAX(block_time) FROM contract_readers)`
+            );
+            const due = Number(dueRes.rows[0]?.due ?? 0);
+            this.metrics.template_prices_updates_due_count
+                .labels(this.process, this.hostname)
+                .set(Number.isSafeInteger(due) ? due : Number.MAX_SAFE_INTEGER);
+        } catch (e) {
+            logger.debug('Error reading the template-prices backlog', e);
         }
     }
 }
