@@ -10,10 +10,12 @@ This codebase is a continuation of `eosio-contract-api` originally built by
 [Pink Network](https://pink.gg) and is now maintained by the AtomicAssets
 community. See [NOTICE](./NOTICE) for the project's lineage.
 
-> Moving an existing indexer (including one on the original
-> `eosio-contract-api`) to v2? See [UPGRADING.md](./UPGRADING.md). Short version:
-> no Postgres 18 needed, and you can upgrade before the chain switches to the v2
-> contract.
+> **AtomicAssets v2 support is released.** The 2.x line indexes and serves
+> mutable templates, schema media types, collection author succession, and the
+> AtomicMarket royalty read layer. Moving an existing indexer, including one still
+> on the original `eosio-contract-api`? See [UPGRADING.md](./UPGRADING.md). Short
+> version: no Postgres 18 needed, and you can upgrade before the chain switches to
+> the v2 contract. The 1.7 line stays available for deploys that are not ready.
 
 ## What it does
 
@@ -311,6 +313,24 @@ pnpm test:e2e:ci
 This project uses semantic versioning. Tagged releases are published to
 [GitHub Releases](https://github.com/atomicassets/atomicassets-api/releases)
 and the corresponding container image tags are pushed to GHCR.
+
+Two lines are published in parallel, so pick the tag that matches how much you
+want moving under you. Everything below lives at
+`ghcr.io/atomicassets/atomicassets-api`.
+
+| Tag | Line | Moves? | What it tracks |
+| --- | --- | --- | --- |
+| `2.0.0` | 2.x | Never | One exact release. Pin an exact tag in production. |
+| `2.0` | 2.x | Yes | The newest patch in the 2.0 minor. |
+| `latest` | 2.x | Yes | The newest stable release on the current major. Convenient for a first look, wrong for a production pin. |
+| `1.7.25` | 1.7 | Never | One exact release on the maintenance line. |
+| `1.7` | 1.7 | Yes | The newest patch on the maintenance line, for deploys not yet ready for v2. |
+
+The two lines differ in how their git tags are written: 2.x releases are tagged
+`2.0.0` and 1.7 releases `v1.7.25`. The image tag drops the `v` either way, so
+git `v1.7.25` publishes image `1.7.25`. Release candidates are published as
+`2.0.0-rcN`; being prereleases they never move `2.0` or `latest`, so you have to
+ask for one by name.
 
 The codebase carries the full release history from the upstream
 `pinknetworkx/eosio-contract-api` project (`v1.0.0-rc1` through `v1.3.21`)
