@@ -7,6 +7,42 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [1.7.27] - 2026-08-04
+
+### Changed
+
+- `update_atomicmarket_template_prices()` recomputes incrementally from a
+  trigger-fed queue instead of rebuilding every priceable template on each run.
+  The full recompute is one uninterruptible statement that reached about two
+  minutes on WAX mainnet, and it runs on the filler's single long-running
+  connection, so every run stalls block processing for its whole duration: the
+  reader logs `No blocks processed` throughout and then races back to head.
+  Migration `1.7.26` adds `atomicmarket_template_prices_updates`, a
+  deduplicating queue keyed by template and row kind, with triggers on
+  `atomicmarket_stats_markets` and `atomicmarket_sales_filters_listed` feeding
+  it, and replaces the function with a batched drain that yields to the
+  reader-lag gate between batches. `1.7.27` seeds the queue once at cutover, in a
+  version of its own because the runner holds `1.7.26`'s `ACCESS EXCLUSIVE`
+  trigger locks until that version commits, and a seed sharing that transaction
+  would park every API read behind them for its whole scan. The function keeps a
+  zero-argument call, so an image rolled back to the full recompute still runs.
+  `ATOMICMARKET_TEMPLATE_PRICES_INTERVAL_S` is gone, replaced by
+  `ATOMICMARKET_TEMPLATE_PRICES_DRAIN_INTERVAL_S` (60),
+  `ATOMICMARKET_TEMPLATE_PRICES_BATCH_SIZE` (200) and
+  `ATOMICMARKET_TEMPLATE_PRICES_DRAIN_BUDGET_MS` (55000). Two gauges expose the
+  queue: `eos_contract_api_template_prices_updates_pending_count` split by lane
+  and row kind, and `eos_contract_api_template_prices_updates_due_count`, the
+  claimable backlog, which is the one worth alerting on. A healthy queue holds
+  one armed aging row per active template indefinitely, so the pending total is
+  a population count rather than a backlog.
+
+### Fixed
+
+- The release workflow no longer publishes `latest` from this line. `latest`
+  follows the current major, which is the 2.x line, and the gate here fired on
+  exactly the `v`-prefixed tags this branch produces, so each maintenance
+  release reclaimed the tag and pointed unpinned consumers back a major.
+
 ## [1.7.25] - 2026-07-27
 
 ### Added
