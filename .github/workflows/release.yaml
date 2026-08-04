@@ -35,15 +35,21 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/atomicassets/atomicassets-api
+          # latest=false, not merely the absence of a `latest` tag entry.
+          # metadata-action defaults flavor.latest to `auto`, and under auto it
+          # sets latest on every semver tag that is not a prerelease, with no
+          # entry in `tags` required. Omitting the entry therefore publishes
+          # `latest` from this line anyway: v1.7.27 took it that way. `latest`
+          # follows the current major, which is the 2.x line, so this branch
+          # must opt out explicitly. Prereleases were always exempt, which is
+          # why the 2.x candidates never moved it.
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=branch
             type=sha,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            # No `latest` here. It follows the current major, which is the 2.x
-            # line, and only that line's workflow publishes it. This branch is
-            # maintenance: every tag it builds is 1.7.x, so any condition that
-            # could fire here would pull unpinned consumers back a major.
 
       - name: Build and push
         uses: docker/build-push-action@v7
