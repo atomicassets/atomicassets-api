@@ -40,7 +40,10 @@ jobs:
             type=sha,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # No `latest` here. It follows the current major, which is the 2.x
+            # line, and only that line's workflow publishes it. This branch is
+            # maintenance: every tag it builds is 1.7.x, so any condition that
+            # could fire here would pull unpinned consumers back a major.
 
       - name: Build and push
         uses: docker/build-push-action@v7
