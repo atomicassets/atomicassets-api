@@ -7,7 +7,7 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
-## [2.0.0] - unreleased
+## [2.0.0] - 2026-08-04
 
 AtomicAssets v2. See [UPGRADING.md](./UPGRADING.md) for the upgrade path,
 including operators coming from `eosio-contract-api`.
