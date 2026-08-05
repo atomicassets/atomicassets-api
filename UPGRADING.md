@@ -314,13 +314,3 @@ half-state and the block is a no-op on a database that never ran an early
 candidate. If you paste it into an interactive session instead, issue `ROLLBACK;`
 yourself after any error, since an aborted transaction holds its locks until you
 do.
-
-## Known follow-ups
-
-Two items from the upstream v2 work are deferred to a later release:
-
-- The sales-filter `nx` and `nb` (non-transferable and non-burnable) flags remain
-  on the drain-hardened 1.6/1.7 function rather than the upstream rewrite.
-- The collection `data` update-blacklist change remains at the current behaviour.
-
-Both are flagged in `definitions/migrations/2.0.0/README.md`.
