@@ -31,6 +31,31 @@ export default class ConnectionManager {
             }
             : config.redis.tls;
 
+        // Optional separate endpoint for the SUBSCRIBE connection. Set
+        // REDIS_SUB_HOST to point the notification subscriber at a different
+        // instance from the one serving the rate limiter, the response cache
+        // and alive()'s ping; leave it unset and both share one endpoint.
+        // Each field falls back to its primary counterpart, so pointing the
+        // subscriber elsewhere needs only the host when the rest matches.
+        const subscriber = process.env.REDIS_SUB_HOST
+            ? {
+                host: process.env.REDIS_SUB_HOST,
+                port: parseInt(process.env.REDIS_SUB_PORT, 10)
+                    || parseInt(process.env.REDIS_PORT, 10)
+                    || config.redis.port,
+                username: process.env.REDIS_SUB_USERNAME
+                    || process.env.REDIS_USERNAME
+                    || config.redis.username,
+                password: process.env.REDIS_SUB_PASSWORD
+                    || process.env.REDIS_PASSWORD
+                    || config.redis.password,
+                tls: redisTls,
+                connectionType: process.env.REDIS_SUB_CONNECTION_TYPE
+                    || process.env.REDIS_CONNECTION_TYPE
+                    || 'standalone',
+            }
+            : undefined;
+
         this.redis = new RedisConnection({
             host: process.env.REDIS_HOST || config.redis.host,
             port: parseInt(process.env.REDIS_PORT, 10) || config.redis.port,
@@ -38,6 +63,7 @@ export default class ConnectionManager {
             password: process.env.REDIS_PASSWORD || config.redis.password,
             tls: redisTls,
             connectionType: process.env.REDIS_CONNECTION_TYPE || 'standalone',
+            subscriber,
         });
 
         this.database = new PostgresConnection(
