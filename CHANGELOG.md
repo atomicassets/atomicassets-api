@@ -7,6 +7,23 @@ release history before that lives in
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows semantic versioning.
 
+## [2.1.0] - 2026-08-10
+
+### Added
+
+- Optional `REDIS_SUB_*` environment variables (`REDIS_SUB_HOST`, `REDIS_SUB_PORT`,
+  `REDIS_SUB_USERNAME`, `REDIS_SUB_PASSWORD`, `REDIS_SUB_CONNECTION_TYPE`) that point
+  the pub/sub subscriber connection at a different Redis endpoint from the primary
+  client. Each value falls back to its primary counterpart, and with `REDIS_SUB_HOST`
+  unset both clients share one endpoint exactly as before. This lets the notification
+  subscriber reach a remote instance while the rate limiter, response cache, and
+  health checking stay on the local one, so losing the remote endpoint costs live
+  events rather than API health.
+
+### Security
+
+- socket.io-parser lifted past GHSA-2m8v-j782-fhvr.
+
 ## [2.0.0] - 2026-08-04
 
 AtomicAssets v2. See [UPGRADING.md](./UPGRADING.md) for the upgrade path,
