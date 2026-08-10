@@ -15,6 +15,19 @@ export interface RedisConnectionOptions {
         checkServerIdentity?: (hostname: string, cert: PeerCertificate) => Error | undefined;
     };
     connectionType?: string;
+
+    /**
+     * Endpoint for the SUBSCRIBE connection, when it should not be the same
+     * instance as everything else. Omit it and the subscriber shares the
+     * primary's options, which is the behaviour without this field.
+     *
+     * This exists because the two connections have different requirements. The
+     * primary carries the rate limiter, the response cache and the liveness
+     * probe's ping, so it must be local and writable. The subscriber only ever
+     * SUBSCRIBEs, so it can point at a remote or read-only instance, and losing
+     * it costs live events rather than the API.
+     */
+    subscriber?: Omit<RedisConnectionOptions, 'subscriber'>;
 }
 
 export default class RedisConnection {
@@ -22,19 +35,24 @@ export default class RedisConnection {
     readonly ioRedisSub: RedisClientInstance;
 
     constructor(options: RedisConnectionOptions) {
+        this.ioRedis = RedisConnection.createClient(options);
+        this.ioRedisSub = RedisConnection.createClient(options.subscriber ?? options);
+    }
+
+    private static createClient(options: Omit<RedisConnectionOptions, 'subscriber'>): RedisClientInstance {
         const { host, port, username, password, tls, connectionType } = options;
 
         if (connectionType === 'cluster') {
             const clusterOptions: ClusterOptions = {
                 redisOptions: { username, password, tls },
             };
-            this.ioRedis = new Cluster([{ host, port }], clusterOptions);
-            this.ioRedisSub = new Cluster([{ host, port }], clusterOptions);
-        } else {
-            const ioRedisOptions: RedisOptions = { host, port, username, password, tls };
-            this.ioRedis = new Redis(ioRedisOptions);
-            this.ioRedisSub = new Redis(ioRedisOptions);
+
+            return new Cluster([{ host, port }], clusterOptions);
         }
+
+        const ioRedisOptions: RedisOptions = { host, port, username, password, tls };
+
+        return new Redis(ioRedisOptions);
     }
 
     async connect(): Promise<void> {
