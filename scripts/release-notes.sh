@@ -17,9 +17,9 @@ TAG="${1-}"
 REF="${2-}"
 [ -n "$TAG" ] || die "no tag given; usage: scripts/release-notes.sh <tag> [<ref>]"
 
-# The tag shape picks the namespace. The 2.x line is tagged bare (2.1.0) and the
-# 1.7 maintenance line keeps its v prefix (v1.7.27), so each line resolves its
-# previous tag among its own tags and never crosses into the other one.
+# The tag shape picks the namespace. A repository may tag bare (2.1.0) or with
+# a v prefix (v1.7.27), and a repository that runs both lines resolves each
+# tag's previous tag among tags of its own shape, never crossing into the other.
 case "$TAG" in
     v[0-9]*) MATCH='v*' EXCLUDE='v*-*' ;;
     [0-9]*) MATCH='[0-9]*' EXCLUDE='[0-9]*-*' ;;

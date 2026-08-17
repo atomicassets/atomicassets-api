@@ -94,7 +94,10 @@ EOF
 commit "feat: add the builder (#7)"
 git tag 1.1.0-rc1
 
-sed -i 's/^## \[1\.1\.0\] - unreleased$/## [1.1.0] - 2026-02-01/' CHANGELOG.md
+# A temp-file rewrite rather than sed -i, whose in-place flag differs between
+# GNU and BSD sed.
+sed 's/^## \[1\.1\.0\] - unreleased$/## [1.1.0] - 2026-02-01/' CHANGELOG.md >CHANGELOG.md.new
+mv CHANGELOG.md.new CHANGELOG.md
 commit "chore(release): 1.1.0"
 git tag 1.1.0
 
