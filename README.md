@@ -313,6 +313,9 @@ pnpm test:e2e:ci
 This project uses semantic versioning. Tagged releases are published to
 [GitHub Releases](https://github.com/atomicassets/atomicassets-api/releases)
 and the corresponding container image tags are pushed to GHCR.
+[RELEASING.md](./RELEASING.md) covers how a release is cut and what its notes
+carry, and [CHANGELOG.md](./CHANGELOG.md) is where the notes of each release are
+written.
 
 Two lines are published in parallel, so pick the tag that matches how much you
 want moving under you. Everything below lives at

@@ -40,6 +40,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Release notes script
+        run: bash scripts/release-notes.test.sh
+
   integration:
     name: integration tests (postgres)
     runs-on: ubuntu-latest
