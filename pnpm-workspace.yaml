@@ -13,9 +13,10 @@ overrides:
 
 # The release-age gate exists to keep a freshly published third-party package
 # out of the lockfile before anyone has had a chance to notice it is hostile.
-# This entry is first-party: the version is pinned, published from a tag in our
-# own repository, and its tarball contents were checked against that tag. It can
-# be dropped once the version is older than the gate; nothing depends on it
-# staying.
+# These entries are first-party: each version is pinned, published from a tag in
+# our own repositories, and its tarball contents were checked against that tag.
+# An entry can be dropped once the version is older than the gate; nothing
+# depends on it staying.
 minimumReleaseAgeExclude:
   - '@atomichub/atomicassets@2.0.2'
+  - '@atomichub/antelope-ship-utils@1.0.0'

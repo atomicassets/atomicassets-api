@@ -1,9 +1,10 @@
-import StateHistoryBlockReader from './ship';
+import { EOSJsDeserializer, StateHistoryConnection } from '@atomichub/antelope-ship-utils';
+import type { IShipConnectionOptions } from '@atomichub/antelope-ship-utils';
+
 import ChainApi from './chain';
 import RedisConnection from './redis';
 import PostgresConnection from './postgres';
 import { IConnectionsConfig } from '../types/config';
-import { IBlockReaderOptions } from '../types/ship';
 
 export default class ConnectionManager {
     readonly chain: ChainApi;
@@ -96,13 +97,11 @@ export default class ConnectionManager {
         }
     }
 
-    createShipBlockReader(options?: IBlockReaderOptions): StateHistoryBlockReader {
-        const reader = new StateHistoryBlockReader(process.env.CHAIN_SHIP || this.config.chain.ship);
-
-        if (options) {
-            reader.setOptions(options);
-        }
-
-        return reader;
+    createShipConnection(connectionOptions: IShipConnectionOptions, deserializer: EOSJsDeserializer): StateHistoryConnection {
+        return new StateHistoryConnection({
+            endpoint: process.env.CHAIN_SHIP || this.config.chain.ship,
+            connectionOptions,
+            deserializer
+        });
     }
 }

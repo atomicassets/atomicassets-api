@@ -11,6 +11,9 @@ importers:
 
   .:
     dependencies:
+      '@atomichub/antelope-ship-utils':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@atomichub/atomicassets':
         specifier: ^2.0.2
         version: 2.0.2
@@ -47,9 +50,6 @@ importers:
       moize:
         specifier: ^6.1.1
         version: 6.1.7
-      node-worker-threads-pool:
-        specifier: ^1.5.1
-        version: 1.5.1
       p-queue:
         specifier: ^9.3.1
         version: 9.3.1
@@ -71,9 +71,6 @@ importers:
       winston:
         specifier: ^3.7.2
         version: 3.19.0
-      ws:
-        specifier: ^8.21.1
-        version: 8.21.1
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -129,9 +126,6 @@ importers:
       '@types/swagger-ui-express':
         specifier: ^4.1.6
         version: 4.1.8
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
       c8:
         specifier: ^11.0.0
         version: 11.0.0
@@ -170,6 +164,10 @@ importers:
         version: 8.59.3(eslint@10.3.0(jiti@2.7.0)(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
 
 packages:
+
+  '@atomichub/antelope-ship-utils@1.0.0':
+    resolution: {integrity: sha512-8w0AEF4DAfx0ZdiENb4NI3mJdNGJI3WI0qvRvOXcm7tEG8YlxWFZUEQn3OrYqFGpO3BxIVrlBDifyS9Cr/jhSA==}
+    engines: {node: '>=22'}
 
   '@atomichub/atomicassets@2.0.2':
     resolution: {integrity: sha512-ae6L8+SDhQ9dtDozu/A8Qwkax06V80BCVrqkT180FWhG9gDkIWvkYREN4nE7OsWeil6Lf42vVlDdfRl1gzjuag==}
@@ -1351,6 +1349,9 @@ packages:
     resolution: {integrity: sha512-aIL5Fx7mawVa300al2BnEE4iNvo1qETxLrPI/o05L7z6go7fCw1J6EQmbK4FmJ2AS7kgVF/KEZWufBfdClMcPg==}
     engines: {node: '>= 0.6'}
 
+  eventemitter3@4.0.7:
+    resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+
   eventemitter3@5.0.4:
     resolution: {integrity: sha512-mlsTRyGaPBjPedk6Bvw+aqbsXDtoAyAzm5MO7JgU+yVRyMQ5O8bD4Kcci7BS85f93veegeCPkL8R4GLClnjLFw==}
 
@@ -1968,6 +1969,10 @@ packages:
     resolution: {integrity: sha512-Q6Bekk5wpzW5qIyUP4gdMEujObYstZl6DMMOSenwBvV0BlE5LkDwkjs5yHbZmdCEq2o4RJx4tE1vwxFVf2FG1w==}
     engines: {node: '>=16.17'}
 
+  p-finally@1.0.0:
+    resolution: {integrity: sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==}
+    engines: {node: '>=4'}
+
   p-limit@3.1.0:
     resolution: {integrity: sha512-TYOanM3wGwNGsZN2cVTYPArw454xnXj5qmWF1bEoAc4+cU/ol7GVh7odevjp1FNHduHc3KZMcFduxU5Xc6uJRQ==}
     engines: {node: '>=10'}
@@ -1976,9 +1981,17 @@ packages:
     resolution: {integrity: sha512-LaNjtRWUBY++zB5nE/NwcaoMylSPk+S+ZHNB1TzdbMJMny6dynpAGt7X/tl/QYq3TIeE6nxHppbo2LGymrG5Pw==}
     engines: {node: '>=10'}
 
+  p-queue@6.6.2:
+    resolution: {integrity: sha512-RwFpb72c/BhQLEXIZ5K2e+AhgNVmIejGlTgiB9MzZ0e93GRvqZ7uSi0dvRF7/XIXDeNkra2fNHBxTyPDGySpjQ==}
+    engines: {node: '>=8'}
+
   p-queue@9.3.1:
     resolution: {integrity: sha512-POWdiIPmsUPGwb4FeQ4OBg46aqmcInSWe45CKDsGHiOBiVQM9chqfQTuqhuTzcg2Vz9faTI65at0KkVyVEiCHw==}
     engines: {node: '>=20'}
+
+  p-timeout@3.2.0:
+    resolution: {integrity: sha512-rhIwUycgwwKcP9yTOOFK/AKsAopjjCakVqLHePO3CC6Mir1Z99xT+R63jZxAT5lFZLa2inS5h+ZS2GvR99/FBg==}
+    engines: {node: '>=8'}
 
   p-timeout@6.1.4:
     resolution: {integrity: sha512-MyIV3ZA/PmyBN/ud8vV9XzwTrNtR4jFrObymZYnZqMmW0zA8Z17vnT0rBgFE/TlohB+YCHqXMgZzb3Csp49vqg==}
@@ -2601,6 +2614,17 @@ packages:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
+
+  '@atomichub/antelope-ship-utils@1.0.0':
+    dependencies:
+      '@wharfkit/antelope': 1.2.0
+      common-tags: 1.8.2
+      node-worker-threads-pool: 1.5.1
+      p-queue: 6.6.2
+      ws: 8.21.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@atomichub/atomicassets@2.0.2': {}
 
@@ -3761,6 +3785,8 @@ snapshots:
 
   etag@1.8.1: {}
 
+  eventemitter3@4.0.7: {}
+
   eventemitter3@5.0.4: {}
 
   events-universal@1.0.1:
@@ -4433,6 +4459,8 @@ snapshots:
     dependencies:
       p-timeout: 6.1.4
 
+  p-finally@1.0.0: {}
+
   p-limit@3.1.0:
     dependencies:
       yocto-queue: 0.1.0
@@ -4441,10 +4469,19 @@ snapshots:
     dependencies:
       p-limit: 3.1.0
 
+  p-queue@6.6.2:
+    dependencies:
+      eventemitter3: 4.0.7
+      p-timeout: 3.2.0
+
   p-queue@9.3.1:
     dependencies:
       eventemitter3: 5.0.4
       p-timeout: 7.0.1
+
+  p-timeout@3.2.0:
+    dependencies:
+      p-finally: 1.0.0
 
   p-timeout@6.1.4: {}
 
