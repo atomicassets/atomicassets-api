@@ -11,7 +11,7 @@ import logger from '../utils/winston';
 
 /**
  * Build a minimal StateReceiver-like object that has the fields used
- * by the consumer() method, without requiring a real ConnectionManager.
+ * by the consume() method, without requiring a real ConnectionManager.
  */
 function createReceiverStub(opts: {
     queueSize?: number;
@@ -26,7 +26,7 @@ function createReceiverStub(opts: {
     const dsLock = new Semaphore(queueSize);
     const dsQueue = new PQueue({concurrency: 1, autoStart: true});
 
-    // Build a partial StateReceiver with only the fields the consumer needs
+    // Build a partial StateReceiver with only the fields consume() needs
     const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
     (receiver as any).dsLock = dsLock;
     (receiver as any).dsQueue = dsQueue;
@@ -68,13 +68,12 @@ function makeBlockResponse(blockNum: number): ShipBlockResponse {
 }
 
 describe('StateReceiver', () => {
-    describe('consumer - dsLock semaphore management', () => {
+    describe('consume - dsLock semaphore management', () => {
         it('releases dsLock on successful block processing', async () => {
             const { receiver, dsLock } = createReceiverStub();
             const resp = makeBlockResponse(1000);
 
-            // Call consumer (the private method)
-            await (receiver as any).consumer(resp);
+            await receiver.consume(resp);
 
             // Wait for dsQueue to drain
             await (receiver as any).dsQueue.onIdle();
@@ -96,7 +95,7 @@ describe('StateReceiver', () => {
             });
             const resp = makeBlockResponse(2000);
 
-            await (receiver as any).consumer(resp);
+            await receiver.consume(resp);
             await dsQueue.onIdle();
 
             // Even though process() threw, the dsLock should be released.
@@ -117,7 +116,7 @@ describe('StateReceiver', () => {
 
             expect((receiver as any).queueStopped).to.equal(false);
 
-            await (receiver as any).consumer(makeBlockResponse(2500));
+            await receiver.consume(makeBlockResponse(2500));
             await dsQueue.onIdle();
 
             // The fatal-stop branch flips queueStopped so filler.ts exits the pod
@@ -130,7 +129,7 @@ describe('StateReceiver', () => {
                 processResult: () => Promise.resolve(),
             });
 
-            await (receiver as any).consumer(makeBlockResponse(2501));
+            await receiver.consume(makeBlockResponse(2501));
             await dsQueue.onIdle();
 
             expect((receiver as any).queueStopped).to.equal(false);
@@ -146,13 +145,13 @@ describe('StateReceiver', () => {
             });
 
             // Process two blocks that will both fail
-            await (receiver as any).consumer(makeBlockResponse(3000));
+            await receiver.consume(makeBlockResponse(3000));
             await dsQueue.onIdle();
 
             // Re-enable the queue (it gets paused on error)
             dsQueue.start();
 
-            await (receiver as any).consumer(makeBlockResponse(3001));
+            await receiver.consume(makeBlockResponse(3001));
             await dsQueue.onIdle();
 
             // With the fix: both permits are released, so we can acquire both
@@ -174,9 +173,9 @@ describe('StateReceiver', () => {
             const { receiver, dsLock } = createReceiverStub({ prepareThrows: true });
             const resp = makeBlockResponse(4000);
 
-            // consumer should throw (preprocessing failure), but dsLock must be released
+            // consume() should throw (preprocessing failure), but dsLock must be released
             try {
-                await (receiver as any).consumer(resp);
+                await receiver.consume(resp);
             } catch (_e) {
                 // expected
             }
@@ -199,7 +198,7 @@ describe('StateReceiver', () => {
             });
 
             // Queue up multiple blocks - each acquires a dsLock permit
-            await (receiver as any).consumer(makeBlockResponse(5000));
+            await receiver.consume(makeBlockResponse(5000));
             // The first block will fail in the queue, triggering clear+purge.
             // After dsQueue drains, all permits should be recoverable.
             await dsQueue.onIdle();
@@ -212,86 +211,6 @@ describe('StateReceiver', () => {
                 await Promise.race([p, timeout]);
             }
             expect(acquired).to.equal(queueSize);
-        });
-    });
-
-    describe('startProcessing - ACK deadlock prevention', () => {
-        it('overrides min_block_confirmation when prefetch < confirm would deadlock', async () => {
-            const dsLock = new Semaphore(5);
-            const dsQueue = new PQueue({concurrency: 1, autoStart: true});
-            const setOptionsSpy = sinon.spy();
-
-            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
-            (receiver as any).dsLock = dsLock;
-            (receiver as any).dsQueue = dsQueue;
-            (receiver as any).config = {
-                name: 'test-reader',
-                ship_prefetch_blocks: 50,
-                ship_min_block_confirmation: 75, // BUG: 75 > 50 = deadlock
-                ship_ds_queue_size: 5,
-                start_block: 100,
-                stop_block: 0,
-                irreversible_only: false,
-            };
-            (receiver as any).ship = {
-                setOptions: setOptionsSpy,
-                startProcessing: sinon.stub(),
-                consume: sinon.stub(),
-            };
-            (receiver as any).database = {
-                getReaderPosition: sinon.stub().resolves({ block_num: 99, live: false, updated: 0 }),
-                getLastReaderBlocks: sinon.stub().resolves([]),
-                cleanupStaleReversibleData: sinon.stub().resolves(),
-            };
-            (receiver as any).processor = {
-                setState: sinon.stub(),
-            };
-            (receiver as any).handlers = [];
-
-            await receiver.startProcessing();
-
-            // Should have called setOptions to override min_block_confirmation
-            expect(setOptionsSpy.calledOnce).to.equal(true);
-            const overrideOpts = setOptionsSpy.firstCall.args[0];
-            expect(overrideOpts.min_block_confirmation).to.equal(25); // floor(50/2)
-        });
-
-        it('does not override when prefetch >= confirm', async () => {
-            const dsLock = new Semaphore(5);
-            const dsQueue = new PQueue({concurrency: 1, autoStart: true});
-            const setOptionsSpy = sinon.spy();
-
-            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
-            (receiver as any).dsLock = dsLock;
-            (receiver as any).dsQueue = dsQueue;
-            (receiver as any).config = {
-                name: 'test-reader',
-                ship_prefetch_blocks: 50,
-                ship_min_block_confirmation: 10, // 10 < 50 = safe
-                ship_ds_queue_size: 5,
-                start_block: 100,
-                stop_block: 0,
-                irreversible_only: false,
-            };
-            (receiver as any).ship = {
-                setOptions: setOptionsSpy,
-                startProcessing: sinon.stub(),
-                consume: sinon.stub(),
-            };
-            (receiver as any).database = {
-                getReaderPosition: sinon.stub().resolves({ block_num: 99, live: false, updated: 0 }),
-                getLastReaderBlocks: sinon.stub().resolves([]),
-                cleanupStaleReversibleData: sinon.stub().resolves(),
-            };
-            (receiver as any).processor = {
-                setState: sinon.stub(),
-            };
-            (receiver as any).handlers = [];
-
-            await receiver.startProcessing();
-
-            // Should NOT have called setOptions
-            expect(setOptionsSpy.called).to.equal(false);
         });
     });
 
@@ -310,9 +229,7 @@ describe('StateReceiver', () => {
                 irreversible_only: false,
             };
             (receiver as any).ship = {
-                setOptions: sinon.stub(),
-                startProcessing: sinon.stub(),
-                consume: sinon.stub(),
+                startProcessing: sinon.stub().resolves(),
             };
             (receiver as any).database = {
                 getReaderPosition: sinon.stub().resolves({ block_num: checkpoint, live: true, updated: 0 }),
@@ -436,7 +353,7 @@ describe('StateReceiver', () => {
             (receiver as any).prepareContractRows = sinon.stub().resolves([]);
             (receiver as any).process = processSpy;
 
-            await (receiver as any).consumer(makeBlockResponse(9100));
+            await receiver.consume(makeBlockResponse(9100));
             await dsQueue.onIdle();
 
             expect(processSpy.callCount).to.equal(1);

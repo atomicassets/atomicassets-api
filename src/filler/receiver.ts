@@ -1,9 +1,10 @@
 import { ABI } from '@wharfkit/antelope';
 import PQueue from 'p-queue';
+import { EOSJsDeserializer, StateHistoryConnection } from '@atomichub/antelope-ship-utils';
+import type { IBlockRequest, IShipConsumer } from '@atomichub/antelope-ship-utils';
 
 import logger from '../utils/winston';
 import ConnectionManager from '../connections/manager';
-import StateHistoryBlockReader from '../connections/ship';
 import { IReaderConfig } from '../types/config';
 import { ShipBlock, ShipBlockResponse, ShipTableDelta, ShipTransactionTrace } from '../types/ship';
 import { EosioAction, EosioActionTrace, EosioContractRow, EosioTransaction } from '../types/eosio';
@@ -35,7 +36,7 @@ type ContractDataEstimation = {
     block_num: number
 };
 
-export default class StateReceiver {
+export default class StateReceiver implements IShipConsumer {
     currentBlock = 0;
     headBlock = 0;
     lastIrreversibleBlock = 0;
@@ -49,7 +50,7 @@ export default class StateReceiver {
     handlerDestructors: Array<() => void> = [];
 
     // Set true when the consumer queue stops on a non-recoverable block error
-    // (see consumer()). It's a known-dead state: the queue is cleared+paused and
+    // (see consume()). It's a known-dead state: the queue is cleared+paused and
     // no blocks will ever process again. The filler watchdog polls this and exits
     // immediately for a pod restart, instead of waiting out the multi-minute
     // "No blocks processed" stall timer (2026-06-01 incident - recovery took
@@ -61,10 +62,17 @@ export default class StateReceiver {
     readonly dsLock: Semaphore;
     readonly dsQueue: PQueue;
 
-    readonly ship: StateHistoryBlockReader;
+    readonly ship: StateHistoryConnection;
     readonly processor: DataProcessor;
     readonly notifier: ApiNotificationSender;
     readonly database: ContractDB;
+
+    // The block request the package asks for through getRequestBlockConfig().
+    // startProcessing() resolves the start block against the durable
+    // checkpoint before it hands this receiver to the connection, so the
+    // callback reads a settled value rather than recomputing one.
+    private startBlock = 0;
+    private readonly prefetch: number;
 
     private readonly abis: {[key: string]: AbiCache};
 
@@ -84,19 +92,43 @@ export default class StateReceiver {
 
         this.notifier = new ApiNotificationSender(this.connection, this.processor, this.name);
 
-        this.ship = connection.createShipBlockReader({
-            min_block_confirmation: config.ship_min_block_confirmation,
-            ds_threads: config.ds_ship_threads,
+        this.prefetch = config.ship_prefetch_blocks || 10;
+
+        const minConfirm = config.ship_min_block_confirmation || 1;
+        let minBlockConfirmation = minConfirm;
+
+        // SHIP stops sending once max_messages_in_flight messages are unacked,
+        // and the client acks only after min_block_confirmation processed
+        // blocks, so a prefetch depth below the confirmation count never
+        // reaches its first ack. The guard runs here, ahead of connection
+        // construction, rather than after a stall is observed.
+        if (this.prefetch < minConfirm) {
+            minBlockConfirmation = Math.max(1, Math.floor(this.prefetch / 2));
+
+            logger.warn(
+                `ship_prefetch_blocks (${this.prefetch}) < ship_min_block_confirmation (${minConfirm}) - ` +
+                `this will deadlock! Overriding min_block_confirmation to ${minBlockConfirmation}`
+            );
+        }
+
+        this.ship = connection.createShipConnection({
+            min_block_confirmation: minBlockConfirmation,
             allow_empty_deltas: false,
             allow_empty_traces: false,
             allow_empty_blocks: false,
-            max_blocks_queue: config.ship_max_blocks_queue
-        });
+            max_blocks_queue: config.ship_max_blocks_queue ?? 0
+        }, new EOSJsDeserializer({ threads: config.ds_ship_threads }));
+
+        // The connection reports through events. Without an 'error' listener an
+        // EventEmitter rethrows the emitted error, so this wiring is what keeps
+        // a socket failure a log line instead of a process-level throw.
+        this.ship.on('error', (error: Error) => logger.error('Ship connection error', error));
+        this.ship.on('warning', (message: string, ...meta: any[]) => logger.warn(message, ...meta));
+        this.ship.on('info', (message: string, ...meta: any[]) => logger.info(message, ...meta));
+        this.ship.on('debug', (message: string, ...meta: any[]) => logger.debug(message, ...meta));
 
         this.dsQueue = new PQueue({concurrency: 1, autoStart: true});
         this.dsLock = new Semaphore(config.ship_ds_queue_size);
-
-        this.ship.consume(this.consumer.bind(this));
     }
 
     async startProcessing(): Promise<void> {
@@ -127,6 +159,8 @@ export default class StateReceiver {
             throw new Error('Reader end block cannot be lower than the starting block');
         }
 
+        this.startBlock = startBlock;
+
         logger.info('Reader ' + this.config.name + ' starting on block #' + startBlock);
 
         for (const handler of this.handlers) {
@@ -150,28 +184,24 @@ export default class StateReceiver {
         // rows this stale survive when a past crash skipped the LIB-driven prune.
         await this.database.cleanupStaleReversibleData(this.name, this.lastIrreversibleBlock);
 
-        const prefetch = this.config.ship_prefetch_blocks || 10;
-        const minConfirm = this.config.ship_min_block_confirmation || 1;
+        await this.ship.startProcessing(this);
+    }
 
-        if (prefetch < minConfirm) {
-            const override = Math.max(1, Math.floor(prefetch / 2));
-            logger.warn(
-                `ship_prefetch_blocks (${prefetch}) < ship_min_block_confirmation (${minConfirm}) - ` +
-                `this will deadlock! Overriding min_block_confirmation to ${override}`
-            );
-            this.ship.setOptions({ min_block_confirmation: override });
-        }
-
-        this.ship.startProcessing({
-            start_block_num: startBlock,
+    async getRequestBlockConfig(): Promise<IBlockRequest> {
+        return {
+            start_block_num: this.startBlock,
             end_block_num: this.config.stop_block || 0xffffffff,
-            max_messages_in_flight: prefetch,
+            max_messages_in_flight: this.prefetch,
             irreversible_only: this.config.irreversible_only || false,
             have_positions: await this.database.getLastReaderBlocks(),
             fetch_block: true,
             fetch_traces: true,
             fetch_deltas: true
-        }, ['contract_row']);
+        };
+    }
+
+    getRequiredDeltas(): string[] {
+        return ['contract_row'];
     }
 
     async stopProcessing(): Promise<void> {
@@ -189,7 +219,7 @@ export default class StateReceiver {
     // without permitting a month-deep "fork" from a rewound SHIP node.
     private static readonly MAX_REVERSIBLE_WINDOW = 1000;
 
-    private async consumer(resp: ShipBlockResponse): Promise<void> {
+    async consume(resp: ShipBlockResponse): Promise<void> {
         await this.dsLock.acquire();
 
         let actionTraces: Awaited<ReturnType<StateReceiver['prepareActionTraces']>>;

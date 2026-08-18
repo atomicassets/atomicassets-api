@@ -231,7 +231,7 @@ export default class Filler {
                 lastBlockSpeeds.shift();
             }
 
-            const queueState = `[DS:${this.reader.dsQueue.size}|SH:${this.reader.ship.blocksQueue.size}|JQ:${this.jobs.active}]`;
+            const queueState = `[DS:${this.reader.dsQueue.size}|SH:${this.reader.ship.getQueueSize()}|JQ:${this.jobs.active}]`;
 
             if (lastBlockNum === this.reader.currentBlock && lastBlockNum > 0) {
                 const staleTime = Date.now() - lastBlockTime;

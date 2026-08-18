@@ -10,6 +10,24 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.2.0]
+
+Moves the filler's SHIP reader onto a published package.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.2.0`. The `2.2` and `latest` tags move to it.
+- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
+- A heartbeat runs every 30 seconds and the socket is torn down after 300 seconds without a message or a pong. The previous client had neither and hung on a half-open connection. (#175)
+- Reconnect backoff runs 5 seconds to 60 seconds instead of a fixed 5 second retry. (#175)
+- A block, trace or delta payload the node serves empty escalates to a reconnect instead of pausing the queue permanently. Empty payloads at `block_num <= 1` only warn. (#175)
+- A failure on the prepare path rejects into an unhandled rejection, which the filler turns into `process.exit(1)` and a supervisor restart. The previous client paused the queue until the stall watchdog fired. (#175)
+- `ship_min_block_confirmation`, `ds_ship_threads`, `ship_prefetch_blocks`, `ship_ds_queue_size` and `ship_max_blocks_queue` keep their meaning. Heartbeat and idle timeout are not configurable in `readers.config.json`. (#175)
+
+### Other changes
+
+- The filler's SHIP reader is the `@atomichub/antelope-ship-utils` package (repository `atomicassets/antelope-ship-utils`) rather than an in-tree client. The in-tree reader, its deserializer worker and the direct `ws` and `node-worker-threads-pool` dependencies are gone, and the block-shape types are re-exported from the package. (#175)
+
 ## [2.1.0] - 2026-08-10
 
 Splits the Redis pub/sub subscriber onto its own optional endpoint.
