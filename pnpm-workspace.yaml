@@ -19,4 +19,4 @@ overrides:
 # depends on it staying.
 minimumReleaseAgeExclude:
   - '@atomichub/atomicassets@2.0.2'
-  - '@atomichub/antelope-ship-utils@1.0.0'
+  - '@atomichub/antelope-ship-utils@1.0.1'
