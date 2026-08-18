@@ -52,7 +52,7 @@
     "db:migrate:up": "pnpm build && node --trace-warnings ./build/bin/migrate.js"
   },
   "dependencies": {
-    "@atomichub/antelope-ship-utils": "^1.0.0",
+    "@atomichub/antelope-ship-utils": "^1.0.1",
     "@atomichub/atomicassets": "^2.0.2",
     "@wharfkit/antelope": "^1.1.1",
     "async-exit-hook": "^2.0.1",

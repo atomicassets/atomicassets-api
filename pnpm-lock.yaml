@@ -12,8 +12,8 @@ importers:
   .:
     dependencies:
       '@atomichub/antelope-ship-utils':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.0.1
+        version: 1.0.1
       '@atomichub/atomicassets':
         specifier: ^2.0.2
         version: 2.0.2
@@ -165,8 +165,8 @@ importers:
 
 packages:
 
-  '@atomichub/antelope-ship-utils@1.0.0':
-    resolution: {integrity: sha512-8w0AEF4DAfx0ZdiENb4NI3mJdNGJI3WI0qvRvOXcm7tEG8YlxWFZUEQn3OrYqFGpO3BxIVrlBDifyS9Cr/jhSA==}
+  '@atomichub/antelope-ship-utils@1.0.1':
+    resolution: {integrity: sha512-/renKdUrQbEhgmiIrI3CNT7Mrnc+jwGjdYl+kafYltNPdtGP45phw2qXJ4qy5tqW7p35GAoOPhmK91u7/GW3IA==}
     engines: {node: '>=22'}
 
   '@atomichub/atomicassets@2.0.2':
@@ -2615,7 +2615,7 @@ packages:
 
 snapshots:
 
-  '@atomichub/antelope-ship-utils@1.0.0':
+  '@atomichub/antelope-ship-utils@1.0.1':
     dependencies:
       '@wharfkit/antelope': 1.2.0
       common-tags: 1.8.2
