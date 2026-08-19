@@ -59,7 +59,7 @@ case "$ORIGIN" in
     ssh://git@github.com/*) SLUG="${ORIGIN#ssh://git@github.com/}" ;;
     https://github.com/*) SLUG="${ORIGIN#https://github.com/}" ;;
     https://*@github.com/*) SLUG="${ORIGIN#https://*@github.com/}" ;;
-    *) die "the origin remote is not a GitHub URL: $ORIGIN" ;;
+    *) die "the origin remote is not a GitHub URL" ;;
 esac
 SLUG="${SLUG%/}"
 SLUG="${SLUG%.git}"
