@@ -309,6 +309,46 @@ ALTER SEQUENCE atomicmarket_sales_filters_updates_seq OWNER TO <table_owner>;
 `--jobs` and a raised `maintenance_work_mem`, and use a dump from 1.7.17 or
 later (btree seller/buyer indexes).
 
+**The filler exits at `COMMIT` with `23503` on
+`atomicassets_assets_schemas_fkey`, `atomicassets_assets_collections_fkey`, or
+`atomicassets_assets_templates_fkey`.** Every restart replays the same block
+range and fails identically. A parent row the block needs is absent from
+`atomicassets_schemas`, `atomicassets_collections`, or
+`atomicassets_templates`, so the database is incomplete rather than corrupt.
+
+These constraints are added `NOT VALID`, so the scan that would report existing
+violations never runs. Later statements that write those rows are still checked,
+and because the constraints are `DEFERRABLE INITIALLY DEFERRED`, that check
+lands at `COMMIT` and fails the whole block group. An orphaned asset therefore
+stays silent until a later block writes it, which is often a sale or a transfer
+of an asset minted long before.
+
+Compare the parent tables against a complete database for the same chain, such
+as a public API for that chain. The numbers below mean nothing in isolation, so
+run each query on both databases:
+
+```sql
+SELECT count(*) FROM atomicassets_schemas;
+
+SELECT (created_at_block / 10000000) * 10000000 AS block_bucket, count(*)
+FROM atomicassets_schemas GROUP BY 1 ORDER BY 1;
+```
+
+Buckets that fall short of the complete database show which stretch of history
+this database never received. Full buckets missing only a handful of individual
+rows mean it was seeded from an incomplete source. How far the filler has
+ingested is a separate question, answered by
+`SELECT name, block_num FROM contract_readers;`, not by the newest row in a
+parent table. Scope any orphan scan to one collection, because
+`atomicassets_assets` holds hundreds of millions of rows on a busy chain.
+
+Copying the missing parent rows from a complete database clears the current
+block, but the next absent row wedges the filler the same way. Restoring a
+published dump is the durable fix. See
+[Restore from a published dump](#restore-from-a-published-dump).
+`pnpm start:reconcile` seeds v2 contract state and template deletions and does
+not rebuild base rows.
+
 ## Development
 
 ```sh
