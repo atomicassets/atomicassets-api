@@ -440,6 +440,39 @@ describe('ApiNotificationReceiver', () => {
             expect(listener.called).to.equal(false);
         });
 
+        it('logs a warning and skips a compact entry whose block is not an object', async () => {
+            const warnSpy = sinon.stub(logger, 'warn');
+            const {receiver, emit} = createHarness();
+            const listener = sinon.stub().resolves();
+            const tx = makeTransaction('e'.repeat(64));
+            const envelope = encodeNotifications([traceNotification('assets', tx, 1)]).envelope;
+
+            (envelope.n[0] as any).block = null;
+
+            receiver.onData('assets', listener);
+
+            await emit(JSON.stringify(envelope));
+
+            expect(warnSpy.calledOnce).to.equal(true);
+            expect(listener.called).to.equal(false);
+        });
+
+        it('logs a warning and skips a legacy row whose block is not an object', async () => {
+            const warnSpy = sinon.stub(logger, 'warn');
+            const {receiver, emit} = createHarness();
+            const listener = sinon.stub().resolves();
+            const row = traceNotification('assets', makeTransaction('f'.repeat(64)), 1);
+
+            (row.data as any).block = 'not a block';
+
+            receiver.onData('assets', listener);
+
+            await emit(JSON.stringify([row]));
+
+            expect(warnSpy.calledOnce).to.equal(true);
+            expect(listener.called).to.equal(false);
+        });
+
         it('logs a warning and skips a compact envelope with a transaction no entry references', async () => {
             const warnSpy = sinon.stub(logger, 'warn');
             const {receiver, emit} = createHarness();
