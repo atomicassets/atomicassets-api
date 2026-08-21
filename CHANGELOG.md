@@ -10,6 +10,20 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.2.1]
+
+Lets the 1.7.11 migration run under a role that is not the owner of the sales-filter queue table.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.2.1`. The `2.2` and `latest` tags move to it.
+- No version directory is added, and the SQL of 1.7.11 itself changed. A database at 1.7.11 or later does no database work on boot.
+- A database below 1.7.11 applies every pending version on its first boot on this image. [UPGRADING.md](./UPGRADING.md) gives the duration by starting version.
+
+### Bug fixes
+
+- The 1.7.11 migration failed with `sequence must have same owner as table it is linked to` when the filler's connecting role, a superuser or a member of the owning role, was not itself the owner of `atomicmarket_sales_filters_updates`. Postgres compares the two owners by identity for `OWNED BY`, so a database created or restored under one role and migrated under another stopped at 1.7.5 on every boot. The migration now hands the new sequence to the table's owner before tying the two together. A role that cannot do that gets an error naming both roles. (#180)
+
 ## [2.2.0]
 
 Moves the filler's SHIP reader onto a published package.
