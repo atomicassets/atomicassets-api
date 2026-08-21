@@ -151,6 +151,114 @@ describe('eosio utils', () => {
         });
     });
 
+    describe('deserializeEosioType with ATOMIC_ATTRIBUTE values', () => {
+        // Mirrors the atomicassets contract ABI: every attribute value is an
+        // ATOMIC_ATTRIBUTE variant, and an action payload carries a list of them.
+        const attributeAbi = ABI.from({
+            version: 'eosio::abi/1.1',
+            types: [
+                { new_type_name: 'ATTRIBUTE_MAP', type: 'pair_string_ATOMIC_ATTRIBUTE[]' },
+                { new_type_name: 'FLOAT_VEC', type: 'float32[]' },
+                { new_type_name: 'DOUBLE_VEC', type: 'float64[]' },
+            ],
+            variants: [
+                {
+                    name: 'ATOMIC_ATTRIBUTE',
+                    types: ['uint64', 'float32', 'float64', 'string', 'FLOAT_VEC', 'DOUBLE_VEC'],
+                },
+            ],
+            structs: [
+                {
+                    name: 'pair_string_ATOMIC_ATTRIBUTE',
+                    base: '',
+                    fields: [
+                        { name: 'key', type: 'string' },
+                        { name: 'value', type: 'ATOMIC_ATTRIBUTE' },
+                    ],
+                },
+                {
+                    name: 'setassetdata',
+                    base: '',
+                    fields: [
+                        { name: 'authorized_editor', type: 'name' },
+                        { name: 'asset_owner', type: 'name' },
+                        { name: 'asset_id', type: 'uint64' },
+                        { name: 'new_mutable_data', type: 'ATTRIBUTE_MAP' },
+                    ],
+                },
+            ],
+            actions: [{ name: 'setassetdata', type: 'setassetdata', ricardian_contract: '' }],
+            tables: [],
+        });
+
+        it('should decode float32 and float64 attributes as numbers', () => {
+            const payload = {
+                authorized_editor: 'editor11111',
+                asset_owner: 'owner1111111',
+                asset_id: '1099511627776',
+                new_mutable_data: [
+                    { key: 'wear', value: ['float32', 0.75] },
+                    { key: 'score', value: ['float64', 92.13924923] },
+                ],
+            };
+
+            const serialized = serializeEosioType('setassetdata', payload, attributeAbi);
+            const deserialized = deserializeEosioType('setassetdata', serialized, attributeAbi);
+
+            // The table path decodes the same attribute to a number, so the
+            // action-payload path has to agree with it. A serializer that renders
+            // the float wrappers through their toJSON yields '0.7500000' here.
+            expect(deserialized.new_mutable_data).to.deep.equal([
+                { key: 'wear', value: ['float32', 0.75] },
+                { key: 'score', value: ['float64', 92.13924923] },
+            ]);
+            expect(typeof deserialized.new_mutable_data[0].value[1]).to.equal('number');
+            expect(typeof deserialized.new_mutable_data[1].value[1]).to.equal('number');
+        });
+
+        it('should decode float vectors as arrays of numbers', () => {
+            const payload = {
+                authorized_editor: 'editor11111',
+                asset_owner: 'owner1111111',
+                asset_id: '1099511627777',
+                new_mutable_data: [{ key: 'stats', value: ['DOUBLE_VEC', [1.5, 2.25]] }],
+            };
+
+            const serialized = serializeEosioType('setassetdata', payload, attributeAbi);
+            const deserialized = deserializeEosioType('setassetdata', serialized, attributeAbi);
+
+            expect(deserialized.new_mutable_data).to.deep.equal([
+                { key: 'stats', value: ['DOUBLE_VEC', [1.5, 2.25]] },
+            ]);
+        });
+
+        it('should leave the non-float attribute types unchanged', () => {
+            const payload = {
+                authorized_editor: 'editor11111',
+                asset_owner: 'owner1111111',
+                asset_id: '1099511627778',
+                new_mutable_data: [
+                    { key: 'name', value: ['string', 'Test NFT'] },
+                    { key: 'level', value: ['uint64', 5] },
+                    { key: 'mint', value: ['uint64', '18446744073709551000'] },
+                ],
+            };
+
+            const serialized = serializeEosioType('setassetdata', payload, attributeAbi);
+            const deserialized = deserializeEosioType('setassetdata', serialized, attributeAbi);
+
+            // Only the two float types change shape. A uint64 beyond the safe
+            // integer range still arrives as a decimal string, so no precision
+            // is traded for the float fix.
+            expect(deserialized.new_mutable_data).to.deep.equal([
+                { key: 'name', value: ['string', 'Test NFT'] },
+                { key: 'level', value: ['uint64', 5] },
+                { key: 'mint', value: ['uint64', '18446744073709551000'] },
+            ]);
+            expect(deserialized.asset_id).to.equal('1099511627778');
+        });
+    });
+
     describe('getTableAbiType / getActionAbiType', () => {
         const abi = ABI.from({
             version: 'eosio::abi/1.1',

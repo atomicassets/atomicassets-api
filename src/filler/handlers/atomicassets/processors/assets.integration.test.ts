@@ -213,6 +213,81 @@ describe('assetProcessor', () => {
             expect((typeof row.immutable_data === 'string' ? JSON.parse(row.immutable_data) : row.immutable_data)).to.deep.equal({ name: 'Test NFT' });
             expect((typeof row.mutable_data === 'string' ? JSON.parse(row.mutable_data) : row.mutable_data)).to.deep.equal({ level: '5' });
         });
+
+        it('should store a float32 attribute as a jsonb number', async () => {
+            const block = createBlock();
+            const tx = createTx();
+            const data: LogMintAssetActionData = {
+                asset_id: '1099511627779',
+                authorized_minter: 'minter1',
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: 2,
+                new_asset_owner: 'owner1111111',
+                immutable_data: [
+                    // The 1.x decoder's wharfkit objectify rendered a Float32 wrapper through
+                    // toFixed(7), so the payload carried this fixed-precision string, not a number.
+                    { key: 'wear', value: ['float32', '0.7500000'] },
+                ],
+                mutable_data: [],
+                backed_tokens: [],
+                immutable_template_data: [],
+            };
+            const trace = createActionTrace(CONTRACT, 'logmint', data);
+
+            await processActionTrace(processor, db, block, tx, trace);
+
+            const result = await client.query(
+                'SELECT immutable_data, jsonb_typeof(immutable_data -> \'wear\') AS wear_type ' +
+                'FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, data.asset_id]
+            );
+            const row = result.rows[0];
+            expect((typeof row.immutable_data === 'string' ? JSON.parse(row.immutable_data) : row.immutable_data)).to.deep.equal({ wear: 0.75 });
+            // The shape an asset serves has to match what the byte decoder
+            // writes for the same attribute on a template, which is a number.
+            expect(row.wear_type).to.equal('number');
+        });
+
+        it('should store a non-finite float attribute as jsonb null', async () => {
+            const block = createBlock();
+            const tx = createTx();
+            const data: LogMintAssetActionData = {
+                asset_id: '1099511627780',
+                authorized_minter: 'minter1',
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: 3,
+                new_asset_owner: 'owner1111111',
+                immutable_data: [
+                    // A numeric decoder yields the IEEE value, and a non-finite one
+                    // has no JSON number. encodeDatabaseJson is JSON.stringify, which
+                    // writes null for both, so this is the shape the column receives.
+                    { key: 'wear', value: ['float32', NaN] },
+                    { key: 'score', value: ['float64', Infinity] },
+                ],
+                mutable_data: [],
+                backed_tokens: [],
+                immutable_template_data: [],
+            };
+            const trace = createActionTrace(CONTRACT, 'logmint', data);
+
+            await processActionTrace(processor, db, block, tx, trace);
+
+            const result = await client.query(
+                'SELECT immutable_data, jsonb_typeof(immutable_data -> \'wear\') AS wear_type, ' +
+                'jsonb_typeof(immutable_data -> \'score\') AS score_type ' +
+                'FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, data.asset_id]
+            );
+            const row = result.rows[0];
+            expect((typeof row.immutable_data === 'string' ? JSON.parse(row.immutable_data) : row.immutable_data))
+                .to.deep.equal({ wear: null, score: null });
+            // JSON null under the key, not a dropped key, which is what the
+            // repair rewrites the strings an earlier decoder stored to.
+            expect(row.wear_type).to.equal('null');
+            expect(row.score_type).to.equal('null');
+        });
     });
 
     describe('logburnasset', () => {
@@ -310,6 +385,45 @@ describe('assetProcessor', () => {
             const row = result.rows[0];
             expect((typeof row.mutable_data === 'string' ? JSON.parse(row.mutable_data) : row.mutable_data)).to.deep.equal({ level: '5', xp: '100' });
             expect(Number(row.updated_at_block)).to.equal(updateBlock.block_num);
+        });
+
+        it('should store a float64 attribute as a jsonb number', async () => {
+            const mintBlock = createBlock();
+            const mintTx = createTx();
+            const mintData: LogMintAssetActionData = {
+                asset_id: '3000000000002',
+                authorized_minter: 'minter1',
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: 1,
+                new_asset_owner: 'owner1111111',
+                immutable_data: [],
+                mutable_data: [],
+                backed_tokens: [],
+                immutable_template_data: [],
+            };
+            await processActionTrace(processor, db, mintBlock, mintTx, createActionTrace(CONTRACT, 'logmint', mintData));
+
+            const updateBlock = createBlock();
+            const updateTx = createTx();
+            const updateData: LogSetDataActionData = {
+                asset_owner: 'owner1111111',
+                asset_id: '3000000000002',
+                old_data: [],
+                new_data: [
+                    { key: 'score', value: ['float64', 92.13924923] },
+                ],
+            };
+            await processActionTrace(processor, db, updateBlock, updateTx, createActionTrace(CONTRACT, 'logsetdata', updateData));
+
+            const result = await client.query(
+                'SELECT mutable_data, jsonb_typeof(mutable_data -> \'score\') AS score_type ' +
+                'FROM atomicassets_assets WHERE contract = $1 AND asset_id = $2',
+                [CONTRACT, '3000000000002']
+            );
+            const row = result.rows[0];
+            expect((typeof row.mutable_data === 'string' ? JSON.parse(row.mutable_data) : row.mutable_data)).to.deep.equal({ score: 92.13924923 });
+            expect(row.score_type).to.equal('number');
         });
     });
 

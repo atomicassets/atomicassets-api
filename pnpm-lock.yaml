@@ -12,11 +12,11 @@ importers:
   .:
     dependencies:
       '@atomichub/antelope-ship-utils':
-        specifier: ^1.0.1
-        version: 1.0.1
+        specifier: ^2.0.0
+        version: 2.0.0
       '@atomichub/atomicassets':
-        specifier: ^2.0.2
-        version: 2.0.2
+        specifier: ^2.2.0
+        version: 2.2.0
       '@wharfkit/antelope':
         specifier: ^1.1.1
         version: 1.2.0
@@ -165,12 +165,12 @@ importers:
 
 packages:
 
-  '@atomichub/antelope-ship-utils@1.0.1':
-    resolution: {integrity: sha512-/renKdUrQbEhgmiIrI3CNT7Mrnc+jwGjdYl+kafYltNPdtGP45phw2qXJ4qy5tqW7p35GAoOPhmK91u7/GW3IA==}
+  '@atomichub/antelope-ship-utils@2.0.0':
+    resolution: {integrity: sha512-nhTEmlDpADAl4o9cuZDVmyCerbzPEQ/N+QYRuDVSh6SECam+MUCEXNn034sdaBQ0HusUBnU9j9i9ajtoln3W7Q==}
     engines: {node: '>=22'}
 
-  '@atomichub/atomicassets@2.0.2':
-    resolution: {integrity: sha512-ae6L8+SDhQ9dtDozu/A8Qwkax06V80BCVrqkT180FWhG9gDkIWvkYREN4nE7OsWeil6Lf42vVlDdfRl1gzjuag==}
+  '@atomichub/atomicassets@2.2.0':
+    resolution: {integrity: sha512-v4PWwuyQhmSPjoJ8p6ObAXot9cvmmR81CvB1enaCvdv/8CkIjDqWfaUde8AZRdR15CUKrs0MmfyeGfnkpOD0Iw==}
     engines: {node: '>=20'}
 
   '@bcoe/v8-coverage@1.0.2':
@@ -2615,7 +2615,7 @@ packages:
 
 snapshots:
 
-  '@atomichub/antelope-ship-utils@1.0.1':
+  '@atomichub/antelope-ship-utils@2.0.0':
     dependencies:
       '@wharfkit/antelope': 1.2.0
       common-tags: 1.8.2
@@ -2626,7 +2626,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@atomichub/atomicassets@2.0.2': {}
+  '@atomichub/atomicassets@2.2.0': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 

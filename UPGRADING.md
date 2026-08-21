@@ -265,6 +265,104 @@ genesis. Start from `docker-compose.yml` and restore a published database dump
 first. See [Restore from a published dump](README.md#restore-from-a-published-dump)
 and [Keeping it running in production](README.md#keeping-it-running-in-production).
 
+## 2.3.0: the float attribute repair
+
+2.3.0 changes how the filler decodes `float` and `double` attribute values out of
+the `logmint` and `logsetdata` action payloads. Earlier releases stored those
+values as JSON strings, while the same attribute reached the database as a JSON
+number whenever it arrived through a template or a collection, which is decoded
+from serialized bytes. From 2.3.0 both paths agree and every endpoint serves a
+JSON number.
+
+Rows written before the upgrade still hold the string form, so the filler
+rewrites them itself. A normal upgrade needs no operator step.
+
+### What the filler does
+
+The `repair_atomicassets_float_attributes` job runs every 15 seconds at the
+lowest job priority. Each tick rewrites at most 20 batches of 500 assets with a
+250ms pause between batches, and only while the reader is near chain head: it
+yields through the same gate the mint and price drains use, so a filler catching
+up does no repair work. A fresh install finds nothing and finishes on its first
+tick.
+
+Each repaired asset also lands in the sales-filter queue through the existing
+per-row trigger on `atomicassets_assets`, so the market filter rows pick up the
+number form on their own. Expect `atomicmarket_sales_filters_updates` to grow
+while the pass runs, and the filler's own drain to work it off.
+
+Progress lives in the `dbinfo` table, one row per contract:
+
+```sql
+SELECT "value" FROM dbinfo WHERE name = 'atomicassets_float_repair:atomicassets';
+```
+
+The value is JSON. `status` reads `running` or `done`. `collection_name`,
+`schema_name` and `asset_id` are the cursor the next batch resumes from.
+`rewritten` counts assets written, `rejected` counts values the guards refused to
+convert, and `non_finite` counts values rewritten to JSON null. All three
+counters are cumulative over the pass.
+
+A slice that writes anything logs one line:
+
+```
+AtomicAssets float repair: rewrote 500 assets and left 0 values unconverted for atomicassets
+```
+
+and the pass logs its completion once:
+
+```
+AtomicAssets float repair: pass complete for atomicassets (84213 assets rewritten, 4 values rejected, 2 non-finite values nulled, 1204338 assets scanned)
+```
+
+### Running it by hand
+
+The same pass runs to completion from the command line with
+`pnpm start:repair-float-attributes`, or `node ./build/bin/repair-float-attributes.js`
+inside the image. It reads your `connections.config.json` and
+`readers.config.json` and repairs every atomicassets contract they configure.
+
+It is safe to run while the filler is live. Both sides take one advisory key per
+batch, so whichever holds it does the work and the other ends its slice and
+resumes afterwards. A run that ends on the lock says so, exits non-zero, and is
+re-run.
+
+Add `--restart` to discard the stored state and run a full pass again:
+
+```
+pnpm start:repair-float-attributes -- --restart
+```
+
+### After a rollback
+
+Rolling back to 2.2.x restores the string-emitting decoder, and every asset that
+release writes holds strings again. The stored state still reads `done`, so a
+filler rolled forward afterwards will not revisit those rows on its own. Run the
+command with `--restart` once after any roll forward that followed a rollback.
+
+### What the repair cannot recover
+
+Some `float` values lost information before they were ever stored. The releases
+that wrote the string form decode with `@wharfkit/antelope` 1.x, whose
+`Float32.toString` is `toFixed(7)`, so the string kept seven decimal places
+rather than the seven significant digits a float32 carries and a nonzero
+magnitude below 1 that needed more than seven fractional decimals was already
+truncated. `@wharfkit/antelope` 2.x renders the same wrapper as the shortest
+round-trip string (wharfkit/antelope `f70dadd`), so the loss is bounded to the
+rows the earlier decoder wrote. The repair restores the nearest float32 to the
+stored string, which is the exact chain value wherever the string kept full
+precision, and within a few float32 steps of it where the string did not.
+Recovering the exact value there needs a re-read of the on-chain bytes.
+
+A `NaN`, `Infinity` or `-Infinity` string becomes JSON null under its key, and
+each one is counted in `non_finite` rather than in `rejected`. JSON carries no
+number for a non-finite value, so null is what the decoder writes for one, and
+the repair puts the stored strings on the same shape.
+
+A value the guards refuse keeps exactly the value it had and is counted in
+`rejected`. That covers text, an empty string, and a magnitude above or below
+what the value's own format can hold.
+
 ## Removing release-candidate leftovers
 
 Applies only to databases that ran `2.0.0-rc1` through `2.0.0-rc3`. Those

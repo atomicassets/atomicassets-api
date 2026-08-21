@@ -41,6 +41,8 @@
     "start:abiscan": "node ./build/bin/abiscan.js",
     "prestart:reconcile": "[ -f build/bin/reconcile.js ] || pnpm build",
     "start:reconcile": "node ./build/bin/reconcile.js",
+    "prestart:repair-float-attributes": "[ -f build/bin/repair-float-attributes.js ] || pnpm build",
+    "start:repair-float-attributes": "node ./build/bin/repair-float-attributes.js",
     "dev": "tsc --watch",
     "dev:server": "tsc && node --trace-warnings ./build/bin/server.js",
     "dev:filler": "tsc && node --trace-warnings ./build/bin/filler.js",
@@ -52,8 +54,8 @@
     "db:migrate:up": "pnpm build && node --trace-warnings ./build/bin/migrate.js"
   },
   "dependencies": {
-    "@atomichub/antelope-ship-utils": "^1.0.1",
-    "@atomichub/atomicassets": "^2.0.2",
+    "@atomichub/antelope-ship-utils": "^2.0.0",
+    "@atomichub/atomicassets": "^2.2.0",
     "@wharfkit/antelope": "^1.1.1",
     "async-exit-hook": "^2.0.1",
     "await-lock": "^2.2.1",

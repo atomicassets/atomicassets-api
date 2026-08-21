@@ -18,6 +18,7 @@ import Filler  from '../../filler';
 import { JobQueuePriority } from '../../jobqueue';
 import { positiveIntEnv } from '../../../utils/env';
 import { evaluateV2Guard, parseContractMajorVersion } from './v2-guard';
+import { runFloatRepair } from './float-repair';
 
 export const ATOMICASSETS_BASE_PRIORITY = 0;
 
@@ -25,6 +26,14 @@ export const ATOMICASSETS_BASE_PRIORITY = 0;
 // than this many blocks behind chain head (the deferred update_atomicassets_mints job fills the
 // backlog once near head). Env-tunable per deployment.
 const MINT_RECONCILIATION_MAX_LAG_BLOCKS = positiveIntEnv('ATOMICASSETS_MINT_RECONCILIATION_MAX_LAG_BLOCKS', 10_000);
+
+// Slice bounds for the one-time float attribute repair (float-repair.ts). Each rewritten row
+// updates the two GIN indexes on mutable_data and immutable_data, so 20 batches of 500 with a
+// 250ms pause bounds WAL and index churn to a few thousand rows per tick, and the pause is what
+// lets the mint drain reach the single-client maintenance pool in between.
+const FLOAT_REPAIR_BATCH_SIZE = 500;
+const FLOAT_REPAIR_SLICE_BATCHES = 20;
+const FLOAT_REPAIR_PAUSE_MS = 250;
 
 export enum OfferState {
     PENDING = 0,
@@ -494,6 +503,35 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 'CALL update_atomicassets_mints($1, $2)',
                 [this.args.atomicassets_account, this.filler.reader.lastIrreversibleBlock]
             );
+        });
+
+        // One-time rewrite of the float and double attributes an earlier decoder stored as JSON
+        // strings (float-repair.ts). The pass converges on its own after an upgrade and finds
+        // nothing on a fresh install. Once it reports done the flag below stops the job from
+        // reaching the database at all, and only a filler restart re-reads the stored state.
+        let floatRepairDone = false;
+
+        this.filler.jobs.add('repair_atomicassets_float_attributes', 15, JobQueuePriority.LOW, async () => {
+            // Same reader-priority gate as the mint drain: the repair is maintenance, so it yields
+            // the whole slice while the reader is catching up.
+            if (floatRepairDone || this.filler.shouldDeferDrain()) {
+                return;
+            }
+
+            const result = await runFloatRepair(longRunningPool, this.args.atomicassets_account, {
+                batchSize: FLOAT_REPAIR_BATCH_SIZE,
+                maxBatches: FLOAT_REPAIR_SLICE_BATCHES,
+                pauseMs: FLOAT_REPAIR_PAUSE_MS,
+            });
+
+            if (result.rewritten > 0 || result.rejected > 0) {
+                logger.info(
+                    'AtomicAssets float repair: rewrote ' + result.rewritten + ' assets and left ' +
+                    result.rejected + ' values unconverted for ' + this.args.atomicassets_account
+                );
+            }
+
+            floatRepairDone = result.done;
         });
 
         return (): any => destructors.map(fn => fn());
