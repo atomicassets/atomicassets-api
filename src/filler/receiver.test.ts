@@ -297,6 +297,7 @@ describe('StateReceiver', () => {
                 updateReaderPosition: sinon.stub().resolves(),
             });
             (receiver as any).notifier = {
+                setBlockDistance: sinon.stub(),
                 sendFork: sinon.stub(),
                 publish: sinon.stub().resolves(),
             };
@@ -378,6 +379,7 @@ describe('StateReceiver', () => {
                 notifyCommit: sinon.stub().resolves(),
             };
             (receiver as any).notifier = {
+                setBlockDistance: sinon.stub(),
                 sendFork: sinon.stub(),
                 publish: sinon.stub().resolves(),
             };
@@ -476,6 +478,79 @@ describe('StateReceiver', () => {
             expect(secondaryLogged).to.equal(true);
 
             expect((receiver as any).lastDatabaseTransaction).to.equal(null);
+        });
+    });
+
+    describe('process - api notification publishing', () => {
+        it('sets the block distance before the handlers run and publishes after commit', async () => {
+            const order: string[] = [];
+
+            const db = {
+                insert: sinon.stub().resolves(),
+                abort: sinon.stub().resolves(),
+                rollbackReversibleBlocks: sinon.stub().resolves(),
+                clearForkDatabase: sinon.stub().resolves(),
+                commit: sinon.stub().callsFake(async () => { order.push('commit'); }),
+                updateReaderPosition: sinon.stub().resolves(),
+                inTransaction: true,
+            };
+
+            const setBlockDistance = sinon.stub().callsFake((distance: number) => {
+                order.push('setBlockDistance:' + distance);
+            });
+            const publish = sinon.stub().callsFake(async () => { order.push('publish'); });
+
+            const receiver = Object.create(StateReceiver.prototype) as StateReceiver;
+            (receiver as any).config = { name: 'test-reader', db_group_blocks: 12, irreversible_only: false };
+            (receiver as any).currentBlock = 4;
+            (receiver as any).headBlock = 0;
+            (receiver as any).lastIrreversibleBlock = 0;
+            (receiver as any).collectedBlocks = 0;
+            (receiver as any).lastBlockUpdate = 0;
+            (receiver as any).lastCommittedBlock = 0;
+            (receiver as any).blocksUntilHead = 0;
+            (receiver as any).lastDatabaseTransaction = undefined;
+            (receiver as any).processor = {
+                getState: sinon.stub().returns(ProcessingState.HEAD),
+                setState: sinon.stub(),
+                executeHeadQueue: sinon.stub().resolves(),
+                notifyCommit: sinon.stub().resolves(),
+                actionTraceNeeded: sinon.stub().callsFake(() => {
+                    order.push('handler');
+
+                    return { process: false, deserialize: false };
+                }),
+            };
+            (receiver as any).notifier = { setBlockDistance, sendFork: sinon.stub(), publish };
+            (receiver as any).modules = {
+                checkTrace: sinon.stub().returns(true),
+                checkDelta: sinon.stub().returns(true),
+            };
+            (receiver as any).database = { startTransaction: sinon.stub().resolves(db) };
+
+            // head 10 blocks above this_block, and this_block at the irreversible
+            // boundary so isReversible stays falsy and commitSize is 1: the
+            // commit path runs on this single block and reaches the publish call.
+            const resp: ShipBlockResponse = {
+                this_block: { block_num: 5, block_id: '5'.padStart(64, '0') },
+                head: { block_num: 15, block_id: 'f'.repeat(64) },
+                last_irreversible: { block_num: 5, block_id: 'e'.repeat(64) },
+                prev_block: { block_num: 4, block_id: 'd'.repeat(64) },
+                block: { block_num: 5, block_id: '5'.padStart(64, '0'), timestamp: '2023-01-01T00:00:00.000' } as any,
+                traces: [],
+                deltas: [],
+            };
+
+            const actionTraces = [{
+                trace: { act: { account: 'test', name: 'test' } } as any,
+                tx: {} as any,
+            }];
+
+            await (receiver as any).process(resp, actionTraces, []);
+
+            expect(setBlockDistance.calledOnceWithExactly(10)).to.equal(true);
+            expect(publish.calledOnceWithExactly()).to.equal(true);
+            expect(order).to.deep.equal(['setBlockDistance:10', 'handler', 'commit', 'publish']);
         });
     });
 });

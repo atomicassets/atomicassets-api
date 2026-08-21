@@ -12,17 +12,25 @@ project follows semantic versioning.
 
 ## [2.2.1]
 
-Lets the 1.7.11 migration run under a role that is not the owner of the sales-filter queue table.
+Bounds the socket notification payload the filler publishes. Lets the 1.7.11 migration run under a role that is not the owner of the sales-filter queue table.
 
 ### Upgrading
 
 - Image `ghcr.io/atomicassets/atomicassets-api:2.2.1`. The `2.2` and `latest` tags move to it.
 - No version directory is added, and the SQL of 1.7.11 itself changed. A database at 1.7.11 or later does no database work on boot.
 - A database below 1.7.11 applies every pending version on its first boot on this image. [UPGRADING.md](./UPGRADING.md) gives the duration by starting version.
+- The filler publishes socket notifications in a compact format that a server on an earlier version cannot read, so such a server drops every notification until it is upgraded, which is why API servers upgrade before fillers. A server on this version reads both the compact and the previous format, so it runs against a filler on either version. (#161)
 
 ### Bug fixes
 
+- The filler serialized the whole transaction into every socket notification, so a transaction with many matching action traces reached the notification channel once per trace. A single block produced 31 MB of payload, and the WAX filler sent tens of gigabytes a day into a channel that can have no subscribers at all. A published message now carries each transaction it references once and points every notification at it by key. (#161)
+- A reader that fell behind the chain head published its whole backlog of socket notifications, because the gate was a processing state that is set once and never reverts. Trace and delta notifications now go out only while the reader is within twice `db_group_blocks` of the head, the boundary at which it already commits one block at a time, and the ones collected further behind are discarded. Fork notifications are exempt, since a fork is the only rollback signal a socket client receives. (#161)
+- A message on the notification channel that the API server cannot decode is logged and skipped rather than thrown out of the subscriber's message handler as an unhandled rejection. (#161)
 - The 1.7.11 migration failed with `sequence must have same owner as table it is linked to` when the filler's connecting role, a superuser or a member of the owning role, was not itself the owner of `atomicmarket_sales_filters_updates`. Postgres compares the two owners by identity for `OWNED BY`, so a database created or restored under one role and migrated under another stopped at 1.7.5 on every boot. The migration now hands the new sequence to the table's owner before tying the two together. A role that cannot do that gets an error naming both roles. (#180)
+
+### Other changes
+
+- The filler's `/metrics` endpoint carries seven series for the notification publish path, each labelled by `filler_name` alongside `process` and `hostname`: `eos_contract_api_filler_notifications_published_total`, `eos_contract_api_filler_notification_transactions_published_total`, `eos_contract_api_filler_notification_bytes_published_total`, `eos_contract_api_filler_notification_publish_duration_seconds`, `eos_contract_api_filler_notification_batches_skipped_total`, `eos_contract_api_filler_notifications_skipped_total` and `eos_contract_api_filler_notification_publish_failures_total`. The reader runs in a forked worker, so the endpoint aggregates these over the cluster IPC, and a worker that does not answer within 5 seconds leaves the whole worker block out of that scrape. (#161)
 
 ## [2.2.0]
 

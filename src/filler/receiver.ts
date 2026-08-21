@@ -90,7 +90,10 @@ export default class StateReceiver implements IShipConsumer {
         this.processor.onActionTrace('eosio', 'setcode', () => null);
         this.processor.onActionTrace('eosio', 'setabi', () => null);
 
-        this.notifier = new ApiNotificationSender(this.connection, this.processor, this.name);
+        // The publish gate closes at the same distance where process() drops to
+        // committing one block at a time, so there is one boundary to reason
+        // about and no separate configuration key.
+        this.notifier = new ApiNotificationSender(this.connection, this.name, (config.db_group_blocks || 12) * 2);
 
         this.prefetch = config.ship_prefetch_blocks || 10;
 
@@ -300,6 +303,11 @@ export default class StateReceiver implements IShipConsumer {
 
                 this.notifier.sendFork(resp.block);
             }
+
+            // Stamp the gate before this block's notifications are queued, so
+            // eligibility is decided per notification rather than for the whole
+            // batch at publish time.
+            this.notifier.setBlockDistance(blocksUntilHead);
 
             for (const row of actionTraces) {
                 await this.handleActionTrace(resp.block, row.trace, row.tx);

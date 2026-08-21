@@ -1,4 +1,4 @@
-import { NotificationData } from '../filler/notifier';
+import { decodeNotificationMessage, NotificationData } from '../filler/notification-format';
 import ConnectionManager from '../connections/manager';
 import logger from '../utils/winston';
 
@@ -23,7 +23,25 @@ export default class ApiNotificationReceiver {
                     return;
                 }
 
-                const notifications: NotificationData[] = JSON.parse(message);
+                let notifications: NotificationData[];
+
+                // The channel is internal, but the message is still untrusted
+                // input and a throw here becomes an unhandled rejection. A
+                // message that does not decode is logged and dropped whole, so
+                // no consumer ever sees a notification with a missing
+                // transaction.
+                try {
+                    notifications = decodeNotificationMessage(message);
+                } catch (error) {
+                    logger.warn('Skipping malformed api notification message', {
+                        channel,
+                        length: message.length,
+                        error: error instanceof Error ? error.message : String(error)
+                    });
+
+                    return;
+                }
+
                 const promises = [];
 
                 logger.debug('received api notifications', notifications);
