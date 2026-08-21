@@ -1,3 +1,4 @@
+import { objectifyNumericFloats } from '@atomichub/antelope-ship-utils';
 import { ABI, APIClient, FetchProvider, Serializer } from '@wharfkit/antelope';
 
 import { retryTransient } from '../utils/retry';
@@ -7,12 +8,12 @@ class RpcAdapter {
 
     async get_info(): Promise<any> {
         const info = await retryTransient(() => this.client.v1.chain.get_info(), { label: 'chain.get_info' });
-        return Serializer.objectify(info);
+        return objectifyNumericFloats(info);
     }
 
     async get_abi(accountName: string): Promise<any> {
         const result = await retryTransient(() => this.client.v1.chain.get_abi(accountName), { label: 'chain.get_abi' });
-        return Serializer.objectify(result as any);
+        return objectifyNumericFloats(result);
     }
 
     async get_table_rows(params: any): Promise<any> {

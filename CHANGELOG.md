@@ -10,6 +10,29 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.3.0]
+
+Serves every float and double attribute as a JSON number, and repairs the rows that hold the string form.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.0`. The `2.3` and `latest` tags move to it.
+- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
+- The filler repairs the existing rows itself. It works in batches, only while the reader is near chain head, and keeps its cursor in `dbinfo` under `atomicassets_float_repair:<contract>`, so a restart resumes where it stopped and a fresh install completes at once. A normal upgrade needs no operator step. [UPGRADING.md](./UPGRADING.md#230-the-float-attribute-repair) gives the state row, the log lines and the counters.
+- `pnpm start:repair-float-attributes` runs the same pass to completion while the filler is live, and `--restart` discards the stored state and runs it again from the beginning. A roll forward that followed a rollback to 2.2.x needs that option once per contract: the rolled-back decoder writes strings again while the completion state still reads `done`.
+- A client that reads these values with `Number()` or `parseFloat` is unaffected. A client that filters a float attribute as text moves from `data:text.<key>` to `data:number.<key>`, which is the form templates and collections always needed.
+- A `float` value whose string lost digits does not come back exactly. The releases that wrote the string form decode with `@wharfkit/antelope` 1.x, whose `Float32.toString` is `toFixed(7)`, so the string kept seven decimal places rather than the seven significant digits a float32 carries and a nonzero magnitude below 1 that needed more than seven fractional decimals lost precision before it was stored. `@wharfkit/antelope` 2.x renders that wrapper as the shortest round-trip string (wharfkit/antelope `f70dadd`), so the loss is bounded to the rows the earlier decoder wrote. The repair restores the nearest float32 to the stored string, and every value at or above 1 is exact.
+- A `float` or `double` attribute holding `NaN`, `Infinity` or `-Infinity` becomes JSON null under its key. JSON carries no number for a non-finite value, so null is what the decoder writes for one, and the repair puts the stored strings on the same shape. The pass counts these in `non_finite`, apart from the values its guards refuse.
+
+### Bug fixes
+
+- A `float` or `double` attribute that arrived through a `logmint` or `logsetdata` action payload was stored as a JSON string, while the same attribute on a template or a collection was stored as a JSON number, because that path decodes serialized bytes instead. The payload path went through a serializer that renders the wharfkit `Float32` and `Float64` wrappers with their `toJSON`, and both render as strings. The two shapes then reached every client that reads asset and template data together, and a `float` below 1 also lost precision on the way, because `Float32.toString` in `@wharfkit/antelope` 1.x is `toFixed(7)` and so keeps seven decimal places rather than seven significant digits. The decoder now yields the IEEE value as a JavaScript number, and the filler rewrites the stored strings once.
+
+### Other changes
+
+- The decode moves onto `@atomichub/antelope-ship-utils` 2.0.0, which renders a `float32` or `float64` as a JavaScript number, and `@atomichub/atomicassets` 2.2.0, which reads a float attribute that still arrives as a string as its number. The two together are what make the action-payload path agree with the byte path.
+- Every `float32` and `float64` a table delta or a chain RPC response decodes is a number rather than a fixed-precision string. `atomicassets_collections.market_fee` and the `atomicmarket_config` fees are `double precision` columns and hold the same values as before, and a comparison of a decoded fee against a stored one now compares two numbers.
+
 ## [2.2.1]
 
 Bounds the socket notification payload the filler publishes. Lets the 1.7.11 migration run under a role that is not the owner of the sales-filter queue table.

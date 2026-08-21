@@ -333,6 +333,39 @@ describe('AtomicAssets Assets API', () => {
                 .to.deep.equal([asset_id]);
         });
 
+        txit('filters by number data on a float template attribute', async () => {
+            await client.createAsset();
+
+            // A float attribute is stored as a JSON number, so data:number.<key>
+            // is the filter that reaches it. data:text.<key> read the string form
+            // the 1.x decoder wrote and no longer matches.
+            const {template_id} = await client.createTemplate({immutable_data: JSON.stringify({wear: 0.75})});
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'data:number.wear': 0.75}))
+                .to.deep.equal([asset_id]);
+
+            expect(await getAssetIds({'data:text.wear': '0.75'}))
+                .to.deep.equal([]);
+        });
+
+        txit('filters by number mutable_data on a float attribute', async () => {
+            await client.createAsset();
+
+            const {asset_id} = await client.createAsset({mutable_data: JSON.stringify({wear: 0.75})});
+
+            expect(await getAssetIds({'mutable_data:number.wear': 0.75}))
+                .to.deep.equal([asset_id]);
+
+            const row = await client.fetchOne(
+                'SELECT mutable_data, jsonb_typeof(mutable_data -> \'wear\') AS wear_type ' +
+                'FROM atomicassets_assets WHERE asset_id = $1',
+                [asset_id]
+            );
+            expect(row.wear_type).to.equal('number');
+            expect(row.mutable_data).to.deep.equal({wear: 0.75});
+        });
+
         txit('filters by bool mutable_data', async () => {
             await client.createAsset();
 

@@ -1,3 +1,4 @@
+import { objectifyNumericFloats } from '@atomichub/antelope-ship-utils';
 import { ABI, Name, Serializer, UInt64 } from '@wharfkit/antelope';
 
 import { deserializeUInt, serializeUInt } from './binary';
@@ -53,7 +54,15 @@ export function deserializeEosioType(type: string, data: Uint8Array | string, ab
 
     const result = Serializer.decode({ data: dataArray, type, abi, ignoreInvalidUTF8: true });
 
-    return Serializer.objectify(result);
+    // Serializer.objectify renders the Float32 and Float64 wrappers as strings,
+    // so a float attribute decoded here would reach jsonb as a string where the
+    // @atomichub/atomicassets deserialize stores a number. Under
+    // @wharfkit/antelope 1.x that string is lossy as well, because
+    // Float32.toString is toFixed(7). From 2.x it is the shortest round-trip
+    // string (wharfkit/antelope f70dadd), so the numeric objectify stays a
+    // shape choice there. A non-finite value has no JSON number, and
+    // JSON.stringify writes it as null.
+    return objectifyNumericFloats(result);
 }
 
 export function serializeEosioType(type: string, value: any, abi: ABI): Uint8Array {
