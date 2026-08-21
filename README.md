@@ -286,6 +286,24 @@ database itself exists (`createdb`).
 **`cp: config/*.example.json: No such file or directory`**. Run the copy
 commands from the repository root; the example files live in `config/`.
 
+**`sequence must have same owner as table it is linked to` during `Upgrade to 1.7.11`**.
+The filler connects as a role that is not the owner of
+`atomicmarket_sales_filters_updates`, and the image predates 2.2.1. Compare the
+table owner with `postgres.user` in `connections.config.json`:
+
+```sql
+SELECT pg_get_userbyid(relowner) AS table_owner
+FROM pg_class WHERE oid = 'atomicmarket_sales_filters_updates'::regclass;
+```
+
+Either move to image 2.2.1 or later, or, as a superuser, create the sequence
+under the table owner before the next start. The migration then adopts it:
+
+```sql
+CREATE SEQUENCE atomicmarket_sales_filters_updates_seq;
+ALTER SEQUENCE atomicmarket_sales_filters_updates_seq OWNER TO <table_owner>;
+```
+
 **Index creation runs for hours during a dump restore.** See
 [Restore from a published dump](#restore-from-a-published-dump). Restore with
 `--jobs` and a raised `maintenance_work_mem`, and use a dump from 1.7.17 or

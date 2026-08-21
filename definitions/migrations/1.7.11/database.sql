@@ -52,6 +52,34 @@ ALTER TABLE atomicmarket_sales_filters_updates SET (
 -- Monotonic version token. Gaps are fine (a conflicting INSERT still consumes a value).
 CREATE SEQUENCE IF NOT EXISTS atomicmarket_sales_filters_updates_seq;
 
+-- OWNED BY below compares the sequence owner and the table owner by role
+-- identity, not by privilege. A superuser, or a member of the owning role that
+-- is not the owner itself, passes the ADD COLUMN and then fails there. A
+-- database created or restored under a different role than the one the filler
+-- connects with is the common case, so hand the new sequence to the table's
+-- owner first. On a database where the two already match this is a no-op.
+DO $$
+DECLARE
+    table_owner NAME;
+    sequence_owner NAME;
+BEGIN
+    SELECT pg_get_userbyid(relowner) INTO table_owner
+    FROM pg_class WHERE oid = 'atomicmarket_sales_filters_updates'::regclass;
+    SELECT pg_get_userbyid(relowner) INTO sequence_owner
+    FROM pg_class WHERE oid = 'atomicmarket_sales_filters_updates_seq'::regclass;
+
+    IF table_owner <> sequence_owner THEN
+        BEGIN
+            EXECUTE format('ALTER SEQUENCE atomicmarket_sales_filters_updates_seq OWNER TO %I', table_owner);
+        EXCEPTION WHEN insufficient_privilege THEN
+            RAISE EXCEPTION 'atomicmarket_sales_filters_updates is owned by %, and the migrating role % cannot hand the new sequence to it. Run the migration as % or as a superuser, or let % assume % (a membership with the SET option on Postgres 16 and later).',
+                table_owner, current_user, table_owner, current_user, table_owner
+                USING DETAIL = SQLERRM;
+        END;
+    END IF;
+END
+$$;
+
 -- NOT NULL DEFAULT nextval() => volatile default => table rewrite populating a distinct
 -- increasing seq for every existing backlog row. Deliberately NOT added to the three
 -- UNIQUE partial indexes, so the enqueue ON CONFLICT inference clauses are unchanged.
