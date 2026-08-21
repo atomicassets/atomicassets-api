@@ -99,6 +99,7 @@ describe('filler transient failure recovery (live database)', () => {
                 notifyCommit: async () => undefined,
             };
             (receiver as any).notifier = {
+                setBlockDistance: () => undefined,
                 sendFork: () => undefined,
                 publish: async () => undefined,
             };

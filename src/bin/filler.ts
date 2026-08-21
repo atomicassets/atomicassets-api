@@ -12,7 +12,12 @@ import logger from '../utils/winston';
 import { IConnectionsConfig, IReaderConfig } from '../types/config';
 import { upgradeDb } from '../filler/upgrade-db';
 import { MetricsCollectorHandler } from '../metrics/handler';
-import { Registry } from 'prom-client';
+import { AggregatorRegistry, Registry } from 'prom-client';
+// Side effect import: the reader's publish counters live on the default
+// registry, and the worker answers a scrape from whatever is registered when the
+// request arrives. Importing the module here creates the series at startup
+// rather than at the reader's first publish.
+import '../metrics/filler-publish';
 import { setAutoVacSettings } from '../filler/set-autovac-settings';
 import { retryTransient } from '../utils/retry';
 import { configFile } from '../utils/config-path';
@@ -214,6 +219,12 @@ if (cluster.isPrimary || cluster.isMaster) {
         }
     });
 
+    // Constructed once, outside the handler: the constructor is what installs
+    // the cluster message listener that collects a worker's default registry.
+    // prom-client keys its IPC messages on `type` and the worker failure message
+    // above keys on `msg`, so the two handlers ignore each other.
+    const workerRegistry = new AggregatorRegistry();
+
     app.all('/metrics', async (_req, res) => {
         const metricsHandler = new MetricsCollectorHandler(
             connection,
@@ -221,7 +232,20 @@ if (cluster.isPrimary || cluster.isMaster) {
             os.hostname(),
             { psql_pool: false },
         );
-        res.send(await metricsHandler.getMetrics(new Registry()));
+        const collected = await metricsHandler.getMetrics(new Registry());
+
+        // Aggregation is all or nothing: it resolves empty with no workers up
+        // and rejects after 5 seconds when any worker does not answer. Either
+        // way the primary's own collector output still gets served.
+        try {
+            const workerMetrics = await workerRegistry.clusterMetrics();
+
+            res.send(collected + workerMetrics);
+        } catch (error) {
+            logger.warn('Failed to collect worker metrics', error);
+
+            res.send(collected);
+        }
     });
 
     const server = app.listen(readerConfigs[0].server_port || 9001, readerConfigs[0].server_addr || '0.0.0.0');
@@ -241,6 +265,11 @@ if (cluster.isPrimary || cluster.isMaster) {
     });
 } else {
     logger.info('Worker ' + process.pid + ' started');
+
+    // Installs the responder that hands this worker's default registry to the
+    // primary when it aggregates a scrape. Without it the reader's publish
+    // series never leave the worker.
+    new AggregatorRegistry();
 
     const index = parseInt(process.env.config_index, 10);
     let filler: Filler | null = null;
