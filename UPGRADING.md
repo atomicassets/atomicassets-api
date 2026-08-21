@@ -53,9 +53,9 @@ constraint.
 
 PostgreSQL 14 or newer is recommended. In practice the minimum is whatever you
 already run: `eosio-contract-api` documented 13 or newer, and the v2 schema uses
-nothing beyond those releases. CI and the bundled `docker-compose.yml` run
-Postgres 16. If you are on 13 and want a supported line, a minor bump to 14 is
-enough.
+nothing beyond those releases. CI runs the integration suite on every major
+from 14 through 18, and the bundled `docker-compose.yml` runs 16. If you are on
+13 and want a supported line, a minor bump to 14 is enough.
 
 ## Upgrade
 

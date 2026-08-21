@@ -44,14 +44,21 @@ jobs:
         run: bash scripts/release-notes.test.sh
 
   integration:
-    name: integration tests (postgres)
+    name: integration tests (postgres ${{ matrix.postgres }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      # One leg per supported major, so a migration or a test that leans on a
+      # newer server fails here and not on an operator's database. 14 is the
+      # floor README.md documents, 16 is the docker-compose.yml default, and 18
+      # is the major the live eca-small-chains CNPG cluster runs. Every leg
+      # finishes even when another fails, so one run shows every affected major.
+      fail-fast: false
+      matrix:
+        postgres: [14, 15, 16, 17, 18]
     services:
       postgres:
-        # Match the live eca-small-chains CNPG cluster (PostgreSQL 18). Bumped
-        # from 16 so CI exercises the same major we run in production.
-        image: postgres:18
+        image: postgres:${{ matrix.postgres }}
         env:
           POSTGRES_USER: root
           POSTGRES_PASSWORD: testpassword
@@ -88,3 +95,22 @@ jobs:
 
       - name: Integration tests
         run: pnpm test:integration:ci
+
+  # Branch protection requires this check by name, and a matrix leg carries its
+  # version in its name, so this job keeps the fixed name and passes only when
+  # every leg passed. A cancelled or timed-out leg is not a pass.
+  integration-gate:
+    name: integration tests (postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: integration
+    if: always()
+    steps:
+      - name: Require every matrix leg to pass
+        env:
+          RESULT: ${{ needs.integration.result }}
+        run: |
+          case "$RESULT" in
+            success) echo "every integration leg passed" ;;
+            *) echo "integration matrix result: $RESULT"; exit 1 ;;
+          esac
