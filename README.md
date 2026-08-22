@@ -312,9 +312,45 @@ later (btree seller/buyer indexes).
 **The filler exits at `COMMIT` with `23503` on
 `atomicassets_assets_schemas_fkey`, `atomicassets_assets_collections_fkey`, or
 `atomicassets_assets_templates_fkey`.** Every restart replays the same block
-range and fails identically. A parent row the block needs is absent from
+range and fails identically. The check could not find a parent row in
 `atomicassets_schemas`, `atomicassets_collections`, or
-`atomicassets_templates`, so the database is incomplete rather than corrupt.
+`atomicassets_templates`. Either that row was never indexed, or it is present
+and the lookup cannot see it, and those two causes need different repairs.
+
+Settle which one first. The constraint resolves its parent through a unique
+index, so an index that has lost the entry fails the check while ordinary
+queries still return the row. Check the index itself, since `heapallindexed`
+is what reports a heap row the index no longer points at:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS amcheck;
+SELECT bt_index_check('atomicassets_schemas_pkey'::regclass, true);
+```
+
+An error there names the damage. A plain `SELECT` cannot stand in for this
+check, because the planner may answer it from a sequential scan or a different
+index and return the row either way.
+
+A lost entry on `character varying` keys usually means collation. Their btrees
+order by the collation of the key columns, and moving a data directory onto a
+base image with a different glibc or ICU invalidates that order silently.
+PostgreSQL 15 and later record the version the database was built with:
+
+```sql
+SELECT datcollversion,
+       pg_database_collation_actual_version(oid) AS actual_version
+FROM pg_database WHERE datname = current_database();
+```
+
+Differing versions mean every text index in the database is suspect, not only
+this one. PostgreSQL 14 does not record this, so on 14 treat a base-image
+change as reason enough to reindex. Repair with
+`REINDEX DATABASE CONCURRENTLY <database>`, then, on 15 and later,
+`ALTER DATABASE <database> REFRESH COLLATION VERSION`. Refreshing first clears
+the warning without repairing anything.
+
+When the index is sound, the parent row really is missing. The rest of this
+entry covers that case.
 
 These constraints are added `NOT VALID`, so the scan that would report existing
 violations never runs. Later statements that write those rows are still checked,
@@ -334,12 +370,13 @@ SELECT (created_at_block / 10000000) * 10000000 AS block_bucket, count(*)
 FROM atomicassets_schemas GROUP BY 1 ORDER BY 1;
 ```
 
-Buckets that fall short of the complete database show which stretch of history
-this database never received. Full buckets missing only a handful of individual
-rows mean it was seeded from an incomplete source. How far the filler has
-ingested is a separate question, answered by
-`SELECT name, block_num FROM contract_readers;`, not by the newest row in a
-parent table. Scope any orphan scan to one collection, because
+Equal counts do not prove the parent row is present, since one absence can hide
+behind an unrelated extra row, but a bucket that falls short of the complete
+database shows which stretch of history this database never received. Full
+buckets missing only a handful of individual rows mean it was seeded from an
+incomplete source. How far the filler has ingested is a separate question,
+answered by `SELECT name, block_num FROM contract_readers;`, not by the newest
+row in a parent table. Scope any orphan scan to one collection, because
 `atomicassets_assets` holds hundreds of millions of rows on a busy chain.
 
 Copying the missing parent rows from a complete database clears the current
