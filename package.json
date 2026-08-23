@@ -100,7 +100,7 @@
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.6.0",
-    "knip": "5.88.1",
+    "knip": "6.32.2",
     "mocha": "^11.7.5",
     "sinon": "^22.0.0",
     "supertest": "^7.2.2",
