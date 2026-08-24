@@ -319,17 +319,19 @@ and the lookup cannot see it, and those two causes need different repairs.
 
 Settle which one first. The constraint resolves its parent through a unique
 index, so an index that has lost the entry fails the check while ordinary
-queries still return the row. Check the index itself, since `heapallindexed`
-is what reports a heap row the index no longer points at:
+queries still return the row. Check the index itself, passing `heapallindexed`
+so the check also reports heap rows the index no longer points at:
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS amcheck;
 SELECT bt_index_check('atomicassets_schemas_pkey'::regclass, true);
 ```
 
-An error there names the damage. A plain `SELECT` cannot stand in for this
-check, because the planner may answer it from a sequential scan or a different
-index and return the row either way.
+An error there names the damage. `item order invariant violated` means the
+entries are stored out of sort order, so lookups binary-search past rows that
+exist. A plain `SELECT` cannot stand in for this check, because the planner may
+answer it from a sequential scan or a different index and return the row either
+way.
 
 A lost entry on `character varying` keys usually means collation. Their btrees
 order by the collation of the key columns, and moving a data directory onto a
@@ -348,6 +350,16 @@ change as reason enough to reindex. Repair with
 `REINDEX DATABASE CONCURRENTLY <database>`, then, on 15 and later,
 `ALTER DATABASE <database> REFRESH COLLATION VERSION`. Refreshing first clears
 the warning without repairing anything.
+
+Reindexing one index unwedges the filler, but stop only there if the collation
+is unchanged. Rebuilding concurrently needs room for a second copy of each
+index and leaves invalid `_ccnew` indexes to drop if a run fails. System
+catalogs are separate: they need `REINDEX SYSTEM <database>`, which cannot run
+concurrently. Read a failure of the form
+`could not create unique index ... Key ... is duplicated` as data damage rather
+than a reindex problem: the broken ordering also let the uniqueness check pass
+rows it should have rejected, and those duplicates have to go before the index
+can be rebuilt.
 
 When the index is sound, the parent row really is missing. The rest of this
 entry covers that case.
