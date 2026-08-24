@@ -18,6 +18,7 @@ import {
     extractNotificationIdentifiers,
 } from '../../../utils';
 import ApiNotificationReceiver from '../../../notification';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import { NotificationData } from '../../../../filler/notifier';
 import { getOfferLogsCountAction, getOffersCountAction, getRawOffersAction } from '../handlers/offers';
 import { ApiError } from '../../../error';
@@ -303,14 +304,19 @@ export class OfferApi {
 
         notification.onData('offers', async (notifications: NotificationData[]) => {
             const offerIDs = extractNotificationIdentifiers(notifications, 'offer_id');
-            const query = await this.server.database.query(
-                'SELECT * FROM ' + this.offerView + ' WHERE contract = $1 AND offer_id = ANY($2)',
-                [this.core.args.atomicassets_account, offerIDs]
-            );
+            const rows = await readNotifiedRows(this.server.database, {
+                sql: 'SELECT * FROM ' + this.offerView + ' WHERE contract = $1 AND offer_id = ANY($2)',
+                params: [this.core.args.atomicassets_account, offerIDs],
+                ids: offerIDs,
+                expectedBlockById: extractNotificationBlocks(notifications, 'offer_id'),
+                keyOf: (row: any) => row.offer_id,
+                blockOf: (row: any) => row.updated_at_block,
+                channel: 'offers'
+            });
 
             const offers = await fillOffers(
                 this.server, this.core.args.atomicassets_account,
-                query.rows.map((row) => this.offerFormatter(row)),
+                rows.map((row) => this.offerFormatter(row)),
                 this.assetFormatter, this.assetView, this.fillerHook
             );
 

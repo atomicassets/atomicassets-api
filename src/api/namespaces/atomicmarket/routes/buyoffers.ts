@@ -18,6 +18,7 @@ import {
     extractNotificationIdentifiers,
 } from '../../../utils';
 import ApiNotificationReceiver from '../../../notification';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import { NotificationData } from '../../../../filler/notifier';
 import {
     getBuyOfferAction,
@@ -145,12 +146,17 @@ export function buyofferSockets(core: AtomicMarketNamespace, server: HTTPServer,
 
     notification.onData('buyoffers', async (notifications: NotificationData[]) => {
         const buyofferIDs = extractNotificationIdentifiers(notifications, 'buyoffer_id');
-        const query = await server.database.query(
-            'SELECT * FROM atomicmarket_buyoffers_master WHERE market_contract = $1 AND buyoffer_id = ANY($2)',
-            [core.args.atomicmarket_account, buyofferIDs]
-        );
+        const rows = await readNotifiedRows(server.database, {
+            sql: 'SELECT * FROM atomicmarket_buyoffers_master WHERE market_contract = $1 AND buyoffer_id = ANY($2)',
+            params: [core.args.atomicmarket_account, buyofferIDs],
+            ids: buyofferIDs,
+            expectedBlockById: extractNotificationBlocks(notifications, 'buyoffer_id'),
+            keyOf: (row: any) => row.buyoffer_id,
+            blockOf: (row: any) => row.updated_at_block,
+            channel: 'buyoffers'
+        });
 
-        const buyoffers = await fillBuyoffers(server, core.args.atomicassets_account, query.rows);
+        const buyoffers = await fillBuyoffers(server, core.args.atomicassets_account, rows);
 
         for (const notification of notifications) {
             if (notification.type === 'trace' && notification.data.trace) {

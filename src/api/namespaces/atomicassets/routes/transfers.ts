@@ -13,6 +13,7 @@ import {
 import { greylistFilterParameters } from '../openapi';
 import ApiNotificationReceiver from '../../../notification';
 import { createSocketApiNamespace } from '../../../utils';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import { NotificationData } from '../../../../filler/notifier';
 import { getRawTransfersAction, getTransfersCountAction } from '../handlers/transfers';
 
@@ -153,14 +154,29 @@ export class TransferApi {
 
         notification.onData('transfers', async (notifications: NotificationData[]) => {
             const transferIDs = notifications.filter(row => row.type === 'trace').map(row => row.data.trace.global_sequence);
-            const query = await this.server.database.query(
-                'SELECT * FROM ' + this.transferView + ' WHERE contract = $1 AND transfer_id = ANY($2)',
-                [this.core.args.atomicassets_account, transferIDs]
-            );
+            const rows = await readNotifiedRows(this.server.database, {
+                sql: 'SELECT * FROM ' + this.transferView + ' WHERE contract = $1 AND transfer_id = ANY($2)',
+                params: [this.core.args.atomicassets_account, transferIDs],
+                ids: transferIDs,
+                // A logtransfer with no asset ids is published without a row, so it
+                // must not raise an expectation the read could never meet.
+                expectedBlockById: extractNotificationBlocks(notifications, notification => {
+                    const trace = notification.data.trace;
+
+                    if (!trace || !Array.isArray((<any>trace.act.data).asset_ids) || (<any>trace.act.data).asset_ids.length === 0) {
+                        return undefined;
+                    }
+
+                    return trace.global_sequence;
+                }),
+                keyOf: (row: any) => row.transfer_id,
+                blockOf: (row: any) => row.created_at_block,
+                channel: 'transfers'
+            });
 
             const transfers = await fillTransfers(
                 this.server, this.core.args.atomicassets_account,
-                query.rows.map((row) => this.transferFormatter(row)),
+                rows.map((row) => this.transferFormatter(row)),
                 this.assetFormatter, this.assetView, this.fillerHook
             );
 
