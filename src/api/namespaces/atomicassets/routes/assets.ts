@@ -20,6 +20,7 @@ import {
 } from '../openapi';
 import { fillAssets, FillerHook } from '../filler';
 import { createSocketApiNamespace, extractNotificationIdentifiers, } from '../../../utils';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import ApiNotificationReceiver from '../../../notification';
 import { NotificationData } from '../../../../filler/notifier';
 import { getAssetLogsAction, getAssetsCountAction, getAssetStatsAction, getRawAssetsAction } from '../handlers/assets';
@@ -185,11 +186,25 @@ export class AssetApi {
 
         notification.onData('assets', async (notifications: NotificationData[]) => {
             const assetIDs = extractNotificationIdentifiers(notifications, 'asset_id');
-            const query = await this.server.database.query(
-                'SELECT * FROM ' + this.assetView + ' WHERE contract = $1 AND asset_id = ANY($2)',
-                [this.core.args.atomicassets_account, assetIDs]
-            );
-            const assets = query.rows.map(row => this.assetFormatter(row));
+            const rows = await readNotifiedRows(this.server.database, {
+                // logbackasset advances atomicassets_assets_backed_tokens rather than
+                // the asset row, and the view embeds those amounts, so the highest
+                // backed-token block joins the freshness test as backed_at_block.
+                sql: 'SELECT a.*, (SELECT max(b.updated_at_block) FROM atomicassets_assets_backed_tokens b ' +
+                    'WHERE b.contract = a.contract AND b.asset_id = a.asset_id) AS backed_at_block ' +
+                    'FROM ' + this.assetView + ' a WHERE a.contract = $1 AND a.asset_id = ANY($2)',
+                params: [this.core.args.atomicassets_account, assetIDs],
+                ids: assetIDs,
+                expectedBlockById: extractNotificationBlocks(notifications, 'asset_id'),
+                keyOf: (row: any) => row.asset_id,
+                blockOf: (row: any) => Math.max(Number(row.updated_at_block), Number(row.backed_at_block ?? 0)),
+                channel: 'assets'
+            });
+            const assets = rows.map((row: any) => {
+                const {backed_at_block: _backedAtBlock, ...asset} = row;
+
+                return this.assetFormatter(asset);
+            });
 
             for (const notification of notifications) {
                 if (notification.type === 'trace' && notification.data.trace) {

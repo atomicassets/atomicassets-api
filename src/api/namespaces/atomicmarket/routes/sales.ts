@@ -18,6 +18,7 @@ import {
     extractNotificationIdentifiers,
 } from '../../../utils';
 import ApiNotificationReceiver from '../../../notification';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import { NotificationData } from '../../../../filler/notifier';
 import {
     getSaleAction,
@@ -215,12 +216,17 @@ export function salesSockets(core: AtomicMarketNamespace, server: HTTPServer, no
 
     notification.onData('sales', async (notifications: NotificationData[]) => {
         const saleIDs = extractNotificationIdentifiers(notifications, 'sale_id');
-        const query = await server.database.query(
-            'SELECT * FROM atomicmarket_sales_master WHERE market_contract = $1 AND sale_id = ANY($2)',
-            [core.args.atomicmarket_account, saleIDs]
-        );
+        const rows = await readNotifiedRows(server.database, {
+            sql: 'SELECT * FROM atomicmarket_sales_master WHERE market_contract = $1 AND sale_id = ANY($2)',
+            params: [core.args.atomicmarket_account, saleIDs],
+            ids: saleIDs,
+            expectedBlockById: extractNotificationBlocks(notifications, 'sale_id'),
+            keyOf: (row: any) => row.sale_id,
+            blockOf: (row: any) => row.updated_at_block,
+            channel: 'sales'
+        });
 
-        const sales = await fillSales(server, core.args.atomicassets_account, query.rows.map((row: any) => formatSale(row)));
+        const sales = await fillSales(server, core.args.atomicassets_account, rows.map((row: any) => formatSale(row)));
 
         for (const notification of notifications) {
             if (notification.type === 'trace' && notification.data.trace) {

@@ -18,6 +18,7 @@ import {
     extractNotificationIdentifiers,
 } from '../../../utils';
 import ApiNotificationReceiver from '../../../notification';
+import { extractNotificationBlocks, readNotifiedRows } from '../../../notification-read';
 import { NotificationData } from '../../../../filler/notifier';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { getAuctionAction, getAuctionLogsAction, getAuctionsAction, getAuctionsCountAction } from '../handlers/auctions';
@@ -171,12 +172,17 @@ export function auctionSockets(core: AtomicMarketNamespace, server: HTTPServer, 
 
     notification.onData('auctions', async (notifications: NotificationData[]) => {
         const auctionIDs = extractNotificationIdentifiers(notifications, 'auction_id');
-        const query = await server.database.query(
-            'SELECT * FROM atomicmarket_auctions_master WHERE market_contract = $1 AND auction_id = ANY($2)',
-            [core.args.atomicmarket_account, auctionIDs]
-        );
+        const rows = await readNotifiedRows(server.database, {
+            sql: 'SELECT * FROM atomicmarket_auctions_master WHERE market_contract = $1 AND auction_id = ANY($2)',
+            params: [core.args.atomicmarket_account, auctionIDs],
+            ids: auctionIDs,
+            expectedBlockById: extractNotificationBlocks(notifications, 'auction_id'),
+            keyOf: (row: any) => row.auction_id,
+            blockOf: (row: any) => row.updated_at_block,
+            channel: 'auctions'
+        });
 
-        const auctions = await fillAuctions(server, core.args.atomicassets_account, query.rows.map((row: any) => formatAuction(row)));
+        const auctions = await fillAuctions(server, core.args.atomicassets_account, rows.map((row: any) => formatAuction(row)));
 
         for (const notification of notifications) {
             if (notification.type === 'trace' && notification.data.trace) {

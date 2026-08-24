@@ -10,6 +10,20 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.3.1]
+
+Re-reads the row a socket notification names until the replica the API queries has replayed the block that wrote it.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.1`. The `2.3` and `latest` tags move to it.
+- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
+- A server that queries its primary performs one read for every action that advances the row's block column. A transfer notification published while transfers are not stored costs the full read budget on any server, and warns at most once a minute for that channel, carrying the count of batches suppressed since the previous line.
+
+### Bug fixes
+
+- A socket event carried the row as it stood before the action the event announced, or carried no row at all: a `purchased_sale` arrived with the sale still listed and no buyer on it, and a `new_transfer` arrived without its `transfer`. The filler publishes a notification once its write commits on the primary, so a server that queries an asynchronous replica read the row before the replica replayed that commit. Every handler now re-reads until each row reaches the block its notification names, at most five reads about 100 ms apart, and a row still behind after that is served as the replica holds it. (#195)
+
 ## [2.3.0]
 
 Serves every float and double attribute as a JSON number, and repairs the rows that hold the string form.
