@@ -446,19 +446,20 @@ export class ContractDB {
         }
     }
 
-    async getReaderPosition(): Promise<{ live: boolean, block_num: number, updated: number }> {
-        const query = await this.connection.database.query('SELECT live, block_num, updated FROM contract_readers WHERE name = $1', [this.name]);
+    // The live column is deliberately absent here. It is a one-way latch and the
+    // reader no longer derives its processing state from it, so returning it
+    // only invites that back. reconcile reads the column with its own query.
+    async getReaderPosition(): Promise<{ block_num: number, updated: number }> {
+        const query = await this.connection.database.query('SELECT block_num, updated FROM contract_readers WHERE name = $1', [this.name]);
 
         if (query.rows.length === 0) {
             return {
-                live: false,
                 block_num: 0,
                 updated: 0
             };
         }
 
         return {
-            live: query.rows[0].live,
             block_num: parseInt(query.rows[0].block_num, 10),
             updated: parseInt(query.rows[0].updated, 10)
         };
