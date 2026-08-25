@@ -51,16 +51,38 @@ if (!readerConfigs || readerConfigs.length === 0) {
 // during AtomicAssetsHandler.init on a cold cache) - the reader never
 // started but Kubernetes had no crashed process to restart. Node's default
 // (crash) is what gets the pod restarted; matching it here is the fix.
+// Published for the crash handlers below, which are registered before the worker
+// branch builds its filler and so cannot reach a local reference.
+let activeFiller: Filler | null = null;
+
+// How long a crashing worker waits for the ship close frame to leave. Short and
+// unconditional: a crashed worker must not stay alive waiting on a socket.
+const SHIP_CLOSE_GRACE_MS = 250;
+
+// process.exit() abandons the ship websocket rather than closing it, which
+// leaves the node holding a half-open state_history session until it works out
+// the peer is gone. Send the close frame first, then exit on a short timer so
+// the frame has a chance to go out.
+function exitAfterClosingShip(code: number): void {
+    try {
+        activeFiller?.reader.ship.stopProcessing();
+    } catch (closeError) {
+        logger.error('Failed to close the ship socket before exit', closeError);
+    }
+
+    setTimeout(() => process.exit(code), SHIP_CLOSE_GRACE_MS);
+}
+
 process.on('unhandledRejection', error => {
     logger.error('Unhandled Rejection', error);
 
-    process.exit(1);
+    exitAfterClosingShip(1);
 });
 
 process.on('uncaughtException', error => {
     logger.error('Uncaught Exception', error);
 
-    process.exit(1);
+    exitAfterClosingShip(1);
 });
 
 // @ts-ignore
@@ -272,13 +294,12 @@ if (cluster.isPrimary || cluster.isMaster) {
     new AggregatorRegistry();
 
     const index = parseInt(process.env.config_index, 10);
-    let filler: Filler | null = null;
 
     process.on('SIGTERM', async () => {
         logger.info(`Worker ${process.pid} received SIGTERM - stopping filler`);
 
-        if (filler) {
-            await filler.stopFiller();
+        if (activeFiller) {
+            await activeFiller.stopFiller();
         }
 
         process.exit(0);
@@ -287,8 +308,8 @@ if (cluster.isPrimary || cluster.isMaster) {
     // delay startup for each reader to avoid startup transaction conflicts
     setTimeout(async () => {
         const connection = new ConnectionManager(connectionConfig);
-        filler = new Filler(readerConfigs[index], connection);
+        activeFiller = new Filler(readerConfigs[index], connection);
 
-        await filler.startFiller(5);
+        await activeFiller.startFiller(5);
     }, index * 1000);
 }
