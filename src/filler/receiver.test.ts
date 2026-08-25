@@ -247,6 +247,17 @@ describe('StateReceiver', () => {
             return receiver;
         }
 
+        it('starts in catchup even when the stored live flag is set', async () => {
+            // live is a one-way latch: it stays true from the first time a reader
+            // reached head, so a reader restarting far behind must ignore it and
+            // let the per-block head-distance check promote instead.
+            const receiver = createStartedReceiver(6_000_000);
+            await receiver.startProcessing();
+
+            const setState = (receiver as any).processor.setState;
+            expect(setState.calledOnceWith(ProcessingState.CATCHUP)).to.equal(true);
+        });
+
         it('arms the irreversible floor from the checkpoint before the first block', async () => {
             const receiver = createStartedReceiver(6_000_000);
             await receiver.startProcessing();

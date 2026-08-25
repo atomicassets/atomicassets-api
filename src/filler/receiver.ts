@@ -148,7 +148,15 @@ export default class StateReceiver implements IShipConsumer {
             position = await this.database.getReaderPosition();
         }
 
-        this.processor.setState(position.live ? ProcessingState.HEAD : ProcessingState.CATCHUP);
+        // Deliberately not seeded from position.live. That column is a one-way
+        // latch: it goes true the first time a reader reaches head and nothing
+        // ever writes it back, so seeding from it puts a reader that once
+        // reached head into head mode however far behind it restarts. Starting
+        // in catchup costs nothing, because process() re-evaluates the same
+        // head-distance predicate on every block and promotes on the first one
+        // that qualifies, before that block's commit or its notifications. The
+        // column is still written, since reconcile reads it as a liveness hint.
+        this.processor.setState(ProcessingState.CATCHUP);
 
         let startBlock = position.block_num + 1;
 
