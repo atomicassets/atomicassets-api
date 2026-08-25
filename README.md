@@ -213,7 +213,35 @@ Three JSON files in `config/` drive runtime behaviour:
 - `server.config.json`: HTTP server port, rate limits, CORS, cache
   policies, provider name and URL displayed in `/docs`.
 
-See `config/*.example.json` for the full schema with comments.
+See `config/*.example.json` for working starting values. They are examples
+rather than a complete reference: `IReaderConfig` and its siblings in
+`src/types/config.ts` carry keys the example files leave out, among them
+`ship_max_blocks_queue`, `delete_data` and `list_polls`.
+
+### Filler throughput
+
+`readers.config.json` ships conservative values. A filler catching up from a
+published dump or from a long outage needs larger ones. These keys decide the
+ingestion rate; the table compares each shipped value with the one the WAX
+mainnet deployment runs.
+
+| Key | Example | WAX mainnet | What it controls |
+| --- | --- | --- | --- |
+| `db_group_blocks` | `10` | `500` | Blocks per database transaction. Grouping applies only to an irreversible block while the reader is at least twice this many blocks behind head. A reversible block commits on its own whatever the distance, and so does every block once the reader is inside that distance. |
+| `ship_prefetch_blocks` | `50` | `1000` | Becomes SHIP's `max_messages_in_flight`. The node stops sending after this many unacknowledged blocks, so it caps how deep the pipeline runs. |
+| `ship_min_block_confirmation` | `30` | `30` | Blocks the client accumulates before acknowledging them. Keep it at or below `ship_prefetch_blocks`. |
+| `ship_ds_queue_size` | `20` | `20` | Blocks allowed between deserialization and the database stage. |
+| `ds_ship_threads` | `4` | core count | Worker threads for SHIP-level deserialization. Zero or absent runs deserialization on the filler's own event loop. |
+
+Never remove `ship_ds_queue_size`. An absent key leaves the semaphore without a
+limit, every acquire parks forever, and the reader wedges before its first block.
+The log shows `No blocks processed` every five seconds until the stall timeout
+exits the process and the supervisor restarts it into the same wedge.
+
+A larger `db_group_blocks` writes more WAL per transaction, so raise
+`max_wal_size` with it or Postgres checkpoints often enough to cancel the gain.
+Set `PGSSLMODE=disable` when the database is local, because the client defaults
+to `prefer` and negotiates TLS on a loopback connection otherwise.
 
 ## Restore from a published dump
 
@@ -397,6 +425,74 @@ published dump is the durable fix. See
 [Restore from a published dump](#restore-from-a-published-dump).
 `pnpm start:reconcile` seeds v2 contract state and template deletions and does
 not rebuild base rows.
+
+**The filler ingests at the chain's own block rate while it is far behind
+head.** CPU sits near idle and restarting changes nothing. Nothing in the filler
+throttles the rate, so the filler is waiting on something. The progress line says
+what.
+
+```
+Reader atomic-1 - Progress: 451800000 / 452500000 (12.34%) Speed: 2.0 B/s 118 W/s [DS:0|SH:0|JQ:0] (Syncs in 1000 hours)
+```
+
+`W/s` counts database write operations, not blocks. `DS` counts blocks waiting on
+the database stage and `SH` counts SHIP messages received but not started. Both
+exclude the item running, and both stages run one at a time.
+
+That last detail bounds the reading. With `ship_prefetch_blocks` set to 1 the
+node never has a second block outstanding, so both counters sit at zero whatever
+the cause. Take the live window from the `Requesting ship blocks` line at startup
+before you trust a pair of zeros.
+
+So a filler that is itself the bottleneck backs up, showing `DS` close to
+`ship_ds_queue_size` and `SH` holding the remainder of the
+`ship_prefetch_blocks` window. Both at zero means the node is not filling that
+window and the filler is idle. That reading, not the block rate, decides where to
+look.
+
+The estimate is not itself a fault signal. It models the chain producing two
+blocks per second while you sync, so an average below that prints
+`(Syncs never)` and an average barely above it prints an enormous hour count.
+
+With `DS` and `SH` both high and `W/s` low, check whether the reader is stuck in
+head mode. `contract_readers.live` is set when the reader first reaches head and
+nothing sets it back, and the filler reads it at startup to choose head mode or
+catch-up mode, without consulting the distance to head. A reader that once
+reached head therefore starts in head mode however far behind it is. Before
+2.2.1, head mode published every trace and delta to Redis inside the commit path,
+a direct throughput cost on a backlog. Stop the filler, then:
+
+```sql
+SELECT name, block_num, live FROM contract_readers;
+UPDATE contract_readers SET live = false WHERE name = '<reader>';
+```
+
+Start it again. It promotes itself back to head mode once it is genuinely near
+head. Do this with the filler stopped, or the next commit rewrites the flag. Do
+not change `block_num`: the checkpoint is correct and only the flag is wrong.
+
+With `DS` and `SH` both high and `W/s` high, the database write path is the
+limit. Raise `db_group_blocks` and `max_wal_size` together. See
+[Filler throughput](#filler-throughput).
+
+With both at zero, the SHIP node is the limit. One node fault is already ruled
+out by steady progress: a range below the node's state-history retention floor
+produces a reconnect loop, not slow progress. Confirm it with a log search for
+`does not contain` and `Empty block #`.
+
+The other is not ruled out by anything the filler prints. The blocks-behind
+figure comes from the head the node reports over the same socket, which is the
+node's own view of itself. A node that is replaying or lagging reports a stale
+local head and still feeds the filler steadily. Compare that head against a
+trusted source for the chain before concluding the node's chain state is
+current.
+
+Isolate the node by pointing the filler at a different one. `CHAIN_SHIP`
+overrides the endpoint in `connections.config.json`, and the reader resumes from
+its own checkpoint, so the swap costs nothing and reverses cleanly. A rate that
+jumps against another node settles it. When the rate holds, measure disk service
+time on the node's state-history volume and check whether the same process also
+carries p2p sync and API traffic.
 
 ## Development
 
