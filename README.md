@@ -454,22 +454,17 @@ The estimate is not itself a fault signal. It models the chain producing two
 blocks per second while you sync, so an average below that prints
 `(Syncs never)` and an average barely above it prints an enormous hour count.
 
-With `DS` and `SH` both high and `W/s` low, check whether the reader is stuck in
-head mode. `contract_readers.live` is set when the reader first reaches head and
-nothing sets it back, and the filler reads it at startup to choose head mode or
-catch-up mode, without consulting the distance to head. A reader that once
-reached head therefore starts in head mode however far behind it is. Before
-2.2.1, head mode published every trace and delta to Redis inside the commit path,
-a direct throughput cost on a backlog. Stop the filler, then:
+With `DS` and `SH` both high and `W/s` low, the filler is waiting on something
+other than the database. Redis is the first place to look, because head mode
+publishes notifications from inside the commit path, and deserialization is the
+second: it runs on the reader's own thread for contract traces and rows, so it
+shows as one thread pinned while the deserializer workers idle.
 
-```sql
-SELECT name, block_num, live FROM contract_readers;
-UPDATE contract_readers SET live = false WHERE name = '<reader>';
-```
-
-Start it again. It promotes itself back to head mode once it is genuinely near
-head. Do this with the filler stopped, or the next commit rewrites the flag. Do
-not change `block_num`: the checkpoint is correct and only the flag is wrong.
+A reader from before 2.3.2 could also be stuck in head mode while far behind,
+because it derived that state from `contract_readers.live`, which is set on the
+first arrival at head and never written back. From 2.3.2 a reader always starts
+in catch-up mode and promotes itself on the first block that is either reversible
+or within twice `db_group_blocks` of the head, so no flag needs clearing.
 
 With `DS` and `SH` both high and `W/s` high, the database write path is the
 limit. Raise `db_group_blocks` and `max_wal_size` together. See
