@@ -10,6 +10,25 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.3.2]
+
+Closes the state_history socket on the way out of a crash, and stops a one-way database flag from putting a far-behind reader into head mode.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.2`. The `2.3` and `latest` tags move to it.
+- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
+- A reader starts in catchup mode on every start and promotes itself to head mode on the first block that is either reversible or within twice `db_group_blocks` of the head. Every block at the chain head is reversible, so a reader genuinely at head reaches head mode on its first block, ahead of that block's commit and of its notifications. `contract_readers.live` is still written and `reconcile` still refuses a reader whose flag is set and whose row is fresh, so only the reader's processing state stopped deriving from it.
+
+### Bug fixes
+
+- The filler abandoned its `state_history` websocket instead of closing it when it left through `process.exit(1)`, which is the path an unhandled rejection, an uncaught exception, and both watchdog timers take. Both watchdog paths now take the graceful stop, whose close frame goes out during the pause they already had, and the crash handlers send the frame and exit on a short fixed timer. (#198)
+- A reader that had once reached head started in head mode however far behind it restarted, because `contract_readers.live` goes true on that first arrival and nothing ever writes it back. The in-process promotion could not correct it, since it only fires while the state is still catchup, and the first commit rewrote the flag. Head mode costs a checkpoint write on every commit, and before 2.2.1 it published a whole backlog of trace and delta notifications from inside the commit path. (#199)
+
+### Other changes
+
+- `README.md` records what the filler's progress line means, so a slow catch-up can be told apart from a starved `state_history` feed without guesswork: what `DS`, `SH` and `W/s` measure, that the queue depths only discriminate while the in-flight window is larger than one, and what the throughput keys in `readers.config.json` do against the values a mainnet deployment runs. (#197)
+
 ## [2.3.1]
 
 Re-reads the row a socket notification names until the replica the API queries has replayed the block that wrote it.
