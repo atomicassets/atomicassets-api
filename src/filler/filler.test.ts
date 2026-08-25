@@ -1,5 +1,6 @@
 import 'mocha';
 import {expect} from 'chai';
+import * as sinon from 'sinon';
 
 import Filler from './filler';
 
@@ -37,6 +38,33 @@ describe('Filler', () => {
         it('honours an explicit threshold override', () => {
             expect(stub(150).isFallingBehind(100)).to.equal(true);
             expect(stub(150).isFallingBehind(500)).to.equal(false);
+        });
+    });
+
+    describe('closeReaderBeforeExit', () => {
+        const stub = (stopProcessing: () => Promise<void>): {filler: Filler; jobsStopped: () => boolean} => {
+            const filler = Object.create(Filler.prototype) as Filler;
+            let jobsStopped = false;
+            (filler as any).jobs = {stop: (): void => { jobsStopped = true; }};
+            (filler as any).reader = {stopProcessing};
+            return {filler, jobsStopped: (): boolean => jobsStopped};
+        };
+
+        it('stops the reader, so the ship socket is closed before the process exits', async () => {
+            const closed = sinon.stub().resolves();
+            const {filler, jobsStopped} = stub(closed);
+
+            await filler.closeReaderBeforeExit();
+
+            expect(closed.calledOnce).to.equal(true);
+            expect(jobsStopped()).to.equal(true);
+            expect((filler as any).running).to.equal(false);
+        });
+
+        it('swallows a close failure, so a wedged reader cannot hold up the exit', async () => {
+            const {filler} = stub(() => Promise.reject(new Error('socket already gone')));
+
+            await filler.closeReaderBeforeExit();
         });
     });
 

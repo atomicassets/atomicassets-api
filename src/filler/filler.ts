@@ -205,6 +205,8 @@ export default class Filler {
             if (this.reader.queueStopped) {
                 logger.error('Reader ' + this.config.name + ' - consumer queue is dead, exiting immediately for restart');
 
+                await this.closeReaderBeforeExit();
+
                 process.send({msg: 'failure'});
 
                 await new Promise(resolve => setTimeout(resolve, logInterval / 2 * 1000));
@@ -237,6 +239,8 @@ export default class Filler {
                 const staleTime = Date.now() - lastBlockTime;
 
                 if (staleTime > timeout) {
+                    await this.closeReaderBeforeExit();
+
                     process.send({msg: 'failure'});
 
                     await new Promise(resolve => setTimeout(resolve, logInterval / 2 * 1000));
@@ -291,6 +295,19 @@ export default class Filler {
         setTimeout(() => this.jobs.start(), 5000);
 
         this.running = true;
+    }
+
+    // process.exit() abandons the ship websocket rather than closing it, so the
+    // node keeps a half-open state_history session until it works out the peer
+    // is gone. Both exit paths pause before exiting, which gives the close frame
+    // time to leave. A failure here must never block the exit, because a wedged
+    // reader is the case those paths exist to handle.
+    async closeReaderBeforeExit(): Promise<void> {
+        try {
+            await this.stopFiller();
+        } catch (error) {
+            logger.error('Failed to close the reader before exit', error);
+        }
     }
 
     async stopFiller(): Promise<void> {
