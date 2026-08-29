@@ -64,7 +64,7 @@
     "compression": "^1.8.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
+    "express-rate-limit": "^8.6.2",
     "iovalkey": "^0.3.3",
     "moize": "^6.1.1",
     "p-queue": "^9.3.1",
