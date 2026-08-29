@@ -17,6 +17,7 @@
   },
 
   "ip_whitelist": [],
+  "peer_whitelist": [],
   "slow_query_threshold": 7500,
 
   "max_query_time_ms": 10000,

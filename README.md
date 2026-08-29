@@ -211,7 +211,12 @@ Three JSON files in `config/` drive runtime behaviour:
 - `readers.config.json`: which chains the filler will index, contract
   filters, start block, and dataset selection.
 - `server.config.json`: HTTP server port, rate limits, CORS, cache
-  policies, provider name and URL displayed in `/docs`.
+  policies, provider name and URL displayed in `/docs`. Its `ip_whitelist`
+  and `peer_whitelist` entries are exact addresses or CIDR ranges, and a
+  listed client skips the rate limit and the response cache. `ip_whitelist`
+  matches `req.ip`, which follows `trust_proxy` and may come from a forwarded
+  header. `peer_whitelist` matches the TCP peer address of the connection,
+  which no forwarded header can alter.
 
 See `config/*.example.json` for working starting values. They are examples
 rather than a complete reference: `IReaderConfig` and its siblings in

@@ -21,6 +21,7 @@ const makeRedis = (): RedisLike => ({
 
 const makeReq = (): express.Request => ({
     ip: '127.0.0.1',
+    socket: {remoteAddress: '192.0.2.10'},
     baseUrl: '/atomicassets/v1',
     path: '/accounts/test-account',
     query: {},
@@ -94,6 +95,39 @@ describe('expressRedisCache', () => {
         sinon.restore();
     });
 
+    it('bypasses the cache for a client the predicate matches on req.ip', () => {
+        const redis = makeRedis();
+        const handler = expressRedisCache(redis as never, 'test-prefix', 60, (req) => req.ip === '127.0.0.1');
+        const next = sinon.spy();
+
+        handler()(makeReq(), makeRes(), next);
+
+        expect(next.calledOnce).to.be.true;
+        expect(redis.get.called).to.be.false;
+    });
+
+    it('bypasses the cache for a client the predicate matches on the socket peer', () => {
+        const redis = makeRedis();
+        const handler = expressRedisCache(
+            redis as never, 'test-prefix', 60, (req) => req.socket.remoteAddress === '192.0.2.10'
+        );
+        const next = sinon.spy();
+
+        handler()(makeReq(), makeRes(), next);
+
+        expect(next.calledOnce).to.be.true;
+        expect(redis.get.called).to.be.false;
+    });
+
+    it('consults the cache for a client outside the whitelist', async () => {
+        const redis = makeRedis();
+        const handler = expressRedisCache(redis as never, 'test-prefix', 60, () => false);
+
+        await runMiddleware(handler(), makeReq(), makeRes(), 'small');
+
+        expect(redis.get.calledOnce).to.be.true;
+    });
+
     it('caches a small response via redis.set', async () => {
         const redis = makeRedis();
         const handler = expressRedisCache(redis as never, 'test-prefix', 60);
@@ -150,7 +184,7 @@ describe('expressRedisCache', () => {
         const redis = makeRedis();
         // Operator lowers the cap via server.config; a 500-byte body now exceeds it even
         // though it is far under the hardcoded 2 MB default.
-        const handler = expressRedisCache(redis as never, 'test-prefix', 60, [], 100);
+        const handler = expressRedisCache(redis as never, 'test-prefix', 60, undefined, 100);
         const middleware = handler();
 
         const req = makeReq();

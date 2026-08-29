@@ -23,7 +23,7 @@ export type ExpressRedisCacheHandler = (options?: ExpressRedisCacheOptions) => e
 const DEFAULT_MAX_CACHE_VALUE_BYTES = 2_000_000;
 
 export function expressRedisCache(
-    redis: RedisClientInstance, prefix: string, expire: number, whitelistedIPs?: string[],
+    redis: RedisClientInstance, prefix: string, expire: number, isWhitelisted?: (req: express.Request) => boolean,
     defaultMaxValueBytes: number = DEFAULT_MAX_CACHE_VALUE_BYTES
 ): ExpressRedisCacheHandler {
     return (options: ExpressRedisCacheOptions = {}) => {
@@ -35,7 +35,7 @@ export function expressRedisCache(
                 return next();
             }
 
-            if (whitelistedIPs && whitelistedIPs.indexOf(req.ip) >= 0) {
+            if (isWhitelisted && isWhitelisted(req)) {
                 return next();
             }
 
