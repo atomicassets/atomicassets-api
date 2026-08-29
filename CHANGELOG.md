@@ -10,13 +10,13 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
-## [2.4.0]
+## [2.3.3]
 
 Lets `ip_whitelist` name address ranges, so a fleet of callers behind a private network can skip the rate limiter without listing every host, adds `peer_whitelist` for callers matched on the connection's own peer address, and warns at startup when `trust_proxy` lets a forwarded header reach `ip_whitelist`.
 
 ### Upgrading
 
-- Image `ghcr.io/atomicassets/atomicassets-api:2.4.0`. The `2.4` and `latest` tags move to it.
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.3`. The `2.3` and `latest` tags move to it.
 - The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
 - The server validates every `ip_whitelist` and `peer_whitelist` entry at startup and refuses to start on one that is neither an address nor a CIDR range, naming the list and the entry in the error. A malformed `ip_whitelist` entry was silently ignored before, so check the list before the upgrade.
 
