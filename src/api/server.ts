@@ -18,6 +18,7 @@ import ConnectionManager from '../connections/manager';
 import {IServerConfig} from '../types/config';
 import logger from '../utils/winston';
 import {expressRedisCache, ExpressRedisCacheHandler} from '../utils/cache';
+import {compileRequestWhitelist, warnIfWhitelistTrustsForwardedHeader} from '../utils/ip-whitelist';
 import {eosioTimestampToDate} from '../utils/eosio';
 import swagger from 'swagger-ui-express';
 import {getOpenApiDescription, LogSchema} from './docs';
@@ -162,6 +163,9 @@ class WebServer {
         }));
         this.express.use(compression());
 
+        const isWhitelisted = compileRequestWhitelist(this.server.config);
+        warnIfWhitelistTrustsForwardedHeader(this.server.config);
+
         if (this.server.config.rate_limit) {
             const client = this.server.connection.redis.ioRedis;
 
@@ -179,7 +183,7 @@ class WebServer {
 
                 keyGenerator, store,
 
-                skip: (req: express.Request) => this.server.config.ip_whitelist.indexOf(req.ip) >= 0,
+                skip: (req: express.Request) => isWhitelisted(req),
                 handler: (req: express.Request, res: express.Response): any => {
                     res.status(429).json({success: false, message: 'Rate limit'});
                 },
@@ -193,18 +197,26 @@ class WebServer {
 
                 this.limiter = async (req: express.Request, res: express.Response, next: express.NextFunction): Promise<void> => {
                     const requestTime = Date.now();
+                    // A whitelisted caller skips the rate limiter below, so it must
+                    // also skip billing here. Otherwise a slow request from a
+                    // whitelisted peer still bills whatever bucket keyGenerator
+                    // derives from req.ip, which is another client's bucket once
+                    // trust_proxy reads req.ip from a forwarded header.
+                    const skipBilling = isWhitelisted(req);
 
                     const sendFn: Send = res.send.bind(res);
 
                     res.send = (data): express.Response => {
-                        (async (): Promise<void> => {
-                            const limitExceeded = Math.ceil((Date.now() - requestTime) / 1000) - 1;
-                            const key = keyGenerator(req);
+                        if (!skipBilling) {
+                            (async (): Promise<void> => {
+                                const limitExceeded = Math.ceil((Date.now() - requestTime) / 1000) - 1;
+                                const key = keyGenerator(req);
 
-                            for (let i = 0; i < limitExceeded; i++) {
-                                await store.increment(key);
-                            }
-                        })();
+                                for (let i = 0; i < limitExceeded; i++) {
+                                    await store.increment(key);
+                                }
+                            })();
+                        }
 
                         return sendFn(data) as unknown as express.Response;
                     };
@@ -218,7 +230,7 @@ class WebServer {
             this.server.connection.redis.ioRedis,
             'eosio-contract-api:' + this.server.connection.chain.name + ':express-cache:',
             this.server.config.cache_life || 0,
-            this.server.config.ip_whitelist || [],
+            isWhitelisted,
             this.server.config.cache_max_value_bytes
         );
 

@@ -47,7 +47,11 @@ export interface IServerConfig {
         bill_execution_time?: boolean
     };
 
+    // exact addresses or CIDR ranges; a listed client skips the rate limit and the response cache.
+    // ip_whitelist matches req.ip, which follows trust_proxy and may come from a forwarded header;
+    // peer_whitelist matches the TCP peer address of the connection, which no header can alter
     ip_whitelist: string[];
+    peer_whitelist?: string[];
     cors?: string[];
     slow_query_threshold: number;
 
