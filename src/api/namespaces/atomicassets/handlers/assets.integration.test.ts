@@ -13,6 +13,12 @@ async function getAssetIds(values: RequestValues): Promise<Array<number> | strin
     return await getRawAssetsAction(values, testContext);
 }
 
+async function getAssetCount(values: RequestValues): Promise<string> {
+    const testContext = getTestContext(client);
+
+    return await getRawAssetsAction({...values, count: 'true'}, testContext) as string;
+}
+
 describe('AtomicAssets Assets API', () => {
 
     describe('getRawAssetsAction V1', () => {
@@ -427,18 +433,51 @@ describe('AtomicAssets Assets API', () => {
 
             const {asset_id} = await client.createAsset();
 
-            const result = await getAssetIds({ids: `${asset_id}`, count: 'true'});
+            const result = await getAssetCount({ids: `${asset_id}`});
 
             expect(result).to.equal('1');
         });
 
-        txit('count + sort=name skips the templates JOIN', async () => {
-            // Regression guard: getRawAssetsAction's `needsTemplateJoin`
-            // forces the LEFT JOIN to atomicassets_templates when
-            // sort === 'name', but count requests short-circuit before
-            // any ORDER BY is applied - so the JOIN is pure overhead on
-            // the count path. Production observed the count plan drop
-            // from ~11.5M to ~2.7M rows when the JOIN was removed.
+        txit('returns count from aggregate table without filters', async () => {
+            await client.createAsset({owner: null});
+            await client.createAsset();
+
+            expect(await getAssetCount({})).to.equal('2');
+        });
+
+        txit('returns count from aggregate table for burned filter', async () => {
+            await client.createAsset({owner: null});
+            await client.createAsset();
+
+            expect(await getAssetCount({burned: 'true'})).to.equal('1');
+            expect(await getAssetCount({burned: 'false'})).to.equal('1');
+        });
+
+        txit('returns count from aggregate table for collection and template filters', async () => {
+            const {collection_name} = await client.createCollection({collection_name: 'x'});
+            const {template_id} = await client.createTemplate({collection_name});
+
+            await client.createAsset({collection_name, template_id});
+            await client.createAsset({collection_name});
+            await client.createAsset();
+
+            expect(await getAssetCount({collection_name})).to.equal('2');
+            expect(await getAssetCount({template_id})).to.equal('1');
+            expect(await getAssetCount({template_id: 'null'})).to.equal('2');
+        });
+
+        txit('falls back to raw count for owner filter', async () => {
+            await client.createAsset({owner: 'alice'});
+            await client.createAsset({owner: 'bob'});
+
+            expect(await getAssetCount({owner: 'alice'})).to.equal('1');
+        });
+
+        txit('count + sort=name uses the aggregate table and skips the templates JOIN', async () => {
+            // Fast path: unfiltered counts read atomicassets_asset_counts.
+            // sort=name does not consume a template column on the count
+            // path, so the templates JOIN stays off (same gate as the
+            // raw COUNT(*) fallback).
             await client.createAsset();
             await client.createAsset();
 
@@ -462,8 +501,51 @@ describe('AtomicAssets Assets API', () => {
 
             expect(result).to.equal('2');
             expect(
+                observedQueries.some(q => /atomicassets_asset_counts/i.test(q)),
+                'unfiltered count must use atomicassets_asset_counts',
+            ).to.equal(true);
+            expect(
+                observedQueries.some(q => /FROM atomicassets_assets/i.test(q)),
+                'unfiltered count must not scan atomicassets_assets',
+            ).to.equal(false);
+            expect(
                 observedQueries.some(q => /LEFT JOIN atomicassets_templates/i.test(q)),
                 'count requests must not JOIN atomicassets_templates even when sort=name',
+            ).to.equal(false);
+        });
+
+        txit('count + owner + sort=name skips the templates JOIN on the raw fallback', async () => {
+            // owner is not a fast-count key, so we COUNT(*) over assets.
+            // sort=name still must not pull in the templates JOIN.
+            await client.createAsset({owner: 'alice'});
+            await client.createAsset({owner: 'bob'});
+
+            const observedQueries: string[] = [];
+            const recordingDb = {
+                query: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.query(text, values);
+                },
+                fetchOne: (text: string, values?: any[]) => {
+                    observedQueries.push(text);
+                    return client.fetchOne(text, values);
+                },
+            };
+            const ctx = getTestContext(recordingDb as any);
+
+            const result = await getRawAssetsAction(
+                {count: 'true', sort: 'name', owner: 'alice'},
+                ctx,
+            );
+
+            expect(result).to.equal('1');
+            expect(
+                observedQueries.some(q => /SELECT COUNT\(\*\)/i.test(q)),
+                'owner count must fall back to raw COUNT(*)',
+            ).to.equal(true);
+            expect(
+                observedQueries.some(q => /LEFT JOIN atomicassets_templates/i.test(q)),
+                'raw count fallback must not JOIN atomicassets_templates even when sort=name',
             ).to.equal(false);
         });
 
