@@ -324,7 +324,7 @@ export async function getAssetLogsAction(params: RequestValues, ctx: AtomicAsset
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        applyActionGreylistFilters(['logmint', 'logburnasset', 'logbackasset', 'logsetdata'], args),
+        applyActionGreylistFilters(['logmint', 'logburnasset', 'logbackasset', 'logsetdata', 'logrampayer'], args),
         {asset_id: args.asset_id},
         (args.page - 1) * args.limit, args.limit, args.order
     );
