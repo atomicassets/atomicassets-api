@@ -309,12 +309,6 @@ export default class StateReceiver implements IShipConsumer {
                 commitSize = 1;
                 await db.rollbackReversibleBlocks(resp.this_block.block_num);
 
-                // The rollback restores rows. A handler that caches one in
-                // memory would otherwise keep the orphaned branch's value, and
-                // nothing later is guaranteed to correct it: the canonical
-                // branch need not repeat the delta that set it.
-                await this.processor.notifyFork(db);
-
                 this.notifier.sendFork(resp.block);
             }
 

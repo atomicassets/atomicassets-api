@@ -67,7 +67,6 @@ CREATE TABLE IF NOT EXISTS atomicmarket_config
     maximum_auction_duration integer NOT NULL,
     minimum_bid_increase double precision NOT NULL,
     auction_reset_duration integer NOT NULL,
-    v2_marker_block bigint,
     CONSTRAINT atomicmarket_config_pkey PRIMARY KEY (market_contract)
 );
 

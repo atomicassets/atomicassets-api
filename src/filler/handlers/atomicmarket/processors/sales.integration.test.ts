@@ -25,7 +25,7 @@ import { ModuleLoader } from '../../../modules';
 const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
 
-function createMockCore(overrides: Record<string, any> = {}, version?: string): any {
+function createMockCore(overrides: Record<string, any> = {}): any {
     return {
         args: {
             atomicmarket_account: MARKET_CONTRACT,
@@ -34,11 +34,6 @@ function createMockCore(overrides: Record<string, any> = {}, version?: string): 
             store_logs: false,
             ...overrides,
         },
-        config: version ? {version} : undefined,
-        // The flip is behind every block createBlock() hands out, so a registered
-        // version puts these tests under the bundle rules. The marker itself is
-        // covered by legacy-bundles.test.ts and processors/config.integration.test.ts.
-        v2MarkerBlock: version ? 1 : null,
     };
 }
 
@@ -67,23 +62,13 @@ describe('saleProcessor', () => {
         await client.end();
     });
 
-    // Re-registers the processor against a market contract version. Called
-    // without one for the default setup, where the handler has no config and the
-    // legacy bundle rules stay dormant.
-    function registerProcessor(version?: string): void {
-        if (destroyProcessor) {
-            destroyProcessor();
-        }
-
-        processor = new DataProcessor(ProcessingState.HEAD, createMockModuleLoader());
-        db = createTestTransaction(client);
-        destroyProcessor = saleProcessor(createMockCore({}, version) as any, processor, createMockNotifier());
-    }
-
     beforeEach(async () => {
         await client.query('BEGIN');
-        destroyProcessor = null;
-        registerProcessor();
+        processor = new DataProcessor(ProcessingState.HEAD, createMockModuleLoader());
+        db = createTestTransaction(client);
+        const core = createMockCore();
+        const notifier = createMockNotifier();
+        destroyProcessor = saleProcessor(core as any, processor, notifier);
     });
 
     afterEach(async () => {
@@ -92,28 +77,6 @@ describe('saleProcessor', () => {
         }
         await client.query('ROLLBACK');
     });
-
-    // The assets of a sale hang off the AtomicAssets offer it was started with,
-    // which is where the legacy bundle rules count them.
-    async function createOfferAssetsInDB(offerId: string, assetIds: string[]): Promise<void> {
-        for (const [index, assetId] of assetIds.entries()) {
-            await client.query(
-                'INSERT INTO atomicassets_offers_assets (contract, offer_id, owner, "index", asset_id) VALUES ($1, $2, $3, $4, $5)',
-                [ASSETS_CONTRACT, offerId, 'seller111111', index + 1, assetId]
-            );
-        }
-    }
-
-    async function startSaleInDB(saleId: string, offerId: string): Promise<void> {
-        const startData: LogSaleStartActionData = {
-            sale_id: saleId,
-            offer_id: offerId,
-        };
-        await processActionTrace(
-            processor, db, createBlock(), createTx(),
-            createActionTrace(MARKET_CONTRACT, 'logsalestart', startData)
-        );
-    }
 
     async function createSaleInDB(saleId: string, block?: any): Promise<void> {
         const b = block || createBlock();
@@ -285,78 +248,6 @@ describe('saleProcessor', () => {
             expect(replayedRow.final_price).to.equal(initialRow.final_price);
             expect(Number(replayedRow.updated_at_block)).to.equal(Number(initialRow.updated_at_block));
             expect(Number(replayedRow.updated_at_time)).to.equal(Number(initialRow.updated_at_time));
-        });
-    });
-
-    describe('purchasesale on a legacy bundle', () => {
-        async function purchase(saleId: string): Promise<any> {
-            const purchaseData: PurchaseSaleActionData = {
-                buyer: 'buyer1111111',
-                sale_id: saleId,
-                intended_delphi_median: '0',
-                taker_marketplace: 'taker1111111',
-            };
-            await processActionTrace(
-                processor, db, createBlock(), createTx(),
-                createActionTrace(MARKET_CONTRACT, 'purchasesale', purchaseData)
-            );
-
-            const result = await client.query(
-                'SELECT * FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
-                [MARKET_CONTRACT, saleId]
-            );
-
-            return result.rows[0];
-        }
-
-        it('records a bundle on a v2 contract as canceled, with no buyer and no final price', async () => {
-            registerProcessor('2.0.0');
-            await createSaleInDB('500006');
-            await startSaleInDB('500006', '999006');
-            await createOfferAssetsInDB('999006', ['1001', '1002', '1003']);
-
-            const sale = await purchase('500006');
-
-            expect(sale.state).to.equal(SaleState.CANCELED.valueOf());
-            expect(sale.buyer).to.be.null;
-            expect(sale.final_price).to.be.null;
-            expect(sale.taker_marketplace).to.be.null;
-        });
-
-        it('records a single-asset sale on a v2 contract as sold', async () => {
-            registerProcessor('2.0.0');
-            await createSaleInDB('500007');
-            await startSaleInDB('500007', '999007');
-            await createOfferAssetsInDB('999007', ['1001']);
-
-            const sale = await purchase('500007');
-
-            expect(sale.state).to.equal(SaleState.SOLD.valueOf());
-            expect(sale.buyer).to.equal('buyer1111111');
-            expect(sale.final_price).to.equal(sale.listing_price);
-        });
-
-        it('records a sale that has no offer as canceled, because only the bundle branch reaches it', async () => {
-            registerProcessor('2.0.0');
-            await createSaleInDB('500009');
-
-            const sale = await purchase('500009');
-
-            expect(sale.state).to.equal(SaleState.CANCELED.valueOf());
-            expect(sale.buyer).to.be.null;
-            expect(sale.final_price).to.be.null;
-        });
-
-        it('records a bundle on a v1 contract as sold, because that contract still settles it', async () => {
-            registerProcessor('1.2.2');
-            await createSaleInDB('500008');
-            await startSaleInDB('500008', '999008');
-            await createOfferAssetsInDB('999008', ['1001', '1002', '1003']);
-
-            const sale = await purchase('500008');
-
-            expect(sale.state).to.equal(SaleState.SOLD.valueOf());
-            expect(sale.buyer).to.equal('buyer1111111');
         });
     });
 });

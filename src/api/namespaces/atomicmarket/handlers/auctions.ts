@@ -5,7 +5,6 @@ import {buildAuctionFilter} from '../utils';
 import {buildGreylistFilter} from '../../atomicassets/utils';
 import {fillAuctions} from '../filler';
 import {formatAuction} from '../format';
-import { marketDissolvesBundles } from '../market-version';
 import {ApiError} from '../../../error';
 import {applyActionGreylistFilters, getContractActionLogs} from '../../../utils';
 import {filterQueryArgs} from '../../validation';
@@ -52,9 +51,7 @@ export async function getAuctionsAction(params: RequestValues, ctx: AtomicMarket
         ')'
     );
 
-    const dissolvesBundles = await marketDissolvesBundles(ctx.db, ctx.coreArgs.atomicmarket_account);
-
-    await buildAuctionFilter(params, query, dissolvesBundles);
+    await buildAuctionFilter(params, query);
     await buildGreylistFilter(params, query, {collectionName: 'listing.collection_name'});
     await buildBoundaryFilter(
         params, query, 'listing.auction_id', 'int',
@@ -99,7 +96,7 @@ export async function getAuctionsAction(params: RequestValues, ctx: AtomicMarket
 
     return await fillAuctions(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        auctionResult.rows.map((row) => formatAuction(auctionLookup[String(row.auction_id)], dissolvesBundles))
+        auctionResult.rows.map((row) => formatAuction(auctionLookup[String(row.auction_id)]))
     );
 }
 
@@ -120,10 +117,8 @@ export async function getAuctionAction(params: RequestValues, ctx: AtomicMarketC
     if (query.rowCount === 0) {
         throw new ApiError('Auction not found', 416);
     }
-    const dissolvesBundles = await marketDissolvesBundles(ctx.db, ctx.coreArgs.atomicmarket_account);
     const auctions = await fillAuctions(
-        ctx.db, ctx.coreArgs.atomicassets_account,
-        query.rows.map(row => formatAuction(row, dissolvesBundles))
+        ctx.db, ctx.coreArgs.atomicassets_account, query.rows.map(formatAuction)
     );
 
     return auctions[0];

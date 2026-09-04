@@ -5,27 +5,10 @@ import { OfferState } from '../../../filler/handlers/atomicassets';
 import { DB } from '../../server';
 import { FillerHook } from '../atomicassets/filler';
 
-/**
- * `dissolvesBundles` says the market contract is on a version that cancels a
- * legacy bundle listing instead of settling it. An ended multi-asset auction
- * that neither side has claimed is then not sold and never will be: whichever
- * side claims it, the contract refunds the bid and returns the assets. It
- * reports INVALID, the state for an ended auction that cannot settle.
- *
- * A partially claimed one keeps reporting SOLD. One side was already served, so
- * the contract finishes it through the normal claim path and the remaining
- * claim is a real settlement that pays the collection fee to the author. This
- * matches auctionDissolvesAsLegacyBundle, which excludes the same auctions
- * filler-side, and the auction state filter in utils.ts, so a query by state
- * and a formatted row agree.
- */
-export function formatAuction(row: any, dissolvesBundles: boolean = false): any {
+export function formatAuction(row: any): any {
     const data = {...row};
 
     data.price.amount = row.raw_price;
-
-    const unclaimed = !row.claimed_by_buyer && !row.claimed_by_seller;
-    const endedBundle = dissolvesBundles && Array.isArray(row.assets) && row.assets.length > 1 && unclaimed;
 
     if (row.auction_state === AuctionState.WAITING.valueOf()) {
         data.state = AuctionApiState.WAITING.valueOf();
@@ -33,7 +16,7 @@ export function formatAuction(row: any, dissolvesBundles: boolean = false): any 
         data.state = AuctionApiState.LISTED.valueOf();
     } else if (row.auction_state === AuctionState.CANCELED.valueOf()) {
         data.state = AuctionApiState.CANCELED.valueOf();
-    } else if (row.auction_state === AuctionState.LISTED.valueOf() && row.end_time <= Date.now() / 1000 && row.buyer !== null && !endedBundle) {
+    } else if (row.auction_state === AuctionState.LISTED.valueOf() && row.end_time <= Date.now() / 1000 && row.buyer !== null) {
         data.state = AuctionApiState.SOLD.valueOf();
     } else {
         data.state = AuctionApiState.INVALID.valueOf();

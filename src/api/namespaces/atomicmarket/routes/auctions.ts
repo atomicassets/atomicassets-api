@@ -3,7 +3,6 @@ import express from 'express';
 import { AtomicMarketNamespace, AuctionApiState } from '../index';
 import { HTTPServer } from '../../../server';
 import { formatAuction } from '../format';
-import { marketDissolvesBundles } from '../market-version';
 import { fillAuctions } from '../filler';
 import {
     actionGreylistParameters,
@@ -183,11 +182,7 @@ export function auctionSockets(core: AtomicMarketNamespace, server: HTTPServer, 
             channel: 'auctions'
         });
 
-        const dissolvesBundles = await marketDissolvesBundles(server, core.args.atomicmarket_account);
-        const auctions = await fillAuctions(
-            server, core.args.atomicassets_account,
-            rows.map((row: any) => formatAuction(row, dissolvesBundles))
-        );
+        const auctions = await fillAuctions(server, core.args.atomicassets_account, rows.map((row: any) => formatAuction(row)));
 
         for (const notification of notifications) {
             if (notification.type === 'trace' && notification.data.trace) {
