@@ -15,10 +15,16 @@ export function formatAsset(row: any): any {
     };
 
     if (data.template) {
-        data.template.immutable_data = Object.assign({}, data.template.immutable_data);
         data.template.mutable_data = Object.assign({}, data.template.mutable_data);
+        data.template.immutable_data = Object.assign({}, data.template.immutable_data);
+
+        // The nested template layer is built the way formatTemplate builds a
+        // template response: mutable values first, immutable values over them.
         data.template.data = {...data.template.mutable_data, ...data.template.immutable_data};
 
+        // The asset's own layers sit between the template's two: a key the
+        // template holds immutably outranks the asset's copy of it, and a key
+        // the template holds mutably is the fallback the asset overrides.
         data['data'] = {
             ...data.template.mutable_data,
             ...data.mutable_data,

@@ -1,3 +1,35 @@
+-- Carry the template's mutable data and its deletion marks into the nested
+-- template object of atomicassets_assets_master.
+--
+-- The object listed immutable_data alone, so every asset response reported an
+-- empty template.mutable_data and a merged data without any key the template
+-- holds mutably. formatAsset already layers template.mutable_data underneath
+-- the asset's own data and openapi already documents the three fields, so the
+-- view was the only place the values were lost.
+--
+-- The replacement changes expressions inside one existing json column and adds
+-- no column, so CREATE OR REPLACE keeps the view's signature and every
+-- dependent view (atomicmarket_assets_master selects asset.*) stays valid with
+-- no DROP ... CASCADE. Nothing is rewritten on disk: a view holds no rows, so
+-- this is a catalog update whose cost does not scale with the table.
+--
+-- The timeouts repeat 2.0.6's and 2.0.7's treatment and cover the rest of the
+-- version transaction. The replacement takes ACCESS EXCLUSIVE on
+-- atomicassets_assets_master, which every asset read and every market listing
+-- read passes through, and the lock queue is FIFO, so a pending request parks
+-- those reads behind it. lock_timeout is 5s, the in-repo value for locking DDL:
+-- the cost of waiting is paid by API readers, not by this migration, so failing
+-- after 5s and letting the filler replay the version caps that cost at 5s per
+-- attempt where the runner's 60s session default would stall the path for a
+-- minute per filler boot. A version that can never take the lock crash-loops
+-- the filler, which is the loud failure this trades for. statement_timeout is
+-- lifted because the cap the migration path inherits was chosen for runtime
+-- queries; a statement waiting behind a long-running reader should fail on the
+-- lock timeout, not on a cap meant for something else.
+
+SET LOCAL statement_timeout = 0;
+SET LOCAL lock_timeout = '5s';
+
 CREATE OR REPLACE VIEW atomicassets_assets_master AS
     SELECT DISTINCT ON (asset.contract, asset.asset_id)
         asset.contract, asset.asset_id, asset.owner,
