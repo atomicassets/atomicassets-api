@@ -19,7 +19,6 @@ import {
     CreateAuthorSwapActionData,
     AcceptAuthorSwapActionData,
     RejectAuthorSwapActionData,
-    LogRamPayerActionData,
 } from '../types/actions';
 import { EosioActionTrace } from '../../../../types/eosio';
 import { ModuleLoader } from '../../../modules';
@@ -441,55 +440,5 @@ describe('logProcessor auswap metadata', () => {
                 acceptance_date: 1700604800,
             });
         });
-    });
-});
-
-describe('logProcessor asset RAM payer log', () => {
-    let client: Client;
-    let processor: DataProcessor;
-    let db: ContractDBTransaction;
-    let destroy: () => any;
-
-    before(async () => {
-        const ctx = createProcessorTestContext();
-        client = ctx.client;
-        await client.connect();
-    });
-
-    after(async () => {
-        await client.end();
-    });
-
-    beforeEach(async () => {
-        await client.query('BEGIN');
-        processor = new DataProcessor(ProcessingState.HEAD, createMockModuleLoader());
-        db = createTestTransaction(client);
-        destroy = logProcessor(createMockCore() as any, processor);
-    });
-
-    afterEach(async () => {
-        destroy();
-        await client.query('ROLLBACK');
-    });
-
-    it('records a logrampayer trace carrying the asset and both payers', async () => {
-        const data: LogRamPayerActionData = {
-            asset_owner: 'assetowner11',
-            asset_id: '1099511627776',
-            old_ram_payer: 'oldpayer1111',
-            new_ram_payer: 'newpayer1111',
-        };
-
-        processor.processActionTrace(createBlock(), createTx(), createActionTrace(CONTRACT, 'logrampayer', data));
-        await processor.executeHeadQueue(db);
-        await flushActionLogs(db);
-
-        const result = await client.query(
-            'SELECT metadata FROM contract_traces WHERE account = $1 AND name = $2',
-            [CONTRACT, 'logrampayer']
-        );
-
-        expect(result.rows).to.have.length(1);
-        expect(result.rows[0].metadata).to.deep.equal(data);
     });
 });

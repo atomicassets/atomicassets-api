@@ -10,20 +10,6 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
-## [Unreleased]
-
-Serves the AtomicAssets v2 action logs the filler already records, and records the RAM payer change the v2 contract emits.
-
-### Upgrading
-
-- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
-- `logrampayer` is a trace the filler had never stored. It is written from the first block a filler on this version reads, so `/v1/assets/{asset_id}/logs` reports RAM payer changes from that block forward and blocks already indexed carry none. Only a reindex over the affected range backfills them.
-
-### Bug fixes
-
-- Each per-entity `/logs` endpoint filters `contract_traces` by a fixed action list that 2.0.0 never extended, so traces the filler stored were never served. `/v1/templates/{collection_name}/{template_id}/logs` now returns `deltemplate`, `redtemplmax` and `logsetdatatl`, `/v1/collections/{collection_name}/logs` returns `createauswap`, `acceptauswap` and `rejectauswap`, and `/v1/schemas/{collection_name}/{schema_name}/logs` returns `setschematyp`. `action_whitelist` and `action_blacklist` narrow the extended lists the same way they narrowed the old ones.
-- A RAM payer change left no record the API could serve. Both v2 actions that move it, `setrampayer` and `setlastpayer`, emit `logrampayer` inline, and no handler read that trace. The filler now stores it with the asset id, the asset owner and both payers, and `/v1/assets/{asset_id}/logs` serves it. No column and no migration carry the payer; the trace is the whole record.
-
 ## [2.3.3]
 
 Lets `ip_whitelist` name address ranges, so a fleet of callers behind a private network can skip the rate limiter without listing every host, adds `peer_whitelist` for callers matched on the connection's own peer address, and warns at startup when `trust_proxy` lets a forwarded header reach `ip_whitelist`.

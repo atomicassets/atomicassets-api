@@ -155,13 +155,7 @@ export async function getCollectionLogsAction(params: RequestValues, ctx: Atomic
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        applyActionGreylistFilters(
-            [
-                'createcol', 'addcolauth', 'forbidnotify', 'remcolauth', 'remnotifyacc', 'setmarketfee', 'setcoldata',
-                'createauswap', 'acceptauswap', 'rejectauswap'
-            ],
-            args
-        ),
+        applyActionGreylistFilters(['createcol', 'addcolauth', 'forbidnotify', 'remcolauth', 'remnotifyacc', 'setmarketfee', 'setcoldata'], args),
         {collection_name: ctx.pathParams.collection_name},
         (args.page - 1) * args.limit, args.limit, args.order
     );

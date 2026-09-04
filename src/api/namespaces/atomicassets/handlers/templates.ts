@@ -191,10 +191,7 @@ export async function getTemplateLogsAction(params: RequestValues, ctx: AtomicAs
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        applyActionGreylistFilters(
-            ['lognewtempl', 'locktemplate', 'deltemplate', 'redtemplmax', 'logsetdatatl'],
-            args
-        ),
+        applyActionGreylistFilters(['lognewtempl', 'locktemplate'], args),
         {collection_name: ctx.pathParams.collection_name, template_id: parseInt(args.template_id, 10)},
         (args.page - 1) * args.limit, args.limit, args.order
     );

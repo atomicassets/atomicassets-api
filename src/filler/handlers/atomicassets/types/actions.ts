@@ -48,13 +48,6 @@ export type LogSetDataActionData = {
     new_data: DecodedAttributeMap
 };
 
-export type LogRamPayerActionData = {
-    asset_owner: string,
-    asset_id: string,
-    old_ram_payer: string,
-    new_ram_payer: string
-};
-
 export type AddColAuthActionData = {
     collection_name: string,
     account_to_add: string

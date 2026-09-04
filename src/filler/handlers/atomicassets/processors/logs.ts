@@ -21,7 +21,6 @@ import {
     LogMintAssetActionData,
     LogNewOfferActionData,
     LogNewTemplateActionData,
-    LogRamPayerActionData,
     LogSetDataActionData,
     LogSetSchemaTypeActionData,
     LogSetTemplateDataActionData,
@@ -208,22 +207,6 @@ export function logProcessor(core: AtomicAssetsHandler, processor: DataProcessor
                 asset_id: trace.act.data.asset_id,
                 old_data: trace.act.data.old_data,
                 new_data: trace.act.data.new_data
-            });
-        }, AtomicAssetsUpdatePriority.LOGS.valueOf()
-    ));
-
-    // Both v2 RAM actions, setrampayer and setlastpayer, emit logrampayer
-    // inline, so this one handler covers every RAM payer change. The trace is
-    // the only record of it: no column on atomicassets_assets holds the RAM
-    // payer, so the asset log is where a payer change becomes visible.
-    destructors.push(processor.onActionTrace(
-        contract, 'logrampayer',
-        async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogRamPayerActionData>): Promise<void> => {
-            await db.logTrace(block, tx, trace, {
-                asset_id: trace.act.data.asset_id,
-                asset_owner: trace.act.data.asset_owner,
-                old_ram_payer: trace.act.data.old_ram_payer,
-                new_ram_payer: trace.act.data.new_ram_payer
             });
         }, AtomicAssetsUpdatePriority.LOGS.valueOf()
     ));
