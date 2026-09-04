@@ -9,6 +9,7 @@ import { AcceptBuyofferActionData, CancelBuyofferActionData, DeclineBuyofferActi
 import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
 import logger from '../../../../utils/winston';
+import { buyofferDissolvesAsLegacyBundle } from '../legacy-bundles';
 
 export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];
@@ -76,6 +77,43 @@ export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProc
     destructors.push(processor.onActionTrace(
         contract, 'acceptbuyo',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<AcceptBuyofferActionData>): Promise<void> => {
+            // Replay guard: an ACCEPTED buyoffer was already settled, and the bundle
+            // rules below would rewrite a real purchase to DECLINED on a reader that
+            // rewinds over kept data. The sale path carries the same guard.
+            const existing = await db.query(
+                'SELECT state FROM atomicmarket_buyoffers WHERE market_contract = $1 AND buyoffer_id = $2',
+                [core.args.atomicmarket_account, trace.act.data.buyoffer_id]
+            );
+
+            if (existing.rowCount > 0 && existing.rows[0].state === BuyofferState.ACCEPTED.valueOf()) {
+                return;
+            }
+
+            const dissolved = await buyofferDissolvesAsLegacyBundle(
+                db, core.args.atomicmarket_account, trace.act.data.buyoffer_id,
+                {version: core.config?.version, markerBlock: core.v2MarkerBlock, blockNum: block.block_num}
+            );
+
+            if (dissolved) {
+                // v2 cannot accept a bundle: acceptbuyo refunds the buyer and erases the
+                // row, exactly like declinebuyo. Record the decline, and leave
+                // taker_marketplace unset because no trade settled. The action carries no
+                // memo, so the decline memo is empty.
+                await db.update('atomicmarket_buyoffers', {
+                    state: BuyofferState.DECLINED.valueOf(),
+                    decline_memo: '',
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                }, {
+                    str: 'market_contract = $1 AND buyoffer_id = $2',
+                    values: [core.args.atomicmarket_account, trace.act.data.buyoffer_id]
+                }, ['market_contract', 'buyoffer_id']);
+
+                notifier.sendActionTrace('buyoffers', block, tx, trace);
+
+                return;
+            }
+
             await db.update('atomicmarket_buyoffers', {
                 state: BuyofferState.ACCEPTED.valueOf(),
                 taker_marketplace: normalizeMarketplace(trace.act.data.taker_marketplace),

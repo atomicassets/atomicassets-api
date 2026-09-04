@@ -103,6 +103,90 @@ export function createMockNotifier(): any {
     };
 }
 
+export interface RecordedTrace {
+    channel: string;
+    trace: EosioActionTrace<any>;
+}
+
+export interface RecordingNotifier {
+    notifier: any;
+    /** Every action trace the processor queued, in order. */
+    traces: RecordedTrace[];
+}
+
+/**
+ * A notification sender that records what a processor queues instead of
+ * publishing it, for a test that asserts which socket event a path announces.
+ */
+export function createRecordingNotifier(): RecordingNotifier {
+    const traces: RecordedTrace[] = [];
+
+    return {
+        notifier: {
+            sendActionTrace: (channel: string, _block: ShipBlock, _tx: EosioTransaction, trace: EosioActionTrace<any>): void => {
+                traces.push({channel, trace});
+            },
+            sendContractRow: (): void => {},
+        },
+        traces,
+    };
+}
+
+// ---------------------------------------------------------------------------
+// Stub transaction for unit tests that must not reach a database
+// ---------------------------------------------------------------------------
+export interface StubQueryCall {
+    sql: string;
+    values: any[];
+}
+
+export interface StubWriteCall {
+    table: string;
+    values: any;
+    condition?: any;
+}
+
+export interface StubTransaction {
+    /** Pass this where a ContractDBTransaction is expected. */
+    db: any;
+    queries: StubQueryCall[];
+    updates: StubWriteCall[];
+    inserts: StubWriteCall[];
+}
+
+/**
+ * A ContractDBTransaction stand-in whose reads come from `respond` and whose
+ * writes are only recorded. `respond` receives each statement and its values
+ * and returns the rows to answer with; returning undefined answers with none.
+ */
+export function createStubTransaction(respond: (sql: string, values: any[]) => any[] | undefined): StubTransaction {
+    const queries: StubQueryCall[] = [];
+    const updates: StubWriteCall[] = [];
+    const inserts: StubWriteCall[] = [];
+
+    const db = {
+        query: async (sql: string, values: any[] = []): Promise<any> => {
+            queries.push({sql, values});
+
+            const rows = respond(sql, values) || [];
+
+            return {rows, rowCount: rows.length};
+        },
+        update: async (table: string, values: any, condition: any): Promise<any> => {
+            updates.push({table, values, condition});
+
+            return {rows: [], rowCount: 1};
+        },
+        insert: async (table: string, values: any): Promise<any> => {
+            inserts.push({table, values});
+
+            return {rows: [], rowCount: Array.isArray(values) ? values.length : 1};
+        },
+    };
+
+    return {db, queries, updates, inserts};
+}
+
 // ---------------------------------------------------------------------------
 // Mock data factories
 // ---------------------------------------------------------------------------

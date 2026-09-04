@@ -106,6 +106,13 @@ optimisation the migration headers below describe. The statements are in
 `definitions/migrations/2.0.8/atomicassets-deferred.sql`, and the version's
 `IF NOT EXISTS` guards then find them already built.
 
+### 2.0.9 sets the legacy bundle marker
+
+The migration is instant, and it marks a deployment that is already at the
+head of a v2 chain. On such a chain, rewind a reader after this upgrade rather
+than before it: the migration reads the stored reader row, and a rewound row
+would place the marker below the flip.
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are

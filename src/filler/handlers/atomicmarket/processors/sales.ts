@@ -12,6 +12,7 @@ import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
 import logger from '../../../../utils/winston';
+import { saleDissolvesAsLegacyBundle } from '../legacy-bundles';
 
 export function saleProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];
@@ -89,7 +90,7 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
             // the 2026-04-09 WAX 10,000x current_usd incident. The early-out also
             // skips the JOIN below during catchup, when most rows are already SOLD.
             const existing = await db.query(
-                'SELECT state, listing_price FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
+                'SELECT state, listing_price, offer_id, assets_contract FROM atomicmarket_sales WHERE market_contract = $1 AND sale_id = $2',
                 [core.args.atomicmarket_account, trace.act.data.sale_id]
             );
 
@@ -99,6 +100,29 @@ export function saleProcessor(core: AtomicMarketHandler, processor: DataProcesso
             }
 
             if (existing.rows[0].state === SaleState.SOLD.valueOf()) {
+                return;
+            }
+
+            const dissolved = await saleDissolvesAsLegacyBundle(
+                db, existing.rows[0].assets_contract, existing.rows[0].offer_id,
+                {version: core.config?.version, markerBlock: core.v2MarkerBlock, blockNum: block.block_num}
+            );
+
+            if (dissolved) {
+                // v2 cannot sell a bundle: purchasesale declines the offer, erases the
+                // sale and charges the buyer nothing. Record the cancel, and leave buyer
+                // and final_price unset because no trade settled.
+                await db.update('atomicmarket_sales', {
+                    state: SaleState.CANCELED.valueOf(),
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                }, {
+                    str: 'market_contract = $1 AND sale_id = $2',
+                    values: [core.args.atomicmarket_account, trace.act.data.sale_id]
+                }, ['market_contract', 'sale_id']);
+
+                // The socket api turns a purchasesale trace into the purchased_sale event,
+                // so this path sends nothing, the way cancelsale's trace reaches no event.
                 return;
             }
 
