@@ -38,11 +38,8 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
             'is_burnable', "template".burnable,
             'issued_supply', "template".issued_supply::text,
             'immutable_data', "template".immutable_data,
-            'mutable_data', "template".mutable_data,
             'created_at_time', "template".created_at_time::text,
-            'created_at_block', "template".created_at_block::text,
-            'deleted_at_time', "template".deleted_at_time::text,
-            'deleted_at_block', "template".deleted_at_block::text
+            'created_at_block', "template".created_at_block::text
         ) END AS "template",
 
         asset.mutable_data,

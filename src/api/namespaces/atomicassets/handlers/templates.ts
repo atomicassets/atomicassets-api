@@ -114,11 +114,7 @@ export async function getTemplatesAction(params: RequestValues, ctx: AtomicAsset
     }
 
     const sortColumnMapping: {[key: string]: string} = {
-        // Merged the way formatTemplate merges the response: mutable values
-        // first, immutable over them. Sorting on immutable_data alone orders a
-        // template that names itself mutably away from its own reported name,
-        // and match and search reach that name.
-        name: '(COALESCE(mutable_data, \'{}\') || COALESCE(immutable_data, \'{}\'))->>\'name\'',
+        name: 'immutable_data->>\'name\'',
         created: 'template_id'
     };
 

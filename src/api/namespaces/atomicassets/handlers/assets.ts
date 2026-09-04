@@ -144,7 +144,7 @@ export async function getRawAssetsAction(
     // actually consumes template columns (sort by template-derived name, the
     // is_transferable/is_burnable flags carried on the template, or any
     // data:* / template_data:* filter that compares against the template's
-    // data columns). Skipping it otherwise lets the planner use the
+    // immutable_data). Skipping it otherwise lets the planner use the
     // composite (contract, minted_at_time) index on assets_count-shape
     // queries; in production the count plan dropped from ~11.5M to ~2.7M
     // (Parallel Index Only Scan) when the join was removed.
@@ -205,7 +205,7 @@ export async function getRawAssetsAction(
             transferred: {column: 'asset.transferred_at_time', nullable: false, numericIndex: true},
             minted: {column: 'asset.asset_id', nullable: false, numericIndex: true},
             template_mint: {column: 'asset.template_mint', nullable: true, numericIndex: true},
-            name: {column: '(COALESCE(template.mutable_data, \'{}\') || COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true, numericIndex: false},
+            name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true, numericIndex: false},
             ...options?.extraSort,
         };
 
@@ -248,26 +248,12 @@ async function addTemplateFilter(query: QueryBuilder, ctx: AtomicAssetsContext, 
     const templateFilters = [];
     const sqlParams = [ctx.coreArgs.atomicassets_account];
 
-    // A template names itself in whichever data column its collection uses, so
-    // both filters read the mutable name alongside the immutable one. Each arm
-    // stays a plain expression over one column, so each is served by the
-    // trigram GIST index on that column's extracted name. Postgres builds a
-    // BitmapOr only when every arm is indexable, so leaving one arm unindexed
-    // would cost a sequential scan of the whole templates table.
     if (typeof match === 'string' && match.length > 0) {
-        const matchParam = sqlParams.push('%' + query.escapeLikeVariable(match) + '%');
-
-        templateFilters.push(
-            `((immutable_data->>'name') ILIKE $${matchParam} OR (mutable_data->>'name') ILIKE $${matchParam})`
-        );
+        templateFilters.push(`(immutable_data->>'name') ILIKE $${sqlParams.push('%' + query.escapeLikeVariable(match) + '%')}`);
     }
 
     if (typeof search === 'string' && search.length > 0) {
-        const searchParam = sqlParams.push('%' + query.escapeLikeVariable(search) + '%');
-
-        templateFilters.push(
-            `($${searchParam}::TEXT <% (immutable_data->>'name') OR $${searchParam}::TEXT <% (mutable_data->>'name'))`
-        );
+        templateFilters.push(`$${sqlParams.push('%' + query.escapeLikeVariable(search) + '%')}::TEXT <% (immutable_data->>'name')`);
     }
 
     if (!templateFilters.length) {

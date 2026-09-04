@@ -295,14 +295,6 @@ CREATE INDEX IF NOT EXISTS atomicassets_templates_template_id ON atomicassets_te
 CREATE INDEX IF NOT EXISTS atomicassets_templates_collection_name ON atomicassets_templates USING btree (collection_name);
 CREATE INDEX IF NOT EXISTS atomicassets_templates_schema_name ON atomicassets_templates USING btree (schema_name);
 CREATE INDEX IF NOT EXISTS atomicassets_templates_immutable_data_gin ON atomicassets_templates USING gin (immutable_data);
--- The template data filters test containment against both of the template's
--- data columns, so mutable_data carries the same jsonb_ops GIN index
--- immutable_data has. The trigram index the name comparisons need cannot live
--- here: this file runs during handler setup, ahead of every migration, and
--- pg_trgm is created by migrations/1.3.0/atomicmarket.sql. It ships beside
--- atomicassets_templates_name in the migrations instead. On an existing
--- database this index is built by migrations/2.0.8/atomicassets-deferred.sql.
-CREATE INDEX IF NOT EXISTS atomicassets_templates_mutable_data_gin ON atomicassets_templates USING gin (mutable_data);
 CREATE INDEX IF NOT EXISTS atomicassets_templates_created_at_time ON atomicassets_templates USING btree (created_at_time);
 
 CREATE INDEX IF NOT EXISTS atomicassets_schemas_schema_name ON atomicassets_schemas USING btree (schema_name);

@@ -117,7 +117,7 @@ export async function getSalesAction(params: RequestValues, ctx: AtomicMarketCon
         updated: {column: 'listing.updated_at_time', nullable: false},
         price: {column: 'listing.final_price', nullable: true},
         template_mint: {column: 'LOWER(listing.template_mint)', nullable: true},
-        name: {column: '(COALESCE(template.mutable_data, \'{}\') || COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
+        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
     };
 
     query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.sale_id ASC');

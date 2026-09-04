@@ -19,37 +19,6 @@ describe('buy offer handler', () => {
 
     describe('getBuyOffers', () => {
 
-        // The listing's own copy of the name sort expression carries the four
-        // layers formatAsset merges, so an asset named only through its
-        // template's mutable data orders on that name.
-        txit('orders by asset name from the template mutable data', async () => {
-            const buyOffer1 = await client.createBuyOffer();
-            const buyOffer2 = await client.createBuyOffer();
-
-            const asset1 = await client.createAsset({
-                template_id: (await client.createTemplate({
-                    mutable_data: {name: 'A'}
-                })).template_id,
-            });
-            await client.createBuyOfferAssets({
-                asset_id: asset1.asset_id,
-                buyoffer_id: buyOffer1.buyoffer_id,
-            });
-
-            const asset2 = await client.createAsset({
-                template_id: (await client.createTemplate({
-                    immutable_data: {name: 'Z'}
-                })).template_id,
-            });
-            await client.createBuyOfferAssets({
-                asset_id: asset2.asset_id,
-                buyoffer_id: buyOffer2.buyoffer_id,
-            });
-
-            expect(await getBuyOffersIds({sort: 'name', order: 'asc'}))
-                .to.deep.equal([buyOffer1.buyoffer_id, buyOffer2.buyoffer_id]);
-        });
-
         txit('orders by asset name', async () => {
 
             const buyOffer1 = await client.createBuyOffer();

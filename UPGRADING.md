@@ -75,7 +75,7 @@ tables stay empty until the contracts are upgraded on chain.
 
 ## How long it takes
 
-### From 1.7.x, seconds through 2.0.7
+### From 1.7.x, seconds
 
 None of the heavy index builds apply. `2.0.1`'s statement is
 `CREATE INDEX IF NOT EXISTS` and the 1.7 line already created that index, so it
@@ -90,21 +90,6 @@ Measured upgrading from `1.7.27`:
 | 2.2 TB | 18 seconds |
 | 19 GB | under half a second |
 | 2.5 GB | under half a second |
-
-### 2.0.8 adds two index builds
-
-`2.0.8` breaks the pattern above, so budget for it separately. It builds a GIN
-index and a trigram GIST index over `atomicassets_templates`, both scanning the
-whole table. They run `CONCURRENTLY` from the deferred file, so they take no
-lock that blocks reads or writes, but `runMigrations` awaits the deferred lane
-with `statement_timeout` at its zero default: the filler's boot blocks until
-both finish, however long that is. The API server is unaffected and keeps
-serving throughout.
-
-Pre-building both `CONCURRENTLY` before the upgrade removes that wait, the same
-optimisation the migration headers below describe. The statements are in
-`definitions/migrations/2.0.8/atomicassets-deferred.sql`, and the version's
-`IF NOT EXISTS` guards then find them already built.
 
 ### From 1.3.x, hours
 
