@@ -28,6 +28,22 @@ describe('AtomicMarket Sales API', () => {
             expect(await getSalesIds({})).to.deep.equal([sale_id]);
         });
 
+        // The listing's own copy of the name sort expression carries the four
+        // layers formatAsset merges, so an asset named only through its
+        // template's mutable data orders on that name.
+        txit('orders by asset name from the template mutable data', async () => {
+            const templateA = await client.createTemplate({mutable_data: {name: 'A'}});
+            const offer1 = await client.createOfferAsset({}, {template_id: templateA.template_id});
+            const {sale_id: sale_id1} = await client.createSale({offer_id: offer1.offer_id});
+
+            const templateZ = await client.createTemplate({immutable_data: {name: 'Z'}});
+            const offer2 = await client.createOfferAsset({}, {template_id: templateZ.template_id});
+            const {sale_id: sale_id2} = await client.createSale({offer_id: offer2.offer_id});
+
+            expect(await getSalesIds({sort: 'name', order: 'asc'}))
+                .to.deep.equal([sale_id1, sale_id2]);
+        });
+
         context('with template_blacklist args', () => {
             txit('filter out the given template matching the blacklist', async () => {
                 //Included

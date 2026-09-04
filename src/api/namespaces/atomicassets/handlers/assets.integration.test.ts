@@ -4,6 +4,8 @@ import { RequestValues } from '../../utils';
 import { initAtomicAssetsTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
 import { getRawAssetsAction } from './assets';
+import { fillAssets } from '../filler';
+import { formatAsset } from '../format';
 
 const {client, txit} = initAtomicAssetsTest();
 
@@ -422,6 +424,74 @@ describe('AtomicAssets Assets API', () => {
                 .to.deep.equal([asset_id]);
         });
 
+        // A collection is free to keep an attribute on the template's mutable
+        // side, so the template data filters read both template data columns
+        // and such an attribute stays reachable.
+        txit('filters by template_data on a mutable template attribute', async () => {
+            await client.createAsset();
+
+            const {template_id} = await client.createTemplate({mutable_data: JSON.stringify({lore: 'origin'})});
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'template_data.lore': 'origin'}))
+                .to.deep.equal([asset_id]);
+        });
+
+        txit('filters by data on a mutable template attribute', async () => {
+            await client.createAsset();
+
+            const {template_id} = await client.createTemplate({mutable_data: JSON.stringify({weight: '80'})});
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'data:text.weight': '80'}))
+                .to.deep.equal([asset_id]);
+        });
+
+        txit('filters by template_data pairs split across both template columns', async () => {
+            await client.createAsset();
+
+            const {template_id} = await client.createTemplate({
+                immutable_data: JSON.stringify({rarity: 'common'}),
+                mutable_data: JSON.stringify({lore: 'origin'}),
+            });
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'template_data.rarity': 'common', 'template_data.lore': 'origin'}))
+                .to.deep.equal([asset_id]);
+        });
+
+        txit('filters by match (mutable template name)', async () => {
+            await client.createAsset();
+
+            const {template_id} = await client.createTemplate({mutable_data: JSON.stringify({name: 'prefix_par%_tial_postfix'})});
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'match': 'par%_tial'}))
+                .to.deep.equal([asset_id]);
+        });
+
+        txit('filters by search (mutable template name)', async () => {
+            await client.createAsset();
+
+            const {template_id} = await client.createTemplate({mutable_data: JSON.stringify({name: 'prefix_par%_tial_postfix'})});
+            const {asset_id} = await client.createAsset({template_id});
+
+            expect(await getAssetIds({'search': 'par%_tial'}))
+                .to.deep.equal([asset_id]);
+        });
+
+        // The asset's own mutable_data filter reads the asset columns only and
+        // must stay clear of the template columns the branch above now reads.
+        txit('filters by untyped mutable_data on the asset alone', async () => {
+            const {template_id} = await client.createTemplate({mutable_data: JSON.stringify({prop: 'this'})});
+            await client.createAsset({template_id});
+
+            const {asset_id} = await client.createAsset({mutable_data: JSON.stringify({prop: 'this'})});
+
+            expect(await getAssetIds({'mutable_data.prop': 'this'}))
+                .to.deep.equal([asset_id]);
+        });
+
         txit('returns count', async () => {
             await client.createAsset();
 
@@ -573,6 +643,26 @@ describe('AtomicAssets Assets API', () => {
                 .to.deep.equal([asset_id1, asset_id2]);
         });
 
+        // The sort key carries the same four layers formatAsset merges, so an
+        // asset that takes its name from the template's mutable side sorts on
+        // the name the response reports rather than on a null.
+        txit('orders by name when the name comes from the template mutable data', async () => {
+            const {template_id: template_id1} = await client.createTemplate({mutable_data: JSON.stringify({name: 'B'})});
+            const {asset_id: asset_id1} = await client.createAsset({template_id: template_id1});
+
+            const {template_id: template_id2} = await client.createTemplate({immutable_data: JSON.stringify({name: 'A'})});
+            const {asset_id: asset_id2} = await client.createAsset({template_id: template_id2});
+
+            expect(await getAssetIds({sort: 'name'}))
+                .to.deep.equal([asset_id1, asset_id2]);
+
+            const [asset] = await fillAssets(
+                client, 'aatest', [asset_id1], formatAsset, 'atomicassets_assets_master'
+            );
+
+            expect(asset.name).to.equal('B');
+        });
+
         txit('paginates', async () => {
             const {asset_id} = await client.createAsset();
 
@@ -617,6 +707,90 @@ describe('AtomicAssets Assets API', () => {
 
             expect(await getAssetIds({after, before}))
                 .to.deep.equal([asset_id]);
+        });
+    });
+
+    // The nested template object of atomicassets_assets_master carries
+    // mutable_data and both deletion marks, so an asset response reports the
+    // template's mutable keys in the merged data and tells a deleted template
+    // apart from a live one.
+    describe('asset response template layer', () => {
+
+        async function getAsset(assetId: string): Promise<any> {
+            const [asset] = await fillAssets(
+                client, 'aatest', [assetId], formatAsset, 'atomicassets_assets_master'
+            );
+
+            return asset;
+        }
+
+        txit('reports the template mutable data and the merged template layer', async () => {
+            const {template_id} = await client.createTemplate({
+                immutable_data: JSON.stringify({name: 'TheName', rarity: 'common'}),
+                mutable_data: JSON.stringify({weight: '80', rarity: 'stale'}),
+            });
+            const {asset_id} = await client.createAsset({template_id});
+
+            const asset = await getAsset(asset_id);
+
+            expect(asset.template.mutable_data).to.deep.equal({weight: '80', rarity: 'stale'});
+            expect(asset.template.immutable_data).to.deep.equal({name: 'TheName', rarity: 'common'});
+            expect(asset.template.data).to.deep.equal({name: 'TheName', rarity: 'common', weight: '80'});
+        });
+
+        txit('merges the template mutable data into the asset data', async () => {
+            const {template_id} = await client.createTemplate({
+                immutable_data: JSON.stringify({name: 'TheName'}),
+                mutable_data: JSON.stringify({weight: '80'}),
+            });
+            const {asset_id} = await client.createAsset({template_id});
+
+            const asset = await getAsset(asset_id);
+
+            expect(asset.data).to.deep.equal({name: 'TheName', weight: '80'});
+            expect(asset.name).to.equal('TheName');
+        });
+
+        // The layer order the endpoint has always served: the template's
+        // immutable values sit above the asset's own, and its mutable values
+        // sit below them as the fallback the asset overrides.
+        txit('keeps the asset data above the template mutable data and below the template immutable data', async () => {
+            const {template_id} = await client.createTemplate({
+                immutable_data: JSON.stringify({rarity: 'common'}),
+                mutable_data: JSON.stringify({weight: '80'}),
+            });
+            const {asset_id} = await client.createAsset({
+                template_id,
+                immutable_data: JSON.stringify({weight: '10', rarity: 'rare'}),
+            });
+
+            const asset = await getAsset(asset_id);
+
+            expect(asset.data.weight).to.equal('10');
+            expect(asset.data.rarity).to.equal('common');
+        });
+
+        txit('reports no deletion marks for a live template', async () => {
+            const {template_id} = await client.createTemplate();
+            const {asset_id} = await client.createAsset({template_id});
+
+            const asset = await getAsset(asset_id);
+
+            expect(asset.template.deleted_at_time).to.equal(null);
+            expect(asset.template.deleted_at_block).to.equal(null);
+        });
+
+        txit('carries a deleted template deletion marks into the asset response', async () => {
+            const {template_id} = await client.createTemplate({
+                deleted_at_block: 4711,
+                deleted_at_time: 4712,
+            });
+            const {asset_id} = await client.createAsset({template_id});
+
+            const asset = await getAsset(asset_id);
+
+            expect(asset.template.deleted_at_block).to.equal('4711');
+            expect(asset.template.deleted_at_time).to.equal('4712');
         });
     });
 

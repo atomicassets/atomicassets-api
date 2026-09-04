@@ -56,6 +56,37 @@ describe('auction handler', () => {
             });
         });
 
+        // The listing's own copy of the name sort expression carries the four
+        // layers formatAsset merges, so an asset named only through its
+        // template's mutable data orders on that name.
+        txit('orders by asset name from the template mutable data', async () => {
+            const auction1 = await client.createAuction();
+            const auction2 = await client.createAuction();
+
+            const asset1 = await client.createAsset({
+                template_id: (await client.createTemplate({
+                    mutable_data: {name: 'A'}
+                })).template_id,
+            });
+            await client.createAuctionAssets({
+                asset_id: asset1.asset_id,
+                auction_id: auction1.auction_id,
+            });
+
+            const asset2 = await client.createAsset({
+                template_id: (await client.createTemplate({
+                    immutable_data: {name: 'Z'}
+                })).template_id,
+            });
+            await client.createAuctionAssets({
+                asset_id: asset2.asset_id,
+                auction_id: auction2.auction_id,
+            });
+
+            expect(await getAuctionsIds({sort: 'name', order: 'asc'}))
+                .to.deep.equal([auction1.auction_id, auction2.auction_id]);
+        });
+
         txit('orders by asset name', async () => {
 
             const auction1 = await client.createAuction();
