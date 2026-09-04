@@ -4,6 +4,9 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getAuctionAction, getAuctionsAction} from './auctions';
+import {AuctionApiState} from '../index';
+import sinon from 'sinon';
+import {clearMarketVersionCache, MARKET_VERSION_CACHE_TTL_MS} from '../market-version';
 
 // TODO add more tests
 describe('auction handler', () => {
@@ -183,6 +186,152 @@ describe('auction handler', () => {
 
             expect(result.current_collection_fee).to.equal(0.09);
             expect(result.collection.market_fee).to.equal(0.05);
+        });
+    });
+
+    describe('legacy bundle auctions', () => {
+        // An ended auction with a bid derives SOLD at read time. On a v2 contract a
+        // multi-asset auction cannot settle, so it must derive INVALID instead, and
+        // the state filter has to agree with the formatted row.
+        const ENDED = Math.floor(Date.now() / 1000) - 3600;
+
+        // The api reads the contract version from atomicmarket_config, so a test
+        // sets the deployment's version by writing that row.
+        async function setMarketVersion(version: string): Promise<void> {
+            await client.query('DELETE FROM atomicmarket_config WHERE market_contract = $1', ['amtest']);
+            await client.query(
+                'INSERT INTO atomicmarket_config (' +
+                    'market_contract, assets_contract, delphi_contract, version, maker_market_fee, taker_market_fee, ' +
+                    'minimum_auction_duration, maximum_auction_duration, minimum_bid_increase, auction_reset_duration' +
+                ') VALUES ($1, $2, $3, $4, 0.01, 0.01, 3600, 2592000, 0.1, 120)',
+                ['amtest', 'aatest', 'dotest', version]
+            );
+
+            clearMarketVersionCache();
+        }
+
+        async function createEndedAuction(
+            assetCount: number, claims: Record<string, any> = {}
+        ): Promise<Record<string, any>> {
+            const auction = await client.createAuction({end_time: ENDED, buyer: 'bidder', ...claims});
+
+            for (let index = 1; index <= assetCount; index++) {
+                await client.createAuctionAssets({auction_id: auction.auction_id, index});
+            }
+
+            return auction;
+        }
+
+        txit('formats an ended bundle auction as invalid on a v2 contract', async () => {
+            await setMarketVersion('2.0.0');
+            const {auction_id} = await createEndedAuction(2);
+
+            const result = await getAuctionAction({}, getTestContext(client, {auction_id}));
+
+            expect(result.state).to.equal(AuctionApiState.INVALID.valueOf());
+        });
+
+        txit('formats an ended single-asset auction as sold on a v2 contract', async () => {
+            await setMarketVersion('2.0.0');
+            const {auction_id} = await createEndedAuction(1);
+
+            const result = await getAuctionAction({}, getTestContext(client, {auction_id}));
+
+            expect(result.state).to.equal(AuctionApiState.SOLD.valueOf());
+        });
+
+        txit('formats an ended bundle auction as sold on a v1 contract', async () => {
+            await setMarketVersion('1.2.2');
+            const {auction_id} = await createEndedAuction(2);
+
+            const result = await getAuctionAction({}, getTestContext(client, {auction_id}));
+
+            expect(result.state).to.equal(AuctionApiState.SOLD.valueOf());
+        });
+
+        txit('leaves an ended bundle auction out of a sold query on a v2 contract', async () => {
+            await setMarketVersion('2.0.0');
+            const bundle = await createEndedAuction(2);
+            const single = await createEndedAuction(1);
+
+            const result = await getAuctionsAction(
+                {state: String(AuctionApiState.SOLD.valueOf())}, getTestContext(client)
+            );
+
+            expect(result.map((row: any) => row.auction_id)).to.deep.equal([single.auction_id]);
+            expect(bundle.auction_id).to.not.be.undefined;
+        });
+
+        txit('puts an ended bundle auction in an invalid query on a v2 contract', async () => {
+            await setMarketVersion('2.0.0');
+            const bundle = await createEndedAuction(2);
+            await createEndedAuction(1);
+
+            const result = await getAuctionsAction(
+                {state: String(AuctionApiState.INVALID.valueOf())}, getTestContext(client)
+            );
+
+            expect(result.map((row: any) => row.auction_id)).to.deep.equal([bundle.auction_id]);
+        });
+
+        txit('keeps a partially claimed ended bundle auction sold, in the row and in the query', async () => {
+            // The remaining claim is a real settlement, so this one is not
+            // reclassified. formatAuction and the state filter have to agree on it.
+            await setMarketVersion('2.0.0');
+            const claimed = await createEndedAuction(2, {claimed_by_seller: true});
+
+            const row = await getAuctionAction({}, getTestContext(client, {auction_id: claimed.auction_id}));
+            const sold = await getAuctionsAction(
+                {state: String(AuctionApiState.SOLD.valueOf())}, getTestContext(client)
+            );
+            const invalid = await getAuctionsAction(
+                {state: String(AuctionApiState.INVALID.valueOf())}, getTestContext(client)
+            );
+
+            expect(row.state).to.equal(AuctionApiState.SOLD.valueOf());
+            expect(sold.map((entry: any) => entry.auction_id)).to.deep.equal([claimed.auction_id]);
+            expect(invalid.map((entry: any) => entry.auction_id)).to.deep.equal([]);
+        });
+
+        txit('follows a version flip under a running api, with no restart', async () => {
+            // The flip lands on a fleet nobody restarts, so the derived state has
+            // to follow the config row rather than the process lifetime.
+            await setMarketVersion('1.2.2');
+            const {auction_id} = await createEndedAuction(2);
+
+            const beforeFlip = await getAuctionAction({}, getTestContext(client, {auction_id}));
+            expect(beforeFlip.state).to.equal(AuctionApiState.SOLD.valueOf());
+
+            await client.query(
+                'UPDATE atomicmarket_config SET version = $1 WHERE market_contract = $2',
+                ['2.0.0', 'amtest']
+            );
+
+            // Same process, same namespace, only the clock moves past the cache TTL.
+            const clock = sinon.useFakeTimers({now: Date.now(), toFake: ['Date']});
+
+            try {
+                clock.tick(MARKET_VERSION_CACHE_TTL_MS + 1);
+
+                const afterFlip = await getAuctionAction({}, getTestContext(client, {auction_id}));
+
+                expect(afterFlip.state).to.equal(AuctionApiState.INVALID.valueOf());
+            } finally {
+                clock.restore();
+            }
+        });
+
+        txit('keeps an ended bundle auction in a sold query on a v1 contract', async () => {
+            await setMarketVersion('1.2.2');
+            const bundle = await createEndedAuction(2);
+            const single = await createEndedAuction(1);
+
+            const result = await getAuctionsAction(
+                {state: String(AuctionApiState.SOLD.valueOf())}, getTestContext(client)
+            );
+
+            expect(result.map((row: any) => row.auction_id).sort())
+                .to.deep.equal([bundle.auction_id, single.auction_id].sort());
         });
     });
 

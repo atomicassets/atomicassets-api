@@ -15,6 +15,7 @@ import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
 import { AuctionsTableRow } from '../types/tables';
+import { auctionDissolvesAsLegacyBundle } from '../legacy-bundles';
 
 export function auctionProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];
@@ -108,6 +109,31 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
     destructors.push(processor.onActionTrace(
         contract, 'auctionbid',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<AuctionBidActionData>): Promise<void> => {
+            const dissolved = await auctionDissolvesAsLegacyBundle(
+                db, contract, trace.act.data.auction_id,
+                {version: core.config?.version, markerBlock: core.v2MarkerBlock, blockNum: block.block_num}
+            );
+
+            if (dissolved) {
+                // v2 cannot take a bid on a bundle: auctionbid refunds the standing bid,
+                // returns the assets to the seller and erases the auction. Record the
+                // cancel, and keep this bid out of the bid list because it never stood.
+                // Buyer and price stay as the auction's last real state, the way
+                // cancelauct leaves them.
+                await db.update('atomicmarket_auctions', {
+                    state: AuctionState.CANCELED.valueOf(),
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                }, {
+                    str: 'market_contract = $1 AND auction_id = $2',
+                    values: [contract, trace.act.data.auction_id]
+                }, ['market_contract', 'auction_id']);
+
+                // The socket api turns an auctionbid trace into the new_bid event, so this
+                // path sends nothing, the way cancelauct's trace reaches no event.
+                return;
+            }
+
             await db.update('atomicmarket_auctions', {
                 buyer: trace.act.data.bidder,
                 price: preventInt64Overflow(trace.act.data.bid.split(' ')[0].replace('.', '')),
@@ -143,6 +169,28 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
     destructors.push(processor.onActionTrace(
         contract, 'auctclaimbuy',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<AuctionClaimBuyerActionData>): Promise<void> => {
+            const dissolved = await auctionDissolvesAsLegacyBundle(
+                db, contract, trace.act.data.auction_id,
+                {version: core.config?.version, markerBlock: core.v2MarkerBlock, blockNum: block.block_num}
+            );
+
+            if (dissolved) {
+                // v2 dissolves an unclaimed bundle auction the buyer tries to claim: the
+                // bid is refunded, the assets go back to the seller and the row is erased.
+                // An auction the seller already claimed is served by the normal claim
+                // below, which is what the version and claim check above admits.
+                await db.update('atomicmarket_auctions', {
+                    state: AuctionState.CANCELED.valueOf(),
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                }, {
+                    str: 'market_contract = $1 AND auction_id = $2',
+                    values: [contract, trace.act.data.auction_id]
+                }, ['market_contract', 'auction_id']);
+
+                return;
+            }
+
             await db.update('atomicmarket_auctions', {
                 claimed_by_buyer: true,
                 updated_at_block: block.block_num,
@@ -157,6 +205,28 @@ export function auctionProcessor(core: AtomicMarketHandler, processor: DataProce
     destructors.push(processor.onActionTrace(
         contract, 'auctclaimsel',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<AuctionClaimSellerActionData>): Promise<void> => {
+            const dissolved = await auctionDissolvesAsLegacyBundle(
+                db, contract, trace.act.data.auction_id,
+                {version: core.config?.version, markerBlock: core.v2MarkerBlock, blockNum: block.block_num}
+            );
+
+            if (dissolved) {
+                // v2 dissolves an unclaimed bundle auction the seller tries to claim: the
+                // bid is refunded, the assets go back to the seller and the row is erased.
+                // An auction the buyer already claimed is paid out through the normal
+                // claim below, which is what the version and claim check above admits.
+                await db.update('atomicmarket_auctions', {
+                    state: AuctionState.CANCELED.valueOf(),
+                    updated_at_block: block.block_num,
+                    updated_at_time: eosioTimestampToDate(block.timestamp).getTime()
+                }, {
+                    str: 'market_contract = $1 AND auction_id = $2',
+                    values: [contract, trace.act.data.auction_id]
+                }, ['market_contract', 'auction_id']);
+
+                return;
+            }
+
             await db.update('atomicmarket_auctions', {
                 claimed_by_seller: true,
                 updated_at_block: block.block_num,
