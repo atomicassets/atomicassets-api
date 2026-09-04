@@ -10,6 +10,20 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.3.4]
+
+Reverts the v2 fixes 2.3.3 ships, for a deployment that has to leave that release before the cause of a problem is known, and keeps the 2.3.3 schema in place.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.4`. The `2.3` and `latest` tags move to it.
+- No migration runs on this upgrade. The migration set stays at `2.0.9` and this code runs against it unchanged: `upgrade-db` applies only versions above the stored one, the replaced `atomicassets_assets_master` view carries three keys this code does not read, and the two template indexes and the `v2_marker_block` column go unused.
+- A filler on this release records a legacy bundle touch on a v2 chain as a completed trade, and the API reports an ended unclaimed bundle auction as sold. Rows written under 2.3.3 keep the recording 2.3.3 gave them.
+
+### Other changes
+
+- The changes of #204, #205 and #206 are reverted: asset responses drop `template.mutable_data`, the template filters and search read the immutable layer alone, the per-entity logs serve the v1 action lists, `logrampayer` is not stored, and the five market settlement handlers record the v1 outcome for a legacy bundle. (#204) (#205) (#206)
+
 ## [2.3.3]
 
 Lets `ip_whitelist` name address ranges, so a fleet of callers behind a private network can skip the rate limiter without listing every host, adds `peer_whitelist` for callers matched on the connection's own peer address, and warns at startup when `trust_proxy` lets a forwarded header reach `ip_whitelist`.
