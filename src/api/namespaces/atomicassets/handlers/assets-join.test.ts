@@ -48,6 +48,19 @@ const hasTemplateJoin = (captures: CapturedQuery[]): boolean =>
     captures.some(c => /LEFT JOIN atomicassets_templates/i.test(c.text));
 
 describe('getRawAssetsAction - needsTemplateJoin gate', () => {
+    for (const enabled of [undefined, true, false]) {
+        it(`fast count setting ${String(enabled)} selects the expected count source`, async () => {
+            const captures: CapturedQuery[] = [];
+            const ctx = stubContext(captures);
+            ctx.coreArgs.enable_fast_asset_counts = enabled;
+
+            await getRawAssetsAction({count: 'true'}, ctx);
+
+            expect(captures.some(c => /FROM atomicassets_asset_counts ac/.test(c.text))).to.equal(enabled !== false);
+            expect(captures.some(c => /SELECT COUNT\(\*\)/.test(c.text))).to.equal(enabled === false);
+        });
+    }
+
     it('count + sort=name uses the aggregate table and skips the templates JOIN', async () => {
         // Unfiltered `/atomicassets/v1/assets/_count?sort=name` must read
         // atomicassets_asset_counts and must not pull in

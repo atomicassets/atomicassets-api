@@ -223,6 +223,32 @@ rather than a complete reference: `IReaderConfig` and its siblings in
 `src/types/config.ts` carry keys the example files leave out, among them
 `ship_max_blocks_queue`, `delete_data` and `list_polls`.
 
+### Asset counts
+
+The `atomicassets` and `atomicmarket` namespaces accept an optional boolean
+`enable_fast_asset_counts` in their `args` in `server.config.json`. It defaults
+to `true`. Eligible `/v1/assets/_count` requests sum the existing
+`atomicassets_asset_counts` totals maintained by the filler.
+
+The fast path supports collection, schema and template filters, collection
+and template whitelists/blacklists, authorized collection accounts, burned
+state, transferable/burnable flags, and template name `match`/`search` across
+both immutable and mutable template data. Numeric zero in a template ID or
+template whitelist uses raw counting; `template_id=null` still selects assets
+without a template. Asset-level filters such as owner, IDs, data filters and
+bounds, and market price joins, also retain raw counting.
+
+If aggregate totals have drifted, set `"enable_fast_asset_counts": false` in
+the affected namespace's `args` and restart the API process. Set it in both
+namespaces if both are exposed. No image rebuild, filler restart or new
+migration is needed for this setting. Existing cached responses can remain
+until their configured `cache_life` expires. Raw counts can be slower or time
+out on large datasets; disabling fast counts does not repair aggregate totals
+or change other endpoints that already use them.
+
+Use `/atomicassets/v1/assets/_count` for AtomicAssets counts. The AtomicAssets
+listing endpoint does not support `count=true`.
+
 ### Filler throughput
 
 `readers.config.json` ships conservative values. A filler catching up from a

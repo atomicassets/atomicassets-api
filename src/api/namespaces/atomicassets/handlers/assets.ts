@@ -186,6 +186,12 @@ async function getFastAssetsCount(values: RequestValues, ctx: AtomicAssetsContex
         is_burnable: {type: 'bool'},
     });
 
+    // Aggregate zero represents a NULL template, which must not match a
+    // numeric zero ID. Check expanded lists, including alternate zero spellings.
+    if ([...args.template_id, ...args.template_whitelist].some(id => /^-?0+$/.test(id))) {
+        return null;
+    }
+
     const needsTemplateJoin = typeof args.is_transferable === 'boolean'
         || typeof args.is_burnable === 'boolean'
         || (typeof values.match === 'string' && values.match.length > 0)
@@ -254,15 +260,16 @@ async function getFastAssetsCount(values: RequestValues, ctx: AtomicAssetsContex
     }
 
     if (typeof values.match === 'string' && values.match.length > 0) {
+        const matchParam = query.addVariable('%' + query.escapeLikeVariable(values.match) + '%');
         query.addCondition(
-            'template.immutable_data->>\'name\' ILIKE ' +
-            query.addVariable('%' + query.escapeLikeVariable(values.match) + '%')
+            `(template.immutable_data->>'name') ILIKE ${matchParam} OR (template.mutable_data->>'name') ILIKE ${matchParam}`
         );
     }
 
     if (typeof values.search === 'string' && values.search.length > 0) {
+        const searchParam = query.addVariable('%' + query.escapeLikeVariable(values.search) + '%');
         query.addCondition(
-            `${query.addVariable('%' + query.escapeLikeVariable(values.search) + '%')}::TEXT <% (template.immutable_data->>'name')`
+            `${searchParam}::TEXT <% (template.immutable_data->>'name') OR ${searchParam}::TEXT <% (template.mutable_data->>'name')`
         );
     }
 
@@ -287,10 +294,9 @@ export async function getRawAssetsAction(
         count: {type: 'bool'}
     });
 
-    // Prefer the aggregate table for supported count filters so we never
-    // scan atomicassets_assets. Try this before building the listing query
-    // (the upstream commit built it first and threw the work away).
-    if (args.count && !options?.extraTables) {
+    // Eligible counts use aggregate totals before the listing query is built,
+    // avoiding asset scans and template preselection work on this path.
+    if (args.count && ctx.coreArgs.enable_fast_asset_counts !== false && !options?.extraTables) {
         const fastCount = await getFastAssetsCount(values, ctx);
 
         if (fastCount !== null) {
