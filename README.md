@@ -246,8 +246,8 @@ until their configured `cache_life` expires. Raw counts can be slower or time
 out on large datasets; disabling fast counts does not repair aggregate totals
 or change other endpoints that already use them.
 
-Use `/atomicassets/v1/assets/_count` for AtomicAssets counts. The AtomicAssets
-listing endpoint does not support `count=true`.
+Use `/atomicassets/v1/assets/_count` for AtomicAssets counts. The listing endpoint
+also accepts `count=true` and returns the count as a decimal string in `data`.
 
 ### Filler throughput
 
