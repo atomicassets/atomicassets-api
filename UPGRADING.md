@@ -17,6 +17,9 @@ recovery step: see
 
 **You do not hand-apply SQL.** Point the filler at the v2 image and it runs every
 pending migration in order, from a 1.3.x schema through to the current 2.0.x.
+The one exception is a database seeded at `2.0.0-rc1` through `2.0.0-rc3`,
+which needs a one-time cleanup before `2.0.8`. See
+[Removing release-candidate leftovers](#removing-release-candidate-leftovers).
 
 **How long it takes depends entirely on the version you start from**, by orders
 of magnitude. See [How long it takes](#how-long-it-takes) before choosing a
@@ -100,6 +103,10 @@ lock that blocks reads or writes, but `runMigrations` awaits the deferred lane
 with `statement_timeout` at its zero default: the filler's boot blocks until
 both finish, however long that is. The API server is unaffected and keeps
 serving throughout.
+
+A database seeded at `2.0.0-rc1` through `2.0.0-rc3` cannot enter this version
+until its rental leftovers are gone. See
+[Removing release-candidate leftovers](#removing-release-candidate-leftovers).
 
 Pre-building both `CONCURRENTLY` before the upgrade removes that wait, the same
 optimisation the migration headers below describe. The statements are in
@@ -393,14 +400,32 @@ candidates included a custodial-rental feature, an asset `holder` column and
 runner never revisits an applied version, so the rental schema survives the
 upgrade.
 
-No action is required. The leftovers are inert and later migrations apply cleanly
-over them. The one visible residue is a stale `"holder"` field in asset API
-responses, which comes from the outdated view definition rather than the objects
-themselves.
+Run the cleanup below before you upgrade to `2.3.3` or later. Migration
+`2.0.8` replaces `atomicassets_assets_master` with `CREATE OR REPLACE VIEW`,
+and Postgres refuses that statement when the new definition drops a column. A
+view that still lists `holder` fails the version with
+`42P16 cannot drop columns from view`, the transaction rolls back, `dbinfo`
+stays at `2.0.7`, and the filler crash-loops on every boot. Releases below
+`2.3.3` never rewrote the view, so the leftovers only showed as a stale
+`"holder"` field in asset API responses.
 
-To remove them, run the block below once from the repository root of your
-checkout, as the role that owns the views. The `\i` paths are psql meta-commands
-relative to that root. Pick a quiet window: the `DROP COLUMN` takes an
+Check whether your database is affected:
+
+```sql
+SELECT column_name FROM information_schema.columns
+ WHERE table_name = 'atomicassets_assets_master'
+ ORDER BY ordinal_position;
+```
+
+A trailing `holder` row means the cleanup is required. Without that row the
+block below is a no-op and you can skip it.
+
+If the filler is already crash-looping on `2.0.8`, stop it first so its retries
+do not queue behind the locks, run the block, then start it again. The next
+boot applies `2.0.8` and `2.0.9` normally.
+
+Run the block once from the repository root of your checkout, as the role that
+owns the views. The `\i` paths are psql meta-commands relative to that root. Pick a quiet window: the `DROP COLUMN` takes an
 access-exclusive lock on `atomicassets_assets`, and the dropped views are
 unavailable, until the transaction commits.
 
