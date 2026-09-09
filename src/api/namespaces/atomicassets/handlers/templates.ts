@@ -114,7 +114,11 @@ export async function getTemplatesAction(params: RequestValues, ctx: AtomicAsset
     }
 
     const sortColumnMapping: {[key: string]: string} = {
-        name: 'immutable_data->>\'name\'',
+        // Merged the way formatTemplate merges the response: mutable values
+        // first, immutable over them. Sorting on immutable_data alone orders a
+        // template that names itself mutably away from its own reported name,
+        // and match and search reach that name.
+        name: '(COALESCE(mutable_data, \'{}\') || COALESCE(immutable_data, \'{}\'))->>\'name\'',
         created: 'template_id'
     };
 
@@ -191,7 +195,10 @@ export async function getTemplateLogsAction(params: RequestValues, ctx: AtomicAs
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        applyActionGreylistFilters(['lognewtempl', 'locktemplate'], args),
+        applyActionGreylistFilters(
+            ['lognewtempl', 'locktemplate', 'deltemplate', 'redtemplmax', 'logsetdatatl'],
+            args
+        ),
         {collection_name: ctx.pathParams.collection_name, template_id: parseInt(args.template_id, 10)},
         (args.page - 1) * args.limit, args.limit, args.order
     );

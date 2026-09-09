@@ -544,6 +544,13 @@ export default class AtomicMarketHandler extends ContractHandler {
 
     config: ConfigTableRow;
 
+    // Last block still recorded under the pre-v2 rules for this market contract
+    // (atomicmarket_config.v2_marker_block, migration 2.0.9); the legacy bundle
+    // rules apply from the block after it. Null means the flip is unproven for
+    // this database and the rules stay off: see legacy-bundles.ts for why the
+    // stored version cannot gate them alone.
+    v2MarkerBlock: number | null = null;
+
     static async setup(client: PoolClient): Promise<boolean> {
         const existsQuery = await client.query(
             'SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2)',
@@ -721,6 +728,10 @@ export default class AtomicMarketHandler extends ContractHandler {
                 );
             }
 
+            // No marker: this seed reads the version at chain head, which proves
+            // nothing about where the flip sits. A reader that observes a later
+            // config delta records it then (processors/config.ts).
+            this.v2MarkerBlock = null;
             this.config = config;
         } else {
             this.args.delphioracle_account = configQuery.rows[0].delphi_contract;
@@ -735,6 +746,11 @@ export default class AtomicMarketHandler extends ContractHandler {
                 'SELECT * FROM atomicmarket_symbol_pairs WHERE market_contract = $1',
                 [this.args.atomicmarket_account]
             );
+
+            this.v2MarkerBlock = configQuery.rows[0].v2_marker_block === null ||
+                typeof configQuery.rows[0].v2_marker_block === 'undefined'
+                ? null
+                : Number(configQuery.rows[0].v2_marker_block);
 
             this.config = {
                 ...configQuery.rows[0],

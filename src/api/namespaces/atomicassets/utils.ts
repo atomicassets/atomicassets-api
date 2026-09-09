@@ -101,20 +101,46 @@ export function buildDataConditions(values: FilterValues, query: QueryBuilder, o
     }
 
     if (options.templateTable) {
-        if (Object.keys(templateCondition).length > 0) {
-            query.addCondition(options.templateTable + '.immutable_data @> ' + query.addVariable(JSON.stringify(templateCondition)) + '::jsonb');
+        // A template carries its data across two columns and a collection
+        // decides which one holds a given attribute, so every template-level
+        // condition below is satisfied by either column. Each requested pair
+        // gets its own disjunction rather than one containment test over the
+        // whole object: that keeps a filter naming one immutable key and one
+        // mutable key working, and it leaves each arm of the OR indexable by
+        // the jsonb_ops GIN index on its own column. Postgres builds a BitmapOr
+        // only when every arm is indexable, so an unindexed arm costs a
+        // sequential scan for the whole condition, not just for itself.
+        //
+        // The key and the value only ever reach the query inside a bind
+        // parameter, as one JSON object per pair. Neither is concatenated into
+        // the SQL text.
+        for (const [key, value] of Object.entries(templateCondition)) {
+            const pair = query.addVariable(JSON.stringify({[key]: value}));
+
+            query.addCondition(
+                `${options.templateTable}.immutable_data @> ${pair}::jsonb` +
+                ` OR ${options.templateTable}.mutable_data @> ${pair}::jsonb`
+            );
         }
 
+        // The name comparisons take the other index type: ILIKE and the <%
+        // word-similarity operator are served by the trigram GIST index on each
+        // column's extracted name, which a jsonb_ops GIN index cannot serve.
         if (typeof values.match === 'string' && values.match.length > 0) {
+            const match = query.addVariable('%' + query.escapeLikeVariable(values.match) + '%');
+
             query.addCondition(
-                options.templateTable + '.immutable_data->>\'name\' ILIKE ' +
-                query.addVariable('%' + query.escapeLikeVariable(values.match) + '%')
+                `${options.templateTable}.immutable_data->>'name' ILIKE ${match}` +
+                ` OR ${options.templateTable}.mutable_data->>'name' ILIKE ${match}`
             );
         }
 
         if (typeof values.search === 'string' && values.search.length > 0) {
+            const search = query.addVariable(values.search);
+
             query.addCondition(
-                `${query.addVariable(values.search)} <% (${options.templateTable}.immutable_data->>'name')`
+                `${search} <% (${options.templateTable}.immutable_data->>'name')` +
+                ` OR ${search} <% (${options.templateTable}.mutable_data->>'name')`
             );
         }
     }

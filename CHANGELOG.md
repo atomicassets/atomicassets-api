@@ -12,17 +12,32 @@ project follows semantic versioning.
 
 ## [2.3.3]
 
-Lets `ip_whitelist` name address ranges, so a fleet of callers behind a private network can skip the rate limiter without listing every host, adds `peer_whitelist` for callers matched on the connection's own peer address, and warns at startup when `trust_proxy` lets a forwarded header reach `ip_whitelist`.
+Readies the indexer for the AtomicMarket v2 upgrade: a legacy bundle listing touched under v2 records the contract's cancel instead of a trade.
 
 ### Upgrading
 
 - Image `ghcr.io/atomicassets/atomicassets-api:2.3.3`. The `2.3` and `latest` tags move to it.
-- The migration set is unchanged from 2.0.0, so the filler performs no database work on boot.
-- The server validates every `ip_whitelist` and `peer_whitelist` entry at startup and refuses to start on one that is neither an address nor a CIDR range, naming the list and the entry in the error. A malformed `ip_whitelist` entry was silently ignored before, so check the list before the upgrade.
+- The server validates every `ip_whitelist` and `peer_whitelist` entry at startup and refuses to start on one that is neither an address nor a CIDR range, naming the list and the entry in the error. A malformed `ip_whitelist` entry used to be ignored silently, so check both lists before you upgrade.
+- The migration set moves to `2.0.9`, and the filler applies it on boot. `2.0.8` replaces the `atomicassets_assets_master` view and builds two `CONCURRENTLY` indexes on `atomicassets_templates`, so a deployment with a large templates table stays down for the length of those builds. An interrupted build leaves an invalid index, so check `pg_index.indisvalid` for both with the query in `definitions/migrations/2.0.8/README.md`.
+- `2.0.9` adds one metadata-only column, `atomicmarket_config.v2_marker_block`. On a database whose stored market version is already v2, the backfill sets it from the furthest checkpoint of a reader that stood at the chain head, and it stays null for a reader still catching up or rewound before the upgrade, and on a chain still on v1, until that reader observes the flip.
+- The mutable-data repair covers the v1 asset and template endpoints, the `/v1/burns` filters and the name sort on the v1 market listings included. `/atomicmarket/v2/sales` is unchanged, so its name search and its data filters still do not see template mutable data.
+- A consumer reading `data` on an asset sees keys it did not see before, wherever the template holds them mutably. The layer order is unchanged.
+- `logrampayer` is stored from the first block a filler on this version reads. Blocks already indexed carry none, and only a reindex over that range backfills them.
+
+### Bug fixes
+
+- Asset responses carry `template.mutable_data`, `template.deleted_at_time` and `template.deleted_at_block`. All three were documented in the OpenAPI document and never populated, so `template.mutable_data` read `{}`, the merged `data` dropped every key a template holds mutably, and a template deleted on chain read the same as a live one. Every market listing carried the same gap and inherits the repair. (#204)
+- The `data.*` and `template_data.*` filters, and the `match` and `search` template name filters, read `atomicassets_templates.mutable_data` alongside `immutable_data` on the template, asset and burn endpoints. A value a collection stores mutably on its templates was reachable through no filter at all. Either column satisfies a requested pair on its own, so a filter naming one immutable key and one mutable key matches. (#204)
+- The per-entity `/logs` endpoints serve the AtomicAssets v2 actions the filler already stores. `/v1/templates/{collection_name}/{template_id}/logs` returns `deltemplate`, `redtemplmax` and `logsetdatatl`, `/v1/collections/{collection_name}/logs` returns `createauswap`, `acceptauswap` and `rejectauswap`, and `/v1/schemas/{collection_name}/{schema_name}/logs` returns `setschematyp`. `action_whitelist` and `action_blacklist` narrow the extended lists the same way they narrowed the old ones. (#205)
+- `/v1/assets/{asset_id}/logs` serves `logrampayer`, the trace both `setrampayer` and `setlastpayer` emit inline. No handler read that trace, so a RAM payer change left no record the API could serve. The filler stores it with the asset id, the asset owner and both payers, and no column or migration carries the payer. (#205)
+- The filler records the cancel a v2 contract performs on a legacy bundle listing. `purchasesale`, `auctionbid`, both auction claims and `acceptbuyo` each erase or refund such a listing, and all five used to be recorded as completed trades, so a bundle nobody could buy became a sale with a buyer and a price. A partially claimed bundle auction still records the normal claim, and a chain on a v1 contract keeps the old recording. (#206)
+- An ended legacy bundle auction that nobody has claimed reports `state` 4, invalid, from `/atomicmarket/v1/auctions` instead of `state` 3, sold. That auction can never settle, because a claim on a v2 contract refunds the bid and returns the assets. An auction on a v1 contract keeps the old state. (#206)
 
 ### Other changes
 
-- `ip_whitelist` in `server.config.json` accepts CIDR ranges as well as exact addresses, in IPv4 or IPv6 notation. The list is compiled once at startup with the matcher express uses for `trust proxy`, and both the rate limiter and the response cache consult the same predicate. An absent `ip_whitelist` key is treated as an empty list; before, it made the rate limiter throw on the first request. A second key, `peer_whitelist`, takes the same entries and matches the TCP peer address of the connection, `req.socket.remoteAddress`, which no forwarded header can alter; a request is whitelisted when either list matches. When `ip_whitelist` is non-empty and `trust_proxy` is `true` or a hop count, the server logs a warning at startup: `req.ip` then derives from a forwarded header a client can supply, so a client that forges the header takes any `ip_whitelist` entry, and directly connected callers belong in `peer_whitelist`.
+- `ip_whitelist` in `server.config.json` accepts CIDR ranges as well as exact addresses, in IPv4 or IPv6 notation. The rate limiter and the response cache consult the same list. An absent `ip_whitelist` key reads as an empty list, where before it made the rate limiter throw on the first request. (#201)
+- `peer_whitelist` takes the same entries and matches the TCP peer address of the connection, `req.socket.remoteAddress`, which no forwarded header can alter. A request is whitelisted when either list matches. (#201)
+- The server warns at startup when `ip_whitelist` is non-empty and `trust_proxy` is `true` or a hop count. `req.ip` then derives from a forwarded header a client can supply, so a client that forges the header takes any `ip_whitelist` entry. Put directly connected callers in `peer_whitelist`. (#201)
 
 ## [2.3.2]
 

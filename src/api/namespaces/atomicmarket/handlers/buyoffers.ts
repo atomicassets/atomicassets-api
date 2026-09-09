@@ -80,7 +80,7 @@ export async function getBuyOffersAction(params: RequestValues, ctx: AtomicMarke
         updated: {column: 'listing.updated_at_time', nullable: false},
         price: {column: 'listing.price', nullable: false},
         template_mint: {column: 'LOWER(listing.template_mint)', nullable: true},
-        name: {column: '(COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
+        name: {column: '(COALESCE(template.mutable_data, \'{}\') || COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
     };
 
     query.append('ORDER BY ' + sortMapping[args.sort].column + ' ' + args.order + ' ' + (sortMapping[args.sort].nullable ? 'NULLS LAST' : '') + ', listing.buyoffer_id ASC');

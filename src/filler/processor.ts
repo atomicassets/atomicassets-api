@@ -9,6 +9,10 @@ export type DeltaListener = (db: ContractDBTransaction, block: ShipBlock, delta:
 export type PriorityListener = (db: ContractDBTransaction) => Promise<any>;
 export type CommitListener = (db: ContractDBTransaction) => Promise<any>;
 export type CommittedListener = () => Promise<any>;
+// Called after a fork rollback has restored the database, so a handler can
+// re-read whatever it caches in memory. The rollback log restores rows, and it
+// cannot reach a handler's own fields.
+export type ForkListener = (db: ContractDBTransaction) => Promise<any>;
 
 export type ListenerOptions = {
     deserialize?: boolean,
@@ -51,6 +55,7 @@ export default class DataProcessor {
     private readonly priorityListeners: Array<{callback: PriorityListener, threshold: number, priority: number}>;
     private readonly commitListeners: Array<{callback: CommitListener, priority: number}>;
     private readonly committedListeners: Array<{callback: CommittedListener, priority: number}>;
+    private readonly forkListeners: Array<{callback: ForkListener, priority: number}>;
 
     private state: ProcessingState;
 
@@ -64,6 +69,7 @@ export default class DataProcessor {
 
         this.priorityListeners = [];
         this.committedListeners = [];
+        this.forkListeners = [];
 
         this.state = initialState;
         this.liveQueue = [];
@@ -231,6 +237,26 @@ export default class DataProcessor {
         };
     }
 
+    onFork(listener: ForkListener, priority = 100): () => void {
+        logger.debug('Fork listener registered', {priority});
+
+        const element = {callback: listener, priority};
+
+        this.forkListeners.push(element);
+
+        this.forkListeners.sort((a, b) => {
+            return a.priority - b.priority;
+        });
+
+        return (): void => {
+            const index = this.forkListeners.indexOf(element);
+
+            if (index >= 0) {
+                this.forkListeners.splice(index, 1);
+            }
+        };
+    }
+
     actionTraceNeeded(contract: string, action: string): { process: boolean, deserialize: boolean } {
         const listeners = this.traceListeners
             .filter(element => this.state === ProcessingState.HEAD || !element.options.headOnly)
@@ -373,6 +399,18 @@ export default class DataProcessor {
 
                 throw e;
             }
+        }
+    }
+
+    /**
+     * Runs after the receiver has rolled the database back over a fork, inside
+     * the same transaction, and before the replacement block is processed. A
+     * handler that caches a row in memory re-reads it here: rollbackReversible-
+     * Blocks restores the table and nothing else.
+     */
+    async notifyFork(db: ContractDBTransaction): Promise<void> {
+        for (const listener of this.forkListeners) {
+            await listener.callback(db);
         }
     }
 

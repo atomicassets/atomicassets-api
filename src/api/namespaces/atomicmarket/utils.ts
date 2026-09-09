@@ -204,7 +204,16 @@ export async function buildSaleFilter(values: FilterValues, query: QueryBuilder)
     }
 }
 
-export async function buildAuctionFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
+/**
+ * `dissolvesBundles` says the market contract is on a version that cancels a
+ * legacy bundle listing instead of settling it, which takes an ended
+ * multi-asset auction that neither side has claimed out of the derived SOLD
+ * state and puts it in INVALID. A partially claimed one stays SOLD, because the
+ * contract finishes it through the normal claim path. formatAuction in
+ * format.ts carries the same rule, so a query by state and a formatted row
+ * agree on what an ended bundle auction is.
+ */
+export async function buildAuctionFilter(values: FilterValues, query: QueryBuilder, dissolvesBundles: boolean = false): Promise<void> {
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
@@ -343,12 +352,30 @@ export async function buildAuctionFilter(values: FilterValues, query: QueryBuild
             stateConditions.push(`(listing.state = ${AuctionState.CANCELED.valueOf()})`);
         }
 
+        // A second asset row is what makes the auction a legacy bundle. The
+        // lookup rides the (market_contract, auction_id) primary key prefix.
+        // Both claim flags are nullable, so IS NOT TRUE rather than NOT: NOT
+        // NULL is NULL, which would drop the row from every state condition.
+        const bundleCondition =
+            '(EXISTS (SELECT * FROM atomicmarket_auctions_assets bundle_asset ' +
+            'WHERE bundle_asset.market_contract = listing.market_contract AND ' +
+            'bundle_asset.auction_id = listing.auction_id AND bundle_asset.index > 1) AND ' +
+            'listing.claimed_by_buyer IS NOT TRUE AND listing.claimed_by_seller IS NOT TRUE)';
+        const endedBundle = dissolvesBundles ? ` AND ${bundleCondition}` : '';
+        const notEndedBundle = dissolvesBundles ? ` AND NOT ${bundleCondition}` : '';
+
         if (args.state.split(',').indexOf(String(AuctionApiState.SOLD.valueOf())) >= 0) {
-            stateConditions.push(`(listing.state = ${AuctionState.LISTED.valueOf()} AND listing.end_time <= ${Math.floor(Date.now() / 1000)}::BIGINT AND listing.buyer IS NOT NULL)`);
+            stateConditions.push(`(listing.state = ${AuctionState.LISTED.valueOf()} AND listing.end_time <= ${Math.floor(Date.now() / 1000)}::BIGINT AND listing.buyer IS NOT NULL${notEndedBundle})`);
         }
 
         if (args.state.split(',').indexOf(String(AuctionApiState.INVALID.valueOf())) >= 0) {
             stateConditions.push(`(listing.state = ${AuctionState.LISTED.valueOf()} AND listing.end_time <= ${Math.floor(Date.now() / 1000)}::BIGINT AND listing.buyer IS NULL)`);
+
+            // An ended bundle auction with a standing bid cannot settle either, so
+            // it belongs here rather than in SOLD above.
+            if (dissolvesBundles) {
+                stateConditions.push(`(listing.state = ${AuctionState.LISTED.valueOf()} AND listing.end_time <= ${Math.floor(Date.now() / 1000)}::BIGINT AND listing.buyer IS NOT NULL${endedBundle})`);
+            }
         }
 
         query.addCondition('(' + stateConditions.join(' OR ') + ')');

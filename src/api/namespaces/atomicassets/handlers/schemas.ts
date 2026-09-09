@@ -130,7 +130,7 @@ export async function getSchemaLogsAction(params: RequestValues, ctx: AtomicAsse
 
     return await getContractActionLogs(
         ctx.db, ctx.coreArgs.atomicassets_account,
-        applyActionGreylistFilters(['createschema', 'extendschema'], args),
+        applyActionGreylistFilters(['createschema', 'extendschema', 'setschematyp'], args),
         {collection_name: ctx.pathParams.collection_name, schema_name: ctx.pathParams.schema_name},
         (args.page - 1) * args.limit, args.limit, args.order
     );

@@ -30,7 +30,7 @@ import { ModuleLoader } from '../../../modules';
 const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
 
-function createMockCore(overrides: Record<string, any> = {}): any {
+function createMockCore(overrides: Record<string, any> = {}, version?: string): any {
     return {
         args: {
             atomicmarket_account: MARKET_CONTRACT,
@@ -39,6 +39,11 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             store_logs: false,
             ...overrides,
         },
+        config: version ? {version} : undefined,
+        // The flip is behind every block createBlock() hands out, so a registered
+        // version puts these tests under the bundle rules. The marker itself is
+        // covered by legacy-bundles.test.ts and processors/config.integration.test.ts.
+        v2MarkerBlock: version ? 1 : null,
     };
 }
 
@@ -67,13 +72,23 @@ describe('auctionProcessor', () => {
         await client.end();
     });
 
-    beforeEach(async () => {
-        await client.query('BEGIN');
+    // Re-registers the processor against a market contract version. Called
+    // without one for the default setup, where the handler has no config and the
+    // legacy bundle rules stay dormant.
+    function registerProcessor(version?: string): void {
+        if (destroyProcessor) {
+            destroyProcessor();
+        }
+
         processor = new DataProcessor(ProcessingState.HEAD, createMockModuleLoader());
         db = createTestTransaction(client);
-        const core = createMockCore();
-        const notifier = createMockNotifier();
-        destroyProcessor = auctionProcessor(core as any, processor, notifier);
+        destroyProcessor = auctionProcessor(createMockCore({}, version) as any, processor, createMockNotifier());
+    }
+
+    beforeEach(async () => {
+        await client.query('BEGIN');
+        destroyProcessor = null;
+        registerProcessor();
     });
 
     afterEach(async () => {
@@ -83,13 +98,13 @@ describe('auctionProcessor', () => {
         await client.query('ROLLBACK');
     });
 
-    async function createAuctionInDB(auctionId: string, block?: any): Promise<void> {
+    async function createAuctionInDB(auctionId: string, block?: any, assetIds: string[] = ['1001', '1002']): Promise<void> {
         const b = block || createBlock();
         const tx = createTx();
         const data: LogNewAuctionActionData = {
             auction_id: auctionId,
             seller: 'seller111111',
-            asset_ids: ['1001', '1002'],
+            asset_ids: assetIds,
             starting_bid: '5.0000 WAX',
             duration: 86400,
             end_time: Math.floor(Date.now() / 1000) + 86400,
@@ -320,6 +335,108 @@ describe('auctionProcessor', () => {
             );
             expect(result.rows[0].claimed_by_seller).to.equal(true);
             expect(Number(result.rows[0].updated_at_block)).to.equal(claimBlock.block_num);
+        });
+    });
+
+    describe('legacy bundle auctions', () => {
+        async function bid(auctionId: string): Promise<void> {
+            const data: AuctionBidActionData = {
+                bidder: 'bidder111111',
+                auction_id: auctionId,
+                bid: '10.0000 WAX',
+                taker_marketplace: 'taker1111111',
+            };
+            await processActionTrace(
+                processor, db, createBlock(), createTx(),
+                createActionTrace(MARKET_CONTRACT, 'auctionbid', data)
+            );
+        }
+
+        async function readAuction(auctionId: string): Promise<any> {
+            const result = await client.query(
+                'SELECT * FROM atomicmarket_auctions WHERE market_contract = $1 AND auction_id = $2',
+                [MARKET_CONTRACT, auctionId]
+            );
+
+            return result.rows[0];
+        }
+
+        async function countBids(auctionId: string): Promise<number> {
+            const result = await client.query(
+                'SELECT COUNT(*) FROM atomicmarket_auctions_bids WHERE market_contract = $1 AND auction_id = $2',
+                [MARKET_CONTRACT, auctionId]
+            );
+
+            return parseInt(result.rows[0].count, 10);
+        }
+
+        it('records a bid on a v2 bundle as canceled, with no bid row and no winner', async () => {
+            registerProcessor('2.0.0');
+            await createAuctionInDB('700101');
+
+            await bid('700101');
+
+            const auction = await readAuction('700101');
+            expect(auction.state).to.equal(AuctionState.CANCELED.valueOf());
+            expect(auction.buyer).to.be.null;
+            expect(await countBids('700101')).to.equal(0);
+        });
+
+        it('records a bid on a v2 single-asset auction', async () => {
+            registerProcessor('2.0.0');
+            await createAuctionInDB('700102', undefined, ['1001']);
+
+            await bid('700102');
+
+            const auction = await readAuction('700102');
+            expect(auction.buyer).to.equal('bidder111111');
+            expect(auction.price).to.equal('100000');
+            expect(await countBids('700102')).to.equal(1);
+        });
+
+        it('records a bid on a v1 bundle, because that contract still takes it', async () => {
+            registerProcessor('1.2.2');
+            await createAuctionInDB('700103');
+
+            await bid('700103');
+
+            const auction = await readAuction('700103');
+            expect(auction.buyer).to.equal('bidder111111');
+            expect(await countBids('700103')).to.equal(1);
+        });
+
+        it('records a seller claim on an unclaimed v2 bundle as canceled', async () => {
+            registerProcessor('2.0.0');
+            await createAuctionInDB('700104');
+
+            const claimData: AuctionClaimSellerActionData = {auction_id: '700104'};
+            await processActionTrace(
+                processor, db, createBlock(), createTx(),
+                createActionTrace(MARKET_CONTRACT, 'auctclaimsel', claimData)
+            );
+
+            const auction = await readAuction('700104');
+            expect(auction.state).to.equal(AuctionState.CANCELED.valueOf());
+            expect(auction.claimed_by_seller).to.equal(false);
+        });
+
+        it('records the normal claim when the seller already claimed the v2 bundle', async () => {
+            registerProcessor('2.0.0');
+            await createAuctionInDB('700105');
+            await client.query(
+                'UPDATE atomicmarket_auctions SET claimed_by_seller = true WHERE market_contract = $1 AND auction_id = $2',
+                [MARKET_CONTRACT, '700105']
+            );
+
+            const claimData: AuctionClaimBuyerActionData = {auction_id: '700105'};
+            await processActionTrace(
+                processor, db, createBlock(), createTx(),
+                createActionTrace(MARKET_CONTRACT, 'auctclaimbuy', claimData)
+            );
+
+            const auction = await readAuction('700105');
+            expect(auction.claimed_by_buyer).to.equal(true);
+            expect(auction.state).to.equal(AuctionState.WAITING.valueOf());
         });
     });
 

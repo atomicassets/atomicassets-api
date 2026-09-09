@@ -23,22 +23,25 @@ import { filterQueryArgs } from '../../validation';
  * `assets.ts:157-163` (deliberately broad `data:` / `template_data:`
  * prefix coverage so a new typed prefix added to buildDataConditions
  * doesn't silently bypass the join):
- *  - `match`, `search`             -> template.immutable_data->>'name'
- *                                     (utils.ts:161-172; burns calls
+ *  - `match`, `search`             -> the template name, read from both
+ *                                     immutable_data and mutable_data
+ *                                     (buildDataConditions; burns calls
  *                                     buildAssetFilter directly rather
  *                                     than addTemplateFilter, so these
  *                                     belong in the gate)
- *  - `template_data.` / `:`        -> template.immutable_data
- *                                     (utils.ts:113, 157-159)
- *  - `data.` / `:`                 -> template.immutable_data when joined;
- *                                     degrades to asset.immutable_data
- *                                     when not joined (utils.ts:117-119),
- *                                     so the join changes the result set
- *                                     and we keep these triggering it
+ *  - `template_data.` / `:`        -> template.immutable_data or
+ *                                     template.mutable_data, either
+ *                                     column satisfying a given pair
+ *  - `data.` / `:`                 -> the same two template columns when
+ *                                     joined; degrades to
+ *                                     asset.immutable_data when not
+ *                                     joined, so the join changes the
+ *                                     result set and we keep these
+ *                                     triggering it
  *  - `is_transferable`,
  *    `is_burnable`                 -> template.transferable / burnable
  *                                     (silently dropped if templateTable
- *                                     is undefined; cf. utils.ts:259,267)
+ *                                     is undefined; cf. buildAssetFilter)
  */
 function burnsQueryNeedsTemplateJoin(params: RequestValues): boolean {
     for (const key of Object.keys(params)) {
