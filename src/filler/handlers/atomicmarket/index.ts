@@ -109,6 +109,34 @@ const TEMPLATE_PRICES_DRAIN_INTERVAL_S = positiveIntEnv('ATOMICMARKET_TEMPLATE_P
 const TEMPLATE_PRICES_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_BATCH_SIZE', 200);
 const TEMPLATE_PRICES_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_TEMPLATE_PRICES_DRAIN_BUDGET_MS', 55_000);
 
+// Bounded stats-market drain (see definitions/migrations/2.0.10). The recompute is
+// queue-driven: atomicmarket_stats_markets_updates carries the sales, auctions,
+// buyoffers and template buyoffers whose resolved stats row changed, and
+// update_atomicmarket_stats_market($1) claims at most $1 of them per call,
+// resolves them, and returns the number of queue rows released. The job loops
+// until the due queue is empty (released = 0), the per-tick budget elapses, or
+// the reader-priority gate flips.
+//
+// Before 2.0.10 this ran as ONE unbounded statement on the default runtime pool,
+// whose connection-level 30s statement_timeout is the only one PgBouncer
+// transaction pooling lets through. A backlog larger than 30s of work was
+// cancelled (57014) on every tick, the statement's own DELETE-claim rolled back
+// with it, and the queue grew instead of draining - a self-sustaining failure an
+// operator sees as the stats tables silently stopping. Bounding the batch is what
+// makes the per-batch SET LOCAL timeout below meaningful: an unbounded statement
+// would still outrun any ceiling.
+//
+// A batch is four primary-key-driven joins over at most BATCH_SIZE listings plus
+// one upsert, so seconds rather than minutes; STATEMENT_TIMEOUT_S is a cold-cache
+// ceiling, not a target, and WORK_MEM_MB holds the batch's hash aggregates in
+// memory rather than spilling to pgsql_tmp against the reader's block writes.
+// The 50s budget leaves the remainder of a 60s tick to the jobs sharing the tier.
+const STATS_MARKET_DRAIN_INTERVAL_S = positiveIntEnv('ATOMICMARKET_STATS_MARKET_DRAIN_INTERVAL_S', 60);
+const STATS_MARKET_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_STATS_MARKET_BATCH_SIZE', 1000);
+const STATS_MARKET_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_STATS_MARKET_DRAIN_BUDGET_MS', 50_000);
+const STATS_MARKET_STATEMENT_TIMEOUT_S = positiveIntEnv('ATOMICMARKET_STATS_MARKET_STATEMENT_TIMEOUT_S', 300);
+const STATS_MARKET_WORK_MEM_MB = positiveIntEnv('ATOMICMARKET_STATS_MARKET_WORK_MEM_MB', 256);
+
 // Sliced cadence for refresh_atomicmarket_sales_filters_price(slice, total_slices).
 // 1.7.13: the former hourly single call bulk-enqueued every variable_price listing
 // (~235k rows on WAX) into the drain queue in one shot - even with the prio-1 bulk
@@ -130,8 +158,8 @@ const MINTS_BATCH_SIZE = positiveIntEnv('ATOMICMARKET_MINTS_BATCH_SIZE', 2000);
 const MINTS_DRAIN_BUDGET_MS = positiveIntEnv('ATOMICMARKET_MINTS_DRAIN_BUDGET_MS', 25_000);
 
 // `consumed` is the sales-filter drain's return column, `released` the
-// template-prices drain's; both come back as a string when pg maps the BIGINT/
-// numeric form, hence the union.
+// template-prices and stats-market drains'; both come back as a string when pg
+// maps the BIGINT/numeric form, hence the union.
 export interface DrainResultRow {
     consumed?: number | string;
     released?: number | string;
@@ -326,6 +354,68 @@ export async function drainAtomicmarketTemplatePrices(
         const rows = await runWithWorkMem(
             pool,
             'SELECT update_atomicmarket_template_prices($1) AS released',
+            workMemMb,
+            statementTimeoutS,
+            [batchSize],
+        );
+        released = Number(rows[0]?.released ?? 0);
+        total += released;
+    } while (released > 0 && now() < deadline && !shouldYield());
+    return total;
+}
+
+// Cheap EXISTS probe gating the stats-market drain (2.0.10). Due-ness is measured
+// against the READER'S BLOCK TIME, exactly as the claim inside
+// update_atomicmarket_stats_market() measures it, and never against wall clock:
+// an auction enqueues a boundary row at end_time * 1000 that only becomes
+// claimable once the reader reaches it, so on a lagging filler a wall-clock probe
+// would report work the claim will not take and wake the drain into an empty
+// batch every tick. Immediate rows carry refresh_at 0 and are always due, so a
+// queue holding real work always probes true.
+export const STATS_MARKET_WORK_PROBE_SQL = `SELECT EXISTS(
+                    SELECT 1 FROM atomicmarket_stats_markets_updates
+                    WHERE refresh_at <= (SELECT MAX(block_time) FROM contract_readers)
+                    LIMIT 1
+                ) AS has_work`;
+
+/**
+ * Drain atomicmarket_stats_markets_updates in bounded batches. Each
+ * `SELECT update_atomicmarket_stats_market($1)` claims at most batchSize due
+ * queue rows, resolves those listings into atomicmarket_stats_markets, releases
+ * the claimed rows guarded on their captured seq, and returns the number of
+ * QUEUE ROWS RELEASED, not the stats rows written, which is why a batch of
+ * already-current listings still reports progress and the burn-down is not
+ * capped at one batch per tick.
+ *
+ * Each batch runs in its own transaction via runWithWorkMem (raised work_mem,
+ * per-batch statement_timeout, async commit), so locks and the max-1
+ * longRunningPool client release between batches. The loop stops when the due
+ * queue is empty (released = 0), the time budget elapses, OR `shouldYield()`
+ * turns true.
+ *
+ * `shouldYield` is checked BETWEEN batches, which is what bounding the work buys:
+ * the single-statement recompute this replaces could not be interrupted once
+ * started, so a reader falling behind mid-run waited out the whole run - and the
+ * run itself was what the 30s pool ceiling cancelled. Wiring passes
+ * `() => filler.shouldDeferDrain()`.
+ * `shouldYield` and `now` are injectable for tests.
+ */
+export async function drainAtomicmarketStatsMarket(
+    pool: DrainPool,
+    batchSize: number,
+    budgetMs: number,
+    statementTimeoutS: number,
+    workMemMb: number,
+    shouldYield: () => boolean = () => false,
+    now: () => number = Date.now,
+): Promise<number> {
+    const deadline = now() + budgetMs;
+    let total = 0;
+    let released: number;
+    do {
+        const rows = await runWithWorkMem(
+            pool,
+            'SELECT update_atomicmarket_stats_market($1) AS released',
             workMemMb,
             statementTimeoutS,
             [batchSize],
@@ -938,21 +1028,45 @@ export default class AtomicMarketHandler extends ContractHandler {
             );
         });
 
-        this.filler.jobs.add('update_atomicmarket_stats_market', 60 * 2, JobQueuePriority.MEDIUM, async () => {
-            // Reader-priority gate: skip the stats recompute while the reader is catching up.
-            // update_atomicmarket_stats_market() processes every due row in
-            // atomicmarket_stats_markets_updates in a single unbounded statement, so against a
-            // catchup-sized backlog it busts this connection's statement_timeout on every 2min
-            // tick (57014) and contends with block-writes. It refreshes on the next tick once the
-            // reader is live. Mirrors the gate on update_atomicmarket_template_prices below and
-            // the sales-filter drain above.
-            if (this.filler.shouldDeferDrain()) {
-                return;
-            }
-            await this.connection.database.query(
-                'SELECT update_atomicmarket_stats_market()'
-            );
-        });
+        // Queue-driven, gated, bounded stats-market recompute (2.0.10). Same
+        // runGatedDrain sequencing as the other two drains: defer while the reader is
+        // catching up, else a cheap EXISTS probe, else the bounded batch loop. The
+        // probe measures due-ness against the reader's block time, matching the claim
+        // (see STATS_MARKET_WORK_PROBE_SQL).
+        //
+        // On longRunningPool, not the default pool. The default pool's 30s
+        // connection-level statement_timeout is what cancelled the unbounded recompute
+        // on every tick; runWithWorkMem's SET LOCAL would lift that on either pool, but
+        // a batch drawing a default client competes with block writes for it.
+        //
+        // MEDIUM shares the job queue's one-job-per-tier slot with the four mint
+        // backfills, which run on the default pool with 25s budgets, so no client
+        // contention follows from the tier. In steady state this drain returns
+        // 'no-work' in milliseconds and costs them nothing; during a backlog the slot
+        // alternates, which is the intended reader-safe degradation. What it does share
+        // with the HIGH sales-filter drain and the two LOW jobs is the max-1
+        // longRunningPool client, so all four serialize on it batch by batch whatever
+        // tier they sit in. LOW would be worse than MEDIUM here for a specific reason:
+        // every stats row this drain writes enqueues template-price work through
+        // 2.0.6's trigger, so putting it in the same slot as its own downstream
+        // consumer makes the two take turns instead of running back to back.
+        this.filler.jobs.add('update_atomicmarket_stats_market', STATS_MARKET_DRAIN_INTERVAL_S, JobQueuePriority.MEDIUM, () =>
+            runGatedDrain(
+                this.filler,
+                async () => (await longRunningPool.query(
+                    STATS_MARKET_WORK_PROBE_SQL
+                )).rows[0]?.has_work === true,
+                () => drainAtomicmarketStatsMarket(
+                    longRunningPool,
+                    STATS_MARKET_BATCH_SIZE,
+                    STATS_MARKET_DRAIN_BUDGET_MS,
+                    STATS_MARKET_STATEMENT_TIMEOUT_S,
+                    STATS_MARKET_WORK_MEM_MB,
+                    // yield between batches the moment the reader falls behind, so the
+                    // backlog waits instead of the reader
+                    () => this.filler.shouldDeferDrain(),
+                ),
+            ));
 
         // Queue-driven, gated, bounded template-prices recompute (2.0.6). Same
         // runGatedDrain sequencing as the sales-filter drain: defer while the reader
@@ -963,9 +1077,9 @@ export default class AtomicMarketHandler extends ContractHandler {
         // reader's block time, matching the claim (see TEMPLATE_PRICES_WORK_PROBE_SQL).
         //
         // LOW is a tier, not a throttle, and it buys no parallelism: this drain, the
-        // sales-filter drain and the bulk price refresh all draw the same max-1
-        // longRunningPool client, so they serialize on it batch by batch whatever tier
-        // they sit in. What the tier decides is which jobs take turns in the job queue's
+        // sales-filter drain, the stats-market drain and the bulk price refresh all
+        // draw the same max-1 longRunningPool client, so they serialize on it batch by
+        // batch whatever tier they sit in. What the tier decides is which jobs take turns in the job queue's
         // one-job-per-tier slot: LOW shares that slot with the bulk price refresh (both
         // are background maintenance) and leaves the HIGH slot to the sales-filter drain.
         // Retuning DRAIN_BUDGET_MS therefore divides one client's time between the
