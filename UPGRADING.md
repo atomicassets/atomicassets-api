@@ -123,10 +123,34 @@ would place the marker below the flip.
 ### 2.0.10 rebuilds the market-stats queue
 
 The migration recreates `atomicmarket_stats_markets_updates`, deduplicating and
-compacting whatever backlog it holds. It scales with the queued row count rather
-than with any table size, and takes seconds per million rows. The `ACCESS
-EXCLUSIVE` lock it takes covers that queue alone, which nothing but the filler
-reads or writes, so the API server is unaffected.
+compacting whatever backlog it holds. It scales with the queue alone and with no
+other table. The `ACCESS EXCLUSIVE` lock it takes covers that queue, which
+nothing but the filler reads or writes, so the API server is unaffected.
+
+What drives the time is the number of rows that survive deduplication, not the
+number the queue holds, because those are the rows the rebuild writes and
+indexes. Measured on Postgres 14 with the queue on local SSD:
+
+| Queued rows | Rows after dedup | Rebuild |
+| --- | --- | --- |
+| 1,000,000 | 100,000 | under 1 second |
+| 1,000,000 | 1,000,000 | 3 seconds |
+| 5,000,000 | 500,000 | 3 seconds |
+| 5,000,000 | 5,000,000 | 16 seconds |
+| 20,000,000 | 20,000,000 | 71 seconds |
+
+A heap bloated by rows the old queue deleted without vacuuming adds only its
+scan: 1,000,000 live rows inside a 651 MB heap rebuilt in 3 seconds and came
+back as 129 MB.
+
+Budget disk for both copies. The rebuild holds the old table and the new one
+until it commits, and the new one is larger per row, because `fillfactor` 70
+leaves free space for the in-page updates the queue now makes and the unique
+index is new. The 20,000,000 row case above went from 1347 MB to 2666 MB, so
+peak usage was about 4 GB.
+
+Run the sizing query below before the upgrade. It gives both numbers the table
+is indexed by.
 
 Stop the running filler before starting one on this version. The rebuild holds
 that lock from before its copy until it commits, and a filler still processing
@@ -143,7 +167,7 @@ second cadence and yielding whenever the reader falls behind. How long a backlog
 takes therefore depends on what one batch costs against your data, which has not
 been measured on a mainnet-sized database; watch the queue count rather than
 predicting it, and raise the batch size if the burn-down is slower than you want.
-To size the backlog beforehand:
+The sizing query:
 
 ```sql
 SELECT count(*) AS queued,
