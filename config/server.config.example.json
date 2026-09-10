@@ -32,7 +32,7 @@
       "args": {
         "atomicassets_account": "atomicassets",
         "connected_reader": "atomic-1",
-        "enable_fast_asset_counts": true,
+        "enable_fast_asset_counts": false,
         "socket_features": {
           "asset_update": false
         },
@@ -56,7 +56,7 @@
       "args": {
         "atomicmarket_account": "atomicmarket",
         "connected_reader": "atomic-1",
-        "enable_fast_asset_counts": true,
+        "enable_fast_asset_counts": false,
         "socket_features": {
           "asset_update": false
         },

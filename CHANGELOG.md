@@ -10,18 +10,23 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
-## [2.3.4]
+## [2.4.0]
 
-Repairs the market-stats refresh, which stopped advancing behind a backlog instead of draining it.
+Repairs the market-stats refresh, which stopped advancing behind a backlog instead of draining it, and adds an opt-in fast path for asset counts.
 
 ### Upgrading
 
-- Image `ghcr.io/atomicassets/atomicassets-api:2.3.4`. The `2.3` and `latest` tags move to it.
+- Image `ghcr.io/atomicassets/atomicassets-api:2.4.0`. The `2.4` and `latest` tags move to it. A deployment pinned to the `2.3` tag stays on 2.3.3 and does not take this release.
 - The migration set moves to `2.0.10`, and the filler applies it on boot. `2.0.10` recreates `atomicmarket_stats_markets_updates` with a dedup key, a claim token and absolute autovacuum thresholds, deduplicating and compacting whatever backlog it holds. It locks only that queue, so the API server is unaffected.
 - Stop the running filler before starting one on `2.0.10`. The rebuild holds the queue lock across its copy, and a filler still processing blocks holds row locks on the same queue, so an overlap fails the version on its lock timeout and the new process retries on its next boot.
 - The migration does not drain the backlog. The filler drains it in bounded batches once the reader is near the chain head, so expect the queue to fall over the first hours rather than at boot. The burn-down itself needs no operator step.
 - Five environment variables tune the drain, all optional: `ATOMICMARKET_STATS_MARKET_DRAIN_INTERVAL_S` (default 60), `ATOMICMARKET_STATS_MARKET_BATCH_SIZE` (default 1000), `ATOMICMARKET_STATS_MARKET_DRAIN_BUDGET_MS` (default 50000), `ATOMICMARKET_STATS_MARKET_STATEMENT_TIMEOUT_S` (default 300) and `ATOMICMARKET_STATS_MARKET_WORK_MEM_MB` (default 256). Raise the batch size to burn a large backlog down faster.
 - A rollback to an earlier image keeps working. That image calls the recompute with no argument, which resolves through the parameter default and drains one batch every two minutes. The queue and triggers need no schema rollback.
+
+### Features
+
+- `/v1/assets/_count` can sum the `atomicassets_asset_counts` totals the filler already maintains instead of counting asset rows, through a new boolean `enable_fast_asset_counts` in the `args` of the `atomicassets` and `atomicmarket` namespaces. It defaults to `false`. Eligible filters are collection, schema and template, collection and template whitelists and blacklists, authorized collection accounts, burned state, the transferable and burnable flags, and template name `match` and `search` across both immutable and mutable template data. Every other filter, including owner, ids, data filters, bounds and the market price joins, keeps counting rows, and a filter added later does so by construction. (#203)
+- The setting is opt-in because it makes those aggregate totals authoritative for a public count. The filler's trigger and its aggregation job keep them exact for ordinary writes and for fork rollback, but a restore, an import, a trigger disabled during maintenance or a bug can leave them adrift, and a total wrong that way is served with no error. Compare the two counts on your own data before enabling it; `src/scripts/recount-asset-counts.ts` reports and repairs drift. (#203)
 
 ### Bug fixes
 

@@ -10,7 +10,10 @@ const {client, txit} = initAtomicAssetsTest();
 const usedAggregate = (queries: string[]): boolean => queries.some(sql => /FROM atomicassets_asset_counts ac/.test(sql));
 const usedRawCount = (queries: string[]): boolean => queries.some(sql => /SELECT COUNT\(\*\) counter/.test(sql));
 
-function context(queries: string[] = [], enabled?: boolean) {
+// Most cases here exercise the fast path, so the helper opts in. The setting is
+// off by default in production (see the gate in handlers/assets.ts), and
+// contextWithoutSetting below is what asserts that.
+function context(queries: string[] = [], enabled: boolean = true) {
     const ctx = getTestContext({
         query: (sql: string, values?: any[]) => {
             queries.push(sql);
@@ -20,6 +23,18 @@ function context(queries: string[] = [], enabled?: boolean) {
     } as any);
     Object.assign(ctx.coreArgs, {enable_fast_asset_counts: enabled});
     return ctx;
+}
+
+// A context with enable_fast_asset_counts never set, which is what a deployment
+// that has not opted in runs with.
+function contextWithoutSetting(queries: string[] = []) {
+    return getTestContext({
+        query: (sql: string, values?: any[]) => {
+            queries.push(sql);
+            return client.query(sql, values);
+        },
+        fetchOne: (sql: string, values?: any[]) => client.fetchOne(sql, values),
+    } as any);
 }
 
 async function fixture(): Promise<string[]> {
@@ -170,6 +185,12 @@ describe('AtomicAssets aggregate count parity', () => {
             {'data.rarity': 'rare'}, {'data:rarity': 'rare'}, {'template_data.rarity': 'rare'},
             {'immutable_data.rarity': 'rare'}, {'mutable_data.name': 'absent'},
             {lower_bound: ids[0]}, {unknown: 'ignored'},
+            // Asset-level, and a suffix away from the supported template-level
+            // match and search. Both read asset data the aggregate cannot
+            // express at all, so adding either to the supported keys by analogy
+            // would count every asset in the selected groups. These two cases
+            // are what turns that red.
+            {match_immutable_name: 'Rare'}, {match_mutable_name: 'Modern'},
         ]) {
             const queries: string[] = [];
             const count = await getAssetsCountAction(params, context(queries));
@@ -205,10 +226,16 @@ describe('AtomicAssets aggregate count parity', () => {
                 const expected = Object.keys(params).length ? '3' : '8';
                 const queries: string[] = [];
                 expect(await action(params, context([], true))).to.equal(String(Number(expected) + 10));
-                expect(await action(params, context([], undefined))).to.equal(String(Number(expected) + 10));
                 expect(await action(params, context(queries, false))).to.equal(expected);
                 expect(usedRawCount(queries)).to.equal(true);
                 expect(usedAggregate(queries)).to.equal(false);
+                // Unset means raw counting: the fast path is opt-in, so an
+                // operator who has not chosen it keeps the count they had, and
+                // the injected drift row above stays invisible to them.
+                const unsetQueries: string[] = [];
+                expect(await action(params, contextWithoutSetting(unsetQueries))).to.equal(expected);
+                expect(usedRawCount(unsetQueries)).to.equal(true);
+                expect(usedAggregate(unsetQueries)).to.equal(false);
             }
         });
     }

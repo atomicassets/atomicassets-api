@@ -296,7 +296,19 @@ export async function getRawAssetsAction(
 
     // Eligible counts use aggregate totals before the listing query is built,
     // avoiding asset scans and template preselection work on this path.
-    if (args.count && ctx.coreArgs.enable_fast_asset_counts !== false && !options?.extraTables) {
+    //
+    // Opt-in, not opt-out. The fast path makes atomicassets_asset_counts
+    // authoritative for a public count, and that table has drifted before:
+    // src/scripts/recount-asset-counts.ts exists to repair it and migration
+    // 1.3.27 added a unique index to stop a restore or an aggregation race
+    // duplicating its rows. The trigger and the ten-minute job keep the sum
+    // exact for ordinary writes and for fork rollback, so drift enters only
+    // through a restore, an import, a trigger disabled during maintenance or a
+    // bug. Those paths leave no signal, and a wrong total here is served to
+    // every caller with no error and no log line. Defaulting off makes taking
+    // the fast path a decision an operator can validate against the raw count
+    // on their own data first.
+    if (args.count && ctx.coreArgs.enable_fast_asset_counts === true && !options?.extraTables) {
         const fastCount = await getFastAssetsCount(values, ctx);
 
         if (fastCount !== null) {

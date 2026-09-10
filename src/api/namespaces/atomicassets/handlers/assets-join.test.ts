@@ -5,11 +5,12 @@ import { getRawAssetsAction } from './assets';
 import { AtomicAssetsContext } from '../index';
 
 // Unit-style regression tests for the `needsTemplateJoin` gate in
-// getRawAssetsAction. The full assets.test.ts suite is integration
-// (txit + real Postgres) and only runs under `pnpm test:e2e:ci`;
-// these stub-only tests run in the default `pnpm test` so the gate
-// against re-introducing the LEFT JOIN on the count path is enforced
-// in every CI build.
+// getRawAssetsAction. These stub-only tests run in the default
+// `pnpm test`, so the gate against re-introducing the LEFT JOIN on the
+// count path is enforced in every CI build. The parity coverage that
+// proves the fast count equals the raw count lives in
+// assets-count.integration.test.ts and needs a real Postgres, so it runs
+// under `pnpm test:integration:ci`.
 
 type CapturedQuery = { text: string; values?: any[] };
 
@@ -40,6 +41,10 @@ function stubContext(captures: CapturedQuery[]): AtomicAssetsContext {
             connected_reader: '',
             limits: {},
             socket_features: { asset_update: false },
+            // Most cases below exercise the fast count path, which is opt-in in
+            // production. The setting-matrix test above overrides this per case
+            // and is what pins the unset default to raw counting.
+            enable_fast_asset_counts: true,
         },
     } as unknown as AtomicAssetsContext;
 }
@@ -56,8 +61,10 @@ describe('getRawAssetsAction - needsTemplateJoin gate', () => {
 
             await getRawAssetsAction({count: 'true'}, ctx);
 
-            expect(captures.some(c => /FROM atomicassets_asset_counts ac/.test(c.text))).to.equal(enabled !== false);
-            expect(captures.some(c => /SELECT COUNT\(\*\)/.test(c.text))).to.equal(enabled === false);
+            // Opt-in: only an explicit true takes the aggregate. Unset is the
+            // production default and must count rows.
+            expect(captures.some(c => /FROM atomicassets_asset_counts ac/.test(c.text))).to.equal(enabled === true);
+            expect(captures.some(c => /SELECT COUNT\(\*\)/.test(c.text))).to.equal(enabled !== true);
         });
     }
 

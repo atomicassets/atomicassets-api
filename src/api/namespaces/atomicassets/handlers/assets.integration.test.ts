@@ -563,6 +563,8 @@ describe('AtomicAssets Assets API', () => {
                 },
             };
             const ctx = getTestContext(recordingDb as any);
+            // The fast count path is opt-in, so this case asks for it explicitly.
+            ctx.coreArgs.enable_fast_asset_counts = true;
 
             const result = await getRawAssetsAction(
                 {count: 'true', sort: 'name'},

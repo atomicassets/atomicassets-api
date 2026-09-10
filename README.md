@@ -227,8 +227,23 @@ rather than a complete reference: `IReaderConfig` and its siblings in
 
 The `atomicassets` and `atomicmarket` namespaces accept an optional boolean
 `enable_fast_asset_counts` in their `args` in `server.config.json`. It defaults
-to `true`. Eligible `/v1/assets/_count` requests sum the existing
-`atomicassets_asset_counts` totals maintained by the filler.
+to `false`. With it set to `true`, eligible `/v1/assets/_count` requests sum the
+existing `atomicassets_asset_counts` totals maintained by the filler instead of
+counting asset rows.
+
+It is opt-in because it makes those totals authoritative for a public count.
+The filler's trigger and its aggregation job keep them exact for ordinary
+writes and for fork rollback, but a restore, an import, a trigger disabled
+during maintenance or a bug can leave them adrift, and a total that is wrong
+that way is served with no error. Compare the two counts on your own data
+before enabling it:
+
+```
+GET /atomicassets/v1/assets/_count?collection_name=<a large collection>
+```
+
+with the setting off and then on. `src/scripts/recount-asset-counts.ts` reports
+and repairs drift.
 
 The fast path supports collection, schema and template filters, collection
 and template whitelists/blacklists, authorized collection accounts, burned
@@ -238,10 +253,10 @@ template whitelist uses raw counting; `template_id=null` still selects assets
 without a template. Asset-level filters such as owner, IDs, data filters and
 bounds, and market price joins, also retain raw counting.
 
-If aggregate totals have drifted, set `"enable_fast_asset_counts": false` in
-the affected namespace's `args` and restart the API process. Set it in both
-namespaces if both are exposed. No image rebuild, filler restart or new
-migration is needed for this setting. Existing cached responses can remain
+If aggregate totals drift after you enable it, set
+`"enable_fast_asset_counts": false` in the affected namespace's `args` and
+restart the API process. Set it in both namespaces if both are exposed. No
+image rebuild, filler restart or new migration is needed for this setting. Existing cached responses can remain
 until their configured `cache_life` expires. Raw counts can be slower or time
 out on large datasets; disabling fast counts does not repair aggregate totals
 or change other endpoints that already use them.
