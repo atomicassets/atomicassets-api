@@ -10,6 +10,24 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.3.4]
+
+Repairs the market-stats refresh, which stopped advancing behind a backlog instead of draining it.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.3.4`. The `2.3` and `latest` tags move to it.
+- The migration set moves to `2.0.10`, and the filler applies it on boot. `2.0.10` recreates `atomicmarket_stats_markets_updates` with a dedup key, a claim token and absolute autovacuum thresholds, deduplicating and compacting whatever backlog it holds. It locks only that queue, so the API server is unaffected.
+- Stop the running filler before starting one on `2.0.10`. The rebuild holds the queue lock across its copy, and a filler still processing blocks holds row locks on the same queue, so an overlap fails the version on its lock timeout and the new process retries on its next boot.
+- The migration does not drain the backlog. The filler drains it in bounded batches once the reader is near the chain head, so expect the queue to fall over the first hours rather than at boot. No operator step is required.
+- Five environment variables tune the drain, all optional: `ATOMICMARKET_STATS_MARKET_DRAIN_INTERVAL_S` (default 60), `ATOMICMARKET_STATS_MARKET_BATCH_SIZE` (default 1000), `ATOMICMARKET_STATS_MARKET_DRAIN_BUDGET_MS` (default 50000), `ATOMICMARKET_STATS_MARKET_STATEMENT_TIMEOUT_S` (default 300) and `ATOMICMARKET_STATS_MARKET_WORK_MEM_MB` (default 256). Raise the batch size to burn a large backlog down faster.
+- A rollback to an earlier image keeps working. That image calls the recompute with no argument, which resolves through the parameter default and drains one batch every two minutes. The queue and triggers need no schema rollback.
+
+### Bug fixes
+
+- The market-stats refresh no longer fails with `57014`, `canceling statement due to statement timeout`, against a backlog. It ran as one unbounded statement on the runtime pool, whose 30 second `statement_timeout` is the only one PgBouncer transaction pooling lets through, and each cancellation rolled back the statement's own queue claim, so every following tick re-read the same backlog and `atomicmarket_stats_markets` stopped advancing. The recompute now claims a bounded batch per call, on the long-running pool and under a per-batch timeout, and yields to the block reader between batches. (#210)
+- `atomicmarket_stats_markets_updates` deduplicates its rows. A listing written repeatedly added one queue row per write, so a hot sale could hold thousands, and the table had no autovacuum tuning to reclaim them. An auction still holds a second row for its end time, which is what makes the auction resolve once that time passes. (#210)
+
 ## [2.3.3]
 
 Readies the indexer for the AtomicMarket v2 upgrade: a legacy bundle listing touched under v2 records the contract's cancel instead of a trade.

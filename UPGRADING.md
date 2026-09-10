@@ -120,6 +120,33 @@ head of a v2 chain. On such a chain, rewind a reader after this upgrade rather
 than before it: the migration reads the stored reader row, and a rewound row
 would place the marker below the flip.
 
+### 2.0.10 rebuilds the market-stats queue
+
+The migration recreates `atomicmarket_stats_markets_updates`, deduplicating and
+compacting whatever backlog it holds. It scales with the queued row count rather
+than with any table size, and takes seconds per million rows. The `ACCESS
+EXCLUSIVE` lock it takes covers that queue alone, which nothing but the filler
+reads or writes, so the API server is unaffected.
+
+Stop the running filler before starting one on this version. The rebuild holds
+that lock from before its copy until it commits, and a filler still processing
+blocks holds row locks on the same queue for the length of one recompute. An
+overlap fails the version on the 5 second `lock_timeout` rather than losing an
+enqueue, and the new process retries on its next boot, so the failure resolves
+itself once the old process exits. A deployment that rolls one filler pod into
+another should let the old pod exit first.
+
+The migration does not drain the backlog. The filler drains it in bounded batches
+once the reader is near the chain head, at up to `ATOMICMARKET_STATS_MARKET_BATCH_SIZE`
+rows per batch on a 60 second cadence. A million distinct listings burn down in
+about an hour. To size the wait beforehand:
+
+```sql
+SELECT count(*) AS queued,
+       count(DISTINCT (market_contract, listing_type, listing_id, refresh_at)) AS after_dedup
+FROM atomicmarket_stats_markets_updates;
+```
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are
@@ -140,9 +167,9 @@ Migrations run with `statement_timeout` disabled so a long build finishes rather
 than being cancelled part way, while `lock_timeout` stays bounded so a migration
 blocked behind another session fails rather than waiting indefinitely.
 `MIGRATION_STATEMENT_TIMEOUT_MS` imposes a ceiling in milliseconds. Treat it as a
-default rather than a guarantee: `1.6.4`, `1.7.11`, `1.7.12` and `2.0.1` each
-disable the statement timeout for their own transaction, so no ceiling applies
-while those run.
+default rather than a guarantee: `1.6.4`, `1.7.11`, `1.7.12`, `2.0.1`, `2.0.6`,
+`2.0.7`, `2.0.8` and `2.0.10` each disable the statement timeout for their own
+transaction, so no ceiling applies while those run.
 
 Several migrations carry a header describing how to pre-build their indexes
 `CONCURRENTLY` ahead of the upgrade: `1.3.31`, `1.3.32`, `1.3.34`, `1.7.17` and
