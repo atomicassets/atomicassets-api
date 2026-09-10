@@ -19,7 +19,7 @@ Repairs the market-stats refresh, which stopped advancing behind a backlog inste
 - Image `ghcr.io/atomicassets/atomicassets-api:2.3.4`. The `2.3` and `latest` tags move to it.
 - The migration set moves to `2.0.10`, and the filler applies it on boot. `2.0.10` recreates `atomicmarket_stats_markets_updates` with a dedup key, a claim token and absolute autovacuum thresholds, deduplicating and compacting whatever backlog it holds. It locks only that queue, so the API server is unaffected.
 - Stop the running filler before starting one on `2.0.10`. The rebuild holds the queue lock across its copy, and a filler still processing blocks holds row locks on the same queue, so an overlap fails the version on its lock timeout and the new process retries on its next boot.
-- The migration does not drain the backlog. The filler drains it in bounded batches once the reader is near the chain head, so expect the queue to fall over the first hours rather than at boot. No operator step is required.
+- The migration does not drain the backlog. The filler drains it in bounded batches once the reader is near the chain head, so expect the queue to fall over the first hours rather than at boot. The burn-down itself needs no operator step.
 - Five environment variables tune the drain, all optional: `ATOMICMARKET_STATS_MARKET_DRAIN_INTERVAL_S` (default 60), `ATOMICMARKET_STATS_MARKET_BATCH_SIZE` (default 1000), `ATOMICMARKET_STATS_MARKET_DRAIN_BUDGET_MS` (default 50000), `ATOMICMARKET_STATS_MARKET_STATEMENT_TIMEOUT_S` (default 300) and `ATOMICMARKET_STATS_MARKET_WORK_MEM_MB` (default 256). Raise the batch size to burn a large backlog down faster.
 - A rollback to an earlier image keeps working. That image calls the recompute with no argument, which resolves through the parameter default and drains one batch every two minutes. The queue and triggers need no schema rollback.
 
@@ -27,6 +27,16 @@ Repairs the market-stats refresh, which stopped advancing behind a backlog inste
 
 - The market-stats refresh no longer fails with `57014`, `canceling statement due to statement timeout`, against a backlog. It ran as one unbounded statement on the runtime pool, whose 30 second `statement_timeout` is the only one PgBouncer transaction pooling lets through, and each cancellation rolled back the statement's own queue claim, so every following tick re-read the same backlog and `atomicmarket_stats_markets` stopped advancing. The recompute now claims a bounded batch per call, on the long-running pool and under a per-batch timeout, and yields to the block reader between batches. (#210)
 - `atomicmarket_stats_markets_updates` deduplicates its rows. A listing written repeatedly added one queue row per write, so a hot sale could hold thousands, and the table had no autovacuum tuning to reclaim them. An auction still holds a second row for its end time, which is what makes the auction resolve once that time passes. (#210)
+
+### Security
+
+- `qs` moves to 6.16.0, clearing GHSA-4mjr-xmp4-gh2g, a denial of service through an attacker-controlled `isBuffer`, and GHSA-x5fp-wj9c-mxmx, an array-limit bypass through bracket-key comma parsing. It parses every query string express and body-parser hand to the read endpoints. GHSA-848j-6mx2-7j84 against `elliptic` has no patched version published and is still open. (#211)
+
+### Other changes
+
+- `express-rate-limit` moves to 8.6.2, which keys IPv4-in-IPv6 addresses by range rather than by notation. An IPv4-mapped address written without a dotted quad shared one bucket with its whole range, and an ordinary IPv6 address ending in a dotted quad was keyed into the bucket of the unrelated IPv4 client it appeared to name. Every notation of one address now produces one key. (#191)
+- `p-queue` moves to 9.3.3, a patch on the queue the block reader draws through. (#151)
+- The development toolchain takes its pending updates: eslint, mocha, c8, knip, globals, the SWC compiler and register hook, and `actions/setup-node` in CI. None of them ships in the image. (#116, #117, #121, #123, #150, #190, #192, #193)
 
 ## [2.3.3]
 

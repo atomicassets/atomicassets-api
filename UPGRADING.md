@@ -138,8 +138,12 @@ another should let the old pod exit first.
 
 The migration does not drain the backlog. The filler drains it in bounded batches
 once the reader is near the chain head, at up to `ATOMICMARKET_STATS_MARKET_BATCH_SIZE`
-rows per batch on a 60 second cadence. A million distinct listings burn down in
-about an hour. To size the wait beforehand:
+rows per batch, looping for `ATOMICMARKET_STATS_MARKET_DRAIN_BUDGET_MS` on a 60
+second cadence and yielding whenever the reader falls behind. How long a backlog
+takes therefore depends on what one batch costs against your data, which has not
+been measured on a mainnet-sized database; watch the queue count rather than
+predicting it, and raise the batch size if the burn-down is slower than you want.
+To size the backlog beforehand:
 
 ```sql
 SELECT count(*) AS queued,
