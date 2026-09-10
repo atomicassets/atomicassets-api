@@ -29,6 +29,8 @@ export interface AtomicMarketNamespaceArgs {
     atomicassets_account: string;
     delphioracle_account: string;
 
+    enable_fast_asset_counts?: boolean;
+
     socket_features?: {
         asset_update?: boolean;
     };
@@ -78,6 +80,10 @@ export class AtomicMarketNamespace extends ApiNamespace {
     async init(): Promise<void> {
         if (typeof this.args.atomicmarket_account !== 'string') {
             throw new Error('Argument missing in atomicmarket api namespace: atomicmarket_account');
+        }
+
+        if (this.args.enable_fast_asset_counts !== undefined && typeof this.args.enable_fast_asset_counts !== 'boolean') {
+            throw new Error('Invalid argument in atomicmarket api namespace: enable_fast_asset_counts must be a boolean');
         }
 
         const query = await this.connection.database.query(

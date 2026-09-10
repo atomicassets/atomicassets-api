@@ -12,6 +12,27 @@ import { applyActionGreylistFilters, getContractActionLogs } from '../../../util
 import { filterQueryArgs, FilterValues } from '../../validation';
 import { TemplateBuyofferState } from '../../../../filler/handlers/atomicmarket';
 
+const fastCountSupportedKeys = new Set([
+    'authorized_account',
+    'burned',
+    'collection_blacklist',
+    'collection_name',
+    'collection_whitelist',
+    'count',
+    'is_burnable',
+    'is_transferable',
+    'limit',
+    'match',
+    'order',
+    'page',
+    'schema_name',
+    'search',
+    'sort',
+    'template_blacklist',
+    'template_id',
+    'template_whitelist',
+]);
+
 export async function buildAssetQueryCondition(
     values: FilterValues, query: QueryBuilder,
     options: { assetTable: string, templateTable?: string }
@@ -126,10 +147,143 @@ export async function buildAssetQueryCondition(
     }
 }
 
+function canUseFastCount(values: RequestValues): boolean {
+    return Object.keys(values).every(key => {
+        if (key.startsWith('data.') || key.startsWith('data:')) {
+            return false;
+        }
+
+        if (key.startsWith('template_data.') || key.startsWith('template_data:')) {
+            return false;
+        }
+
+        if (key.startsWith('immutable_data.') || key.startsWith('immutable_data:')) {
+            return false;
+        }
+
+        if (key.startsWith('mutable_data.') || key.startsWith('mutable_data:')) {
+            return false;
+        }
+
+        return fastCountSupportedKeys.has(key);
+    });
+}
+
+async function getFastAssetsCount(values: RequestValues, ctx: AtomicAssetsContext): Promise<string | null> {
+    if (!canUseFastCount(values)) {
+        return null;
+    }
+
+    const args = await filterQueryArgs(values, {
+        authorized_account: {type: 'name'},
+        burned: {type: 'bool'},
+        collection_name: {type: 'list[name]'},
+        schema_name: {type: 'list[name]'},
+        template_blacklist: {type: 'list[id]'},
+        template_id: {type: 'list[id]'},
+        template_whitelist: {type: 'list[id]'},
+        is_transferable: {type: 'bool'},
+        is_burnable: {type: 'bool'},
+    });
+
+    // Aggregate zero represents a NULL template, which must not match a
+    // numeric zero ID. Check expanded lists, including alternate zero spellings.
+    if ([...args.template_id, ...args.template_whitelist].some(id => /^-?0+$/.test(id))) {
+        return null;
+    }
+
+    const needsTemplateJoin = typeof args.is_transferable === 'boolean'
+        || typeof args.is_burnable === 'boolean'
+        || (typeof values.match === 'string' && values.match.length > 0)
+        || (typeof values.search === 'string' && values.search.length > 0);
+
+    const countColumn = args.burned === true ? 'ac.burned' : args.burned === false ? 'ac.owned' : 'ac.assets';
+
+    const query = new QueryBuilder(`
+        SELECT COALESCE(SUM(${countColumn}), 0)::BIGINT counter
+        FROM atomicassets_asset_counts ac
+        ${needsTemplateJoin ? `LEFT JOIN atomicassets_templates template
+            ON ac.contract = template.contract
+            AND NULLIF(ac.template_id, 0) = template.template_id` : ''}
+    `);
+
+    query.equal('ac.contract', ctx.coreArgs.atomicassets_account);
+
+    if (args.collection_name.length) {
+        query.equalMany('ac.collection_name', args.collection_name);
+    }
+
+    if (args.schema_name.length) {
+        query.equalMany('ac.schema_name', args.schema_name);
+    }
+
+    if (args.authorized_account) {
+        query.addCondition(
+            'EXISTS(' +
+            'SELECT * FROM atomicassets_collections collection ' +
+            'WHERE collection.collection_name = ac.collection_name AND collection.contract = ac.contract ' +
+            'AND ' + query.addVariable(args.authorized_account) + ' = ANY(collection.authorized_accounts)' +
+            ')'
+        );
+    }
+
+    if (args.template_id.length) {
+        if (args.template_id.length === 1 && args.template_id[0] === 'null') {
+            query.equal('ac.template_id', 0);
+        } else {
+            query.equalMany('ac.template_id', args.template_id);
+        }
+    }
+
+    if (args.template_blacklist.length) {
+        query.notMany('CASE WHEN ac.template_id = 0 THEN 9223372036854775807 ELSE ac.template_id END', args.template_blacklist);
+    }
+
+    if (args.template_whitelist.length) {
+        query.equalMany('ac.template_id', args.template_whitelist);
+    }
+
+    if (typeof args.is_transferable === 'boolean') {
+        if (args.is_transferable) {
+            query.addCondition('template.transferable IS DISTINCT FROM FALSE');
+        } else {
+            query.addCondition('template.transferable = FALSE');
+        }
+    }
+
+    if (typeof args.is_burnable === 'boolean') {
+        if (args.is_burnable) {
+            query.addCondition('template.burnable IS DISTINCT FROM FALSE');
+        } else {
+            query.addCondition('template.burnable = FALSE');
+        }
+    }
+
+    if (typeof values.match === 'string' && values.match.length > 0) {
+        const matchParam = query.addVariable('%' + query.escapeLikeVariable(values.match) + '%');
+        query.addCondition(
+            `(template.immutable_data->>'name') ILIKE ${matchParam} OR (template.mutable_data->>'name') ILIKE ${matchParam}`
+        );
+    }
+
+    if (typeof values.search === 'string' && values.search.length > 0) {
+        const searchParam = query.addVariable('%' + query.escapeLikeVariable(values.search) + '%');
+        query.addCondition(
+            `${searchParam}::TEXT <% (template.immutable_data->>'name') OR ${searchParam}::TEXT <% (template.mutable_data->>'name')`
+        );
+    }
+
+    await buildGreylistFilter(values, query, {collectionName: 'ac.collection_name'});
+
+    const {rows: [row]} = await ctx.db.query(query.buildString(), query.buildValues());
+    return row.counter;
+}
+
 export async function getRawAssetsAction(
-    {search, match, ...params}: RequestValues,
+    values: RequestValues,
     ctx: AtomicAssetsContext,
     options?: {extraTables: string, extraSort: SortColumnMapping}): Promise<Array<number> | string> {
+    const {search, match, ...params} = values;
     const maxLimit = ctx.coreArgs.limits?.assets || 1000;
     const args = await filterQueryArgs(params, {
         page: {type: 'int', min: 1, default: 1},
@@ -139,6 +293,28 @@ export async function getRawAssetsAction(
 
         count: {type: 'bool'}
     });
+
+    // Eligible counts use aggregate totals before the listing query is built,
+    // avoiding asset scans and template preselection work on this path.
+    //
+    // Opt-in, not opt-out. The fast path makes atomicassets_asset_counts
+    // authoritative for a public count, and that table has drifted before:
+    // src/scripts/recount-asset-counts.ts exists to repair it and migration
+    // 1.3.27 added a unique index to stop a restore or an aggregation race
+    // duplicating its rows. The trigger and the ten-minute job keep the sum
+    // exact for ordinary writes and for fork rollback, so drift enters only
+    // through a restore, an import, a trigger disabled during maintenance or a
+    // bug. Those paths leave no signal, and a wrong total here is served to
+    // every caller with no error and no log line. Defaulting off makes taking
+    // the fast path a decision an operator can validate against the raw count
+    // on their own data first.
+    if (args.count && ctx.coreArgs.enable_fast_asset_counts === true && !options?.extraTables) {
+        const fastCount = await getFastAssetsCount(values, ctx);
+
+        if (fastCount !== null) {
+            return fastCount;
+        }
+    }
 
     // The LEFT JOIN to atomicassets_templates is only needed when a parameter
     // actually consumes template columns (sort by template-derived name, the
@@ -153,7 +329,7 @@ export async function getRawAssetsAction(
     // branch later in this function, before any ORDER BY is applied, so
     // `sort === 'name'` never actually consumes a template column on the
     // count path - gate it on `!args.count` so `/assets/_count?sort=name`
-    // also benefits.
+    // also benefits on the raw COUNT(*) fallback.
     const needsTemplateJoin = (!args.count && args.sort === 'name')
         || params.is_transferable !== undefined
         || params.is_burnable !== undefined

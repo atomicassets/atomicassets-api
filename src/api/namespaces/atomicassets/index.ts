@@ -22,6 +22,8 @@ export type AtomicAssetsNamespaceArgs = {
 
     atomicassets_account: string;
 
+    enable_fast_asset_counts?: boolean;
+
     socket_features?: {
         asset_update?: boolean
     };
@@ -39,6 +41,10 @@ export class AtomicAssetsNamespace extends ApiNamespace {
     async init(): Promise<void> {
         if (typeof this.args.atomicassets_account !== 'string') {
             throw new Error('Argument missing in atomicassets api namespace: atomicassets_account');
+        }
+
+        if (this.args.enable_fast_asset_counts !== undefined && typeof this.args.enable_fast_asset_counts !== 'boolean') {
+            throw new Error('Invalid argument in atomicassets api namespace: enable_fast_asset_counts must be a boolean');
         }
 
         if (!this.args.socket_features) {
