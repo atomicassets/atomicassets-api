@@ -9,7 +9,7 @@
  * Run via: node build/scripts/recount-asset-counts.js
  *
  * Env vars:
- *   DATABASE_URL    (required) - postgres connection string for eca_wax_mainnet
+ *   DATABASE_URL    (required) - postgres connection string for the database to recount
  *   DRY_RUN         (optional) - "true" (default) to only report, "false" to insert corrections
  *   MIN_DRIFT       (optional) - minimum absolute drift to correct (default: 1)
  *   CONTRACT        (optional) - contract account to recount (default: "atomicassets")
