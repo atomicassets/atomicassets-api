@@ -10,6 +10,18 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.4.1]
+
+Takes the SHIP serialization helpers from the published package so the filler decodes with one copy of them.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.4.1`. The `2.4` and `latest` tags move to it. No migration and no configuration change.
+
+### Other changes
+
+- The filler's trace, row, ABI type, and decode helpers come from `@atomichub/antelope-ship-utils` 2.1.0 instead of an in-tree copy, with wrappers that keep the invalid-UTF-8 tolerance and the flat row shape. A golden test proves the package-backed helpers match the former bodies. (#214)
+
 ## [2.4.0]
 
 Repairs the market-stats refresh, which stopped advancing behind a backlog instead of draining it, and adds an opt-in fast path for asset counts.
