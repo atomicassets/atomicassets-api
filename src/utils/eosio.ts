@@ -1,5 +1,12 @@
-import { objectifyNumericFloats } from '@atomichub/antelope-ship-utils';
-import { ABI, Name, Serializer, UInt64 } from '@wharfkit/antelope';
+import {
+    deserializeEosioType as decodeEosioType,
+    extractShipDeltas,
+    extractShipTraces as extractPackageShipTraces,
+    getActionAbiType,
+    getTableAbiType,
+    serializeEosioType
+} from '@atomichub/antelope-ship-utils';
+import { ABI, Name, UInt64 } from '@wharfkit/antelope';
 
 import { deserializeUInt, serializeUInt } from './binary';
 import { ShipTableDelta, ShipTransactionTrace } from '../types/ship';
@@ -44,129 +51,23 @@ export function splitEosioToken(asset: string, contract?: string): {amount: stri
     };
 }
 
+// The serialization helpers come from @atomichub/antelope-ship-utils, the
+// same code the package's BlockProcessor decodes with. The three wrappers
+// below keep this service's call shapes: a decode that tolerates invalid
+// UTF-8 in string fields, a trace extractor that takes the raw list, and a
+// row extractor that returns flat rows.
+export { getActionAbiType, getTableAbiType, serializeEosioType };
+
 export function deserializeEosioType(type: string, data: Uint8Array | string, abi: ABI, _checkLength: boolean = true): any {
-    let dataArray;
-    if (typeof data === 'string') {
-        dataArray = Uint8Array.from(Buffer.from(data, 'hex'));
-    } else {
-        dataArray = new Uint8Array(data);
-    }
-
-    const result = Serializer.decode({ data: dataArray, type, abi, ignoreInvalidUTF8: true });
-
-    // Serializer.objectify renders the Float32 and Float64 wrappers as strings,
-    // so a float attribute decoded here would reach jsonb as a string where the
-    // @atomichub/atomicassets deserialize stores a number. Under
-    // @wharfkit/antelope 1.x that string is lossy as well, because
-    // Float32.toString is toFixed(7). From 2.x it is the shortest round-trip
-    // string (wharfkit/antelope f70dadd), so the numeric objectify stays a
-    // shape choice there. A non-finite value has no JSON number, and
-    // JSON.stringify writes it as null.
-    return objectifyNumericFloats(result);
-}
-
-export function serializeEosioType(type: string, value: any, abi: ABI): Uint8Array {
-    const encoded = Serializer.encode({ object: value, type, abi });
-
-    return encoded.array;
+    // Chains carry memos and attribute values whose bytes no UTF-8 sequence
+    // allows; the row is wanted, not the exception.
+    return decodeEosioType(type, data, abi, { ignoreInvalidUTF8: true });
 }
 
 export function extractShipTraces(data: ShipTransactionTrace[]): Array<{trace: EosioActionTrace<any>, tx: EosioTransaction<any>}> {
-    const transactions: EosioTransaction[] = [];
-
-    for (const transaction of data) {
-        if (transaction[0] === 'transaction_trace_v0') {
-            if (transaction[1].status !== 0) {
-                continue;
-            }
-
-            transactions.push({
-                id: transaction[1].id,
-                cpu_usage_us: transaction[1].cpu_usage_us,
-                net_usage_words: transaction[1].net_usage_words,
-                traces: transaction[1].action_traces.map(trace => {
-                    if (trace[0] === 'action_trace_v0' || trace[0] === 'action_trace_v1') {
-                        if (trace[1].receiver !== trace[1].act.account) {
-                            return null;
-                        }
-
-                        return {
-                            action_ordinal: trace[1].action_ordinal,
-                            creator_action_ordinal: trace[1].creator_action_ordinal,
-                            global_sequence: trace[1].receipt[1].global_sequence,
-                            account_ram_deltas: trace[1].account_ram_deltas,
-                            act: {
-                                account: trace[1].act.account,
-                                name: trace[1].act.name,
-                                authorization: trace[1].act.authorization,
-                                data: trace[1].act.data
-                            }
-                        };
-                    }
-
-                    throw new Error('Invalid action trace type ' + trace[0]);
-                }).filter(trace => !!trace).sort((a, b) => {
-                    return parseInt(a.global_sequence, 10) - parseInt(b.global_sequence, 10);
-                })
-            });
-        } else {
-            throw new Error('Unsupported transaction response received: ' + transaction[0]);
-        }
-    }
-
-    const result: Array<{trace: EosioActionTrace<any>, tx: EosioTransaction<any>}> = [];
-
-    for (const tx of transactions) {
-        for (const trace of tx.traces) {
-            result.push({trace, tx});
-        }
-    }
-
-    result.sort((a, b) => {
-        return parseInt(a.trace.global_sequence, 10) - parseInt(b.trace.global_sequence, 10);
-    });
-
-    return result;
+    return extractPackageShipTraces({ traces: data });
 }
 
 export function extractShipContractRows(deltas: ShipTableDelta[]): Array<EosioContractRow<any>> {
-    const result: EosioContractRow<any>[] = [];
-
-    for (const delta of deltas) {
-        if (delta[0] === 'table_delta_v0' || delta[0] === 'table_delta_v1') {
-            if (delta[1].name === 'contract_row') {
-                for (const row of delta[1].rows) {
-                    if (row.data[0] === 'contract_row_v0') {
-                        result.push({...row.data[1], present: !!row.present});
-                    } else {
-                        throw new Error('Unsupported contract row received: ' + row.data[0]);
-                    }
-                }
-            }
-        } else {
-            throw new Error('Unsupported table delta response received: ' + delta[0]);
-        }
-    }
-
-    return result;
-}
-
-export function getTableAbiType(abi: ABI, contract: string, table: string): string {
-    for (const row of abi.tables) {
-        if (row.name == table) {
-            return String(row.type);
-        }
-    }
-
-    throw new Error('Type for table not found ' + contract + ':' + table);
-}
-
-export function getActionAbiType(abi: ABI, contract: string, action: string): string {
-    for (const row of abi.actions) {
-        if (row.name == action) {
-            return String(row.type);
-        }
-    }
-
-    throw new Error('Type for action not found ' + contract + ':' + action);
+    return extractShipDeltas({ deltas, serializedDeltas: ['contract_row'] }).map((row) => row.delta as EosioContractRow<any>);
 }
