@@ -65,7 +65,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
-    "iovalkey": "^0.3.3",
+    "iovalkey": "^0.4.0",
     "moize": "^6.1.1",
     "p-queue": "^9.3.3",
     "pg": "^8.22.0",
