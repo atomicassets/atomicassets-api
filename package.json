@@ -55,7 +55,7 @@
   },
   "dependencies": {
     "@atomichub/antelope-ship-utils": "^2.1.0",
-    "@atomichub/atomicassets": "^2.2.0",
+    "@atomichub/atomicassets": "^2.3.0",
     "@wharfkit/antelope": "^1.1.1",
     "async-exit-hook": "^2.0.1",
     "await-lock": "^2.2.1",
