@@ -15,8 +15,8 @@ importers:
         specifier: ^2.1.0
         version: 2.1.0
       '@atomichub/atomicassets':
-        specifier: ^2.2.0
-        version: 2.2.0
+        specifier: ^2.3.0
+        version: 2.3.0
       '@wharfkit/antelope':
         specifier: ^1.1.1
         version: 1.2.0
@@ -172,8 +172,8 @@ packages:
     resolution: {integrity: sha512-j0E3c6Ns/RwwwWtcQcwqRilTFgeP72MIXcReyYQSby0ADyHqEIoSYLfL8jqjA4BsydYJY8MTnbDlWduMI9FiIg==}
     engines: {node: '>=22'}
 
-  '@atomichub/atomicassets@2.2.0':
-    resolution: {integrity: sha512-v4PWwuyQhmSPjoJ8p6ObAXot9cvmmR81CvB1enaCvdv/8CkIjDqWfaUde8AZRdR15CUKrs0MmfyeGfnkpOD0Iw==}
+  '@atomichub/atomicassets@2.3.0':
+    resolution: {integrity: sha512-eHUkIkCKWvsIWumZXm0bv39RGSgTh0aMj1WV5Tpq91XuSeVkUyvoN3G3OeY9uqs1f6b2nBqEaKgQCSKszL69KQ==}
     engines: {node: '>=20'}
 
   '@bcoe/v8-coverage@1.0.2':
@@ -2696,7 +2696,7 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@atomichub/atomicassets@2.2.0': {}
+  '@atomichub/atomicassets@2.3.0': {}
 
   '@bcoe/v8-coverage@1.0.2': {}
 
