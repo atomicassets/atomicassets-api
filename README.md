@@ -34,6 +34,34 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
         "args": { "atomicpacksx_account": "atomicpacksx", "store_logs": true } }
       { "handler": "atomicdropsx",
         "args": { "atomicdropsx_account": "atomicdropsx", "store_logs": true } }
+- Indexes SimpleAssets (`simpleassets`) assets, transfers, and authors when a
+  reader configures it. The chain must have the SimpleAssets contract deployed
+  on the configured account, or the filler stops at startup. Give it a reader
+  entry of its own, with the other reader keys as in
+  `config/readers.config.example.json`, so it keeps its own cursor:
+
+      { "name": "simpleassets-1",
+        "contracts": [
+          { "handler": "simpleassets",
+            "args": { "simpleassets_account": "simpleassets", "store_transfers": true,
+                      "numbered_authors": ["gpk.topps"],
+                      "numbered_group_fields": ["cardid", "quality", "variant"] } } ] }
+
+  `numbered_authors` lists the authors whose creates get a `mint_number`, the
+  ordinal of the asset within its card group. `numbered_group_fields` lists the
+  mutable data fields that, after the create's category, form the card group.
+  `mint_group` stores the group as a JSON array of strings: the category, then
+  each listed field's value, with a missing field as `""`. For example
+  `["series1","1","common","base"]`. Readers must match that exact form.
+  Numbering counts from the totals in `simpleassets_card_totals` and applies
+  only to creates above `simpleassets_config.bootstrap_baseline_block`. While
+  that block is unset, no asset gets a number. Both arguments default to empty.
+
+  To number an author's existing cards, import the totals from a snapshot taken
+  at block S and set `bootstrap_baseline_block` to S. Start the reader entry at
+  S+1. Creates at or below `bootstrap_baseline_block` get no number, so a start
+  at or below S leaves those creates unnumbered, and a start above S+1 skips
+  creates the totals never count.
 - Streams live updates via WebSockets (Socket.IO) for sales, transfers,
   and trades.
 - Ships a Prometheus metrics endpoint for monitoring filler health.

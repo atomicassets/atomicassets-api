@@ -23,7 +23,19 @@ export enum SimpleAssetsUpdatePriority {
 export type SimpleAssetsReaderArgs = {
     simpleassets_account: string,
     store_transfers: boolean,
+    numbered_authors: string[],
+    numbered_group_fields: string[],
 };
+
+function readStringList(args: {[key: string]: any}, name: string): string[] {
+    const value = args[name] ?? [];
+
+    if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+        throw new Error('SimpleAssets: Argument ' + name + ' must be an array of strings');
+    }
+
+    return value;
+}
 
 export default class SimpleAssetsHandler extends ContractHandler {
     static handlerName = 'simpleassets';
@@ -60,6 +72,9 @@ export default class SimpleAssetsHandler extends ContractHandler {
             throw new Error('SimpleAssets: Argument missing in simpleassets handler: simpleassets_account');
         }
 
+        this.args.numbered_authors = readStringList(args, 'numbered_authors');
+        this.args.numbered_group_fields = readStringList(args, 'numbered_group_fields');
+
         if (!this.args.store_transfers) {
             logger.warn('SimpleAssets: disabled store_transfers');
         }
@@ -77,8 +92,12 @@ export default class SimpleAssetsHandler extends ContractHandler {
                 scope: this.args.simpleassets_account, table: 'tokenconfigs'
             });
 
+            if (tokenconfigsTable.rows.length === 0) {
+                throw new Error('SimpleAssets: tokenconfigs table empty on ' + this.args.simpleassets_account);
+            }
+
             if (tokenconfigsTable.rows[0].standard !== 'simpleassets') {
-                throw new Error('SimpleAssets: Contract not deployed on the account');
+                throw new Error('SimpleAssets: Contract not deployed on ' + this.args.simpleassets_account);
             }
 
             this.tokenconfigs = {
@@ -86,14 +105,10 @@ export default class SimpleAssetsHandler extends ContractHandler {
                 standard: tokenconfigsTable.rows[0].standard
             };
 
-            if (tokenconfigsTable.rows.length > 0) {
-                await client.query(
-                    'INSERT INTO simpleassets_config (contract, version) VALUES ($1, $2)',
-                    [this.args.simpleassets_account, tokenconfigsTable.rows[0].version]
-                );
-            } else {
-                throw new Error('SimpleAssets: Tokenconfigs table empty');
-            }
+            await client.query(
+                'INSERT INTO simpleassets_config (contract, version) VALUES ($1, $2)',
+                [this.args.simpleassets_account, tokenconfigsTable.rows[0].version]
+            );
         } else {
             this.tokenconfigs = {
                 version: configQuery.rows[0].version,
@@ -105,7 +120,7 @@ export default class SimpleAssetsHandler extends ContractHandler {
     async deleteDB(client: PoolClient): Promise<void> {
         const tables = [
             'simpleassets_assets', 'simpleassets_transfers', 'simpleassets_transfers_assets',
-            'simpleassets_config', 'simpleassets_authors'
+            'simpleassets_config', 'simpleassets_authors', 'simpleassets_card_totals'
         ];
 
         for (const table of tables) {

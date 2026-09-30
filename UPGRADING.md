@@ -175,6 +175,28 @@ SELECT count(*) AS queued,
 FROM atomicmarket_stats_markets_updates;
 ```
 
+### 2.0.11 adds simpleassets mint numbering
+
+A chain that runs no `simpleassets` handler needs no action. The version only
+advances `dbinfo` there.
+
+A chain that runs the handler gets three nullable columns, which are
+catalog-only changes, and the new `simpleassets_card_totals` table. It also
+gets the `simpleassets_assets_mint_group` index, which the deferred file builds
+`CONCURRENTLY`. That build scans the whole of `simpleassets_assets`, and the
+filler's boot blocks until it finishes, as with `2.0.8`. The API server keeps
+serving throughout. Pre-build the index with the statement in
+`definitions/migrations/2.0.11/simpleassets-deferred.sql` to remove the wait.
+
+A database can hold `simpleassets_*` tables from an earlier deployment while
+no reader configures the handler. Such a database never gets the `2.0.11`
+columns: the version's handler file runs only for configured handlers, and
+handler setup creates nothing while `simpleassets_config` exists. Before you
+add the handler there, back up the data you need, then drop
+`simpleassets_transfers_assets`, `simpleassets_transfers`,
+`simpleassets_assets`, `simpleassets_authors` and `simpleassets_config`. The
+handler then creates them at the current schema.
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are
