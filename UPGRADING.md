@@ -197,6 +197,21 @@ add the handler there, back up the data you need, then drop
 `simpleassets_assets`, `simpleassets_authors` and `simpleassets_config`. The
 handler then creates them at the current schema.
 
+### 2.0.12 adds the bridge link table
+
+A chain that runs the `atomicassets` handler gets the new, empty
+`atomicassets_original_mints` table and its index. The migration locks no
+existing table and takes seconds. No action is needed. A chain without that
+handler only advances `dbinfo`.
+
+A database can hold `atomicassets_*` tables while no reader configures the
+handler. Such a database never gets the `2.0.12` table: the version's handler
+file runs only for configured handlers, and handler setup creates nothing
+while `atomicassets_config` exists. A `simpleassets` reader with
+`bridge_account` set then stops at startup. Before you add the handler there
+or set `bridge_account`, apply
+`definitions/migrations/2.0.12/atomicassets.sql` by hand. It is idempotent.
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are

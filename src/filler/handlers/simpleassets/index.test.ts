@@ -65,3 +65,72 @@ describe('SimpleAssetsHandler constructor', () => {
         expect(() => construct({ numbered_group_fields: ['cardid', 3] })).to.throw('numbered_group_fields');
     });
 });
+
+describe('SimpleAssetsHandler bridge link arguments', () => {
+    it('rejects bridge_account without atomicassets_account', () => {
+        expect(() => construct({ bridge_account: 'atomicbridge' })).to.throw('atomicassets_account');
+    });
+
+    it('rejects atomicassets_account without bridge_account', () => {
+        expect(() => construct({ atomicassets_account: 'atomicassets' })).to.throw('bridge_account');
+    });
+
+    it('rejects an empty bridge_account', () => {
+        expect(() => construct({ bridge_account: '', atomicassets_account: 'atomicassets' })).to.throw('non-empty');
+    });
+
+    it('rejects an empty atomicassets_account', () => {
+        expect(() => construct({ bridge_account: 'atomicbridge', atomicassets_account: '' })).to.throw('non-empty');
+    });
+
+    it('keeps bridge_account with atomicassets_account', () => {
+        const handler = construct({ bridge_account: 'atomicbridge', atomicassets_account: 'atomicassets' });
+
+        expect(handler.args.bridge_account).to.equal('atomicbridge');
+        expect(handler.args.atomicassets_account).to.equal('atomicassets');
+    });
+
+    async function initWithLinkTable(args: {[key: string]: any}, tableExists: boolean): Promise<{error: Error | null, queries: string[]}> {
+        const queries: string[] = [];
+        const handler = { args: { simpleassets_account: CONTRACT, ...args } };
+        const client = {
+            query: async (sql: string): Promise<any> => {
+                queries.push(sql);
+
+                if (sql.includes('to_regclass')) {
+                    return { rows: [{ exists: tableExists }], rowCount: 1 };
+                }
+
+                return { rows: [{ version: '1.0.0' }], rowCount: 1 };
+            },
+        };
+
+        try {
+            await SimpleAssetsHandler.prototype.init.call(handler, client);
+        } catch (e) {
+            return { error: e as Error, queries };
+        }
+
+        return { error: null, queries };
+    }
+
+    it('fails init with an error naming the link table when bridge_account is set and the table is missing', async () => {
+        const { error } = await initWithLinkTable({ bridge_account: 'atomicbridge', atomicassets_account: 'atomicassets' }, false);
+
+        expect(error).to.not.equal(null);
+        expect(error.message).to.contain('atomicassets_original_mints');
+    });
+
+    it('passes init when bridge_account is set and the table exists', async () => {
+        const { error } = await initWithLinkTable({ bridge_account: 'atomicbridge', atomicassets_account: 'atomicassets' }, true);
+
+        expect(error).to.equal(null);
+    });
+
+    it('does not look for the link table without bridge_account', async () => {
+        const { error, queries } = await initWithLinkTable({}, false);
+
+        expect(error).to.equal(null);
+        expect(queries.some(sql => sql.includes('to_regclass'))).to.equal(false);
+    });
+});
