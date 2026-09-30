@@ -45,7 +45,9 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
           { "handler": "simpleassets",
             "args": { "simpleassets_account": "simpleassets", "store_transfers": true,
                       "numbered_authors": ["gpk.topps"],
-                      "numbered_group_fields": ["cardid", "quality", "variant"] } } ] }
+                      "numbered_group_fields": ["cardid", "quality", "variant"],
+                      "atomicassets_account": "atomicassets",
+                      "bridge_account": "atomicbridge" } } ] }
 
   `numbered_authors` lists the authors whose creates get a `mint_number`, the
   ordinal of the asset within its card group. `numbered_group_fields` lists the
@@ -57,11 +59,65 @@ community. See [NOTICE](./NOTICE) for the project's lineage.
   only to creates above `simpleassets_config.bootstrap_baseline_block`. While
   that block is unset, no asset gets a number. Both arguments default to empty.
 
-  To number an author's existing cards, import the totals from a snapshot taken
-  at block S and set `bootstrap_baseline_block` to S. Start the reader entry at
-  S+1. Creates at or below `bootstrap_baseline_block` get no number, so a start
-  at or below S leaves those creates unnumbered, and a start above S+1 skips
-  creates the totals never count.
+  `bridge_account` names the account that mints an AtomicAssets copy of a
+  SimpleAssets asset on `atomicassets_account`. Set both or neither. With them
+  set, the reader also reads that contract's `logmint` actions. A mint by
+  `bridge_account` whose immutable data holds `sassets_id` gets a row in
+  `atomicassets_original_mints` that links the new asset to the SimpleAssets
+  asset and copies its `mint_number`. A SimpleAssets asset with no number
+  gives a link with a null `original_mint` and a warning in the log. Mints by
+  other accounts get no link. The link table belongs to the `atomicassets`
+  handler, so the filler stops at startup when `bridge_account` is set on a
+  database without it. `delete_data` on this reader deletes its links too.
+
+  To number an author's existing cards, import a snapshot taken at block S,
+  then start the reader entry at S+1. Creates at or below
+  `bootstrap_baseline_block` get no number, so a start at or below S leaves
+  those creates unnumbered, and a start above S+1 skips creates the totals
+  never count. The import reads one file per table, each in JSON lines: one
+  JSON object per line, with keys equal to the ECA column names.
+
+  | File | Columns |
+  | --- | --- |
+  | assets | `contract`, `asset_id`, `author`, `category`, `owner`, `mutable_data`, `immutable_data`, `transferred_at_block`, `transferred_at_time`, `updated_at_time`, `minted_at_block`, `minted_at_time`, `mint_number`, `mint_group`; optional `burned_by_account`, `burned_at_block`, `burned_at_time`, `updated_at_block` |
+  | card totals | `contract`, `author`, `mint_group`, `total_ever` |
+  | config | `contract`, `version`; optional `bootstrap_baseline_block` |
+
+  Every row in a file has the same keys. A key that is not a column of the
+  table, or a missing key that the table above does not mark optional, stops
+  the import. `mutable_data` and `immutable_data` are JSON
+  objects or JSON text. `mint_group` is the JSON array text described above.
+  A bigint above 2^53 - 1 must be a quoted string, because a JSON number that
+  large loses precision, and the import refuses one written as a number.
+  `mint_number` and `mint_group` are null for an unnumbered author. The
+  config file holds one row. The import sets `bootstrap_baseline_block` and
+  every imported asset's `updated_at_block` to S, whatever the files hold, so
+  a trace from before S that the reader replays leaves the imported rows
+  alone. Run it with the reader stopped:
+
+      pnpm start:import-simpleassets-snapshot --snapshot-block S \
+        --assets assets.jsonl --card-totals card_totals.jsonl --config config.jsonl
+
+  It takes the accounts from the `simpleassets` entry in `readers.config.json`.
+  Pass `--simpleassets-account` when more than one entry exists. It commits
+  in one transaction, and a second run with the same files changes nothing.
+  It refuses to run when the reader that holds that entry has processed a
+  block above S, or when `simpleassets_assets` already holds an asset of the
+  contract minted above S: the creates and transfers after S would then be
+  lost, and a second import cannot repair them. Before the first import
+  commits, it also refuses when `simpleassets_assets` or
+  `simpleassets_card_totals` holds any row of the contract, because the
+  import keeps a stored row over the snapshot's. A reader that has not
+  processed a block yet stores block 0, which passes.
+  With `bridge_account` set, it also links the bridge mints at or below S that
+  this database already holds. It finds the one reader in `readers.config.json`
+  that runs the `atomicassets` handler on `atomicassets_account`, and it stops
+  when there is none or more than one. It refuses to run when that reader's
+  `contract_readers` row is missing or stands below S, when
+  `atomicassets_original_mints` already holds links above S, or when
+  `bootstrap_baseline_block` already holds a block other than S. It also
+  stops when one reader runs both handlers, because the import needs a
+  separate simpleassets reader that starts at S+1.
 - Streams live updates via WebSockets (Socket.IO) for sales, transfers,
   and trades.
 - Ships a Prometheus metrics endpoint for monitoring filler health.
