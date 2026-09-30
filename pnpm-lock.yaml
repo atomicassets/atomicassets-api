@@ -42,8 +42,8 @@ importers:
         specifier: ^5.2.1
         version: 5.2.1(supports-color@8.1.1)
       express-rate-limit:
-        specifier: ^8.6.2
-        version: 8.6.2(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1)
+        specifier: ^8.7.0
+        version: 8.7.0(express@5.2.1(supports-color@8.1.1))
       iovalkey:
         specifier: ^0.3.3
         version: 0.3.3(supports-color@8.1.1)
@@ -64,7 +64,7 @@ importers:
         version: 2.0.7
       rate-limit-redis:
         specifier: ^5.0.0
-        version: 5.0.0(express-rate-limit@8.6.2(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1))
+        version: 5.0.0(express-rate-limit@8.7.0(express@5.2.1(supports-color@8.1.1)))
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3(supports-color@8.1.1)
@@ -1515,8 +1515,8 @@ packages:
     resolution: {integrity: sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA==}
     engines: {node: ^18.19.0 || >=20.5.0}
 
-  express-rate-limit@8.6.2:
-    resolution: {integrity: sha512-YH4ru+eOJxQABscKFfRCy9R7x9QFGdezclVMwwgFFndzS2Xnm0uo6B0ABZsLhcpeptGv2qvuJVWlQr9gQZoC3A==}
+  express-rate-limit@8.7.0:
+    resolution: {integrity: sha512-hOwV7WOxXfjRpAM1DSJWZDXx3GhplwD8IfwuwvogD8i1Qnkgosw/H45s4ZnFAUHDAhPjlY9hLBvJhKmGMyY26g==}
     engines: {node: '>= 16'}
     peerDependencies:
       express: '>= 4.11'
@@ -1767,8 +1767,8 @@ packages:
     resolution: {integrity: sha512-4rTJX6Q5wTYEvxboXi8DsEiUo+OvqJGtLYOSGm37KpdRXsG5XJjbVtYKGJpPSWP+QT7rWscA4vsrdmzbEbenpw==}
     engines: {node: '>=18.12.0'}
 
-  ip-address@10.5.0:
-    resolution: {integrity: sha512-R5SnVLJmgYYvf2F2ZgwSBnelz5G4q5AxIC277GDfUaNbrZKNANcBC7RHqYYePlszf4kBolVkJauG0ZjHHFh55g==}
+  ip-address@10.7.0:
+    resolution: {integrity: sha512-BGFsyJd5mpXp3rK6jIdADLNgpJUK1jnjzvYF8lK+VyDab9JAmqN0YOKDdP17HlgKb2+ehPgDc8EtnRLbGCAMhA==}
     engines: {node: '>= 12'}
 
   ipaddr.js@1.9.1:
@@ -3949,11 +3949,11 @@ snapshots:
       strip-final-newline: 4.0.0
       yoctocolors: 2.1.2
 
-  express-rate-limit@8.6.2(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1):
+  express-rate-limit@8.7.0(express@5.2.1(supports-color@8.1.1)):
     dependencies:
       debug: 4.4.3(supports-color@8.1.1)
       express: 5.2.1(supports-color@8.1.1)
-      ip-address: 10.5.0
+      ip-address: 10.7.0
     transitivePeerDependencies:
       - supports-color
 
@@ -4252,7 +4252,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  ip-address@10.5.0: {}
+  ip-address@10.7.0: {}
 
   ipaddr.js@1.9.1: {}
 
@@ -4686,9 +4686,9 @@ snapshots:
 
   range-parser@1.2.1: {}
 
-  rate-limit-redis@5.0.0(express-rate-limit@8.6.2(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1)):
+  rate-limit-redis@5.0.0(express-rate-limit@8.7.0(express@5.2.1(supports-color@8.1.1))):
     dependencies:
-      express-rate-limit: 8.6.2(express@5.2.1(supports-color@8.1.1))(supports-color@8.1.1)
+      express-rate-limit: 8.7.0(express@5.2.1(supports-color@8.1.1))
 
   raw-body@3.0.2:
     dependencies:
