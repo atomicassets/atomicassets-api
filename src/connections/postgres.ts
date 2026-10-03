@@ -67,9 +67,17 @@ export default class PostgresConnection {
     }
 
     createPool(args: Partial<PoolConfig>): Pool {
-        return new Pool({
+        const pool = new Pool({
             ...this.args, ...args
         });
+
+        // pg-pool emits 'error' when an idle client dies. With no listener Node
+        // raises that as an uncaught exception, so every created pool gets one.
+        pool.on('error', (err) => {
+            logger.warn('PG pool error', err);
+        });
+
+        return pool;
     }
 
     async query<T = any>(queryText: string, values: any[] = []): Promise<QueryResult<T>> {
