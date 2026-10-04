@@ -35,6 +35,9 @@ export function formatAsset(row: any): any {
 
     data.name = data.data.name;
 
+    // A view that predates the column omits the key.
+    data.original_mint = data.original_mint ?? null;
+
     delete data['template_id'];
     delete data['schema_name'];
     delete data['collection_name'];

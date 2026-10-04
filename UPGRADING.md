@@ -212,6 +212,29 @@ while `atomicassets_config` exists. A `simpleassets` reader with
 or set `bridge_account`, apply
 `definitions/migrations/2.0.12/atomicassets.sql` by hand. It is idempotent.
 
+### 2.0.13 adds original_mint to the asset master view
+
+`atomicassets_assets_master` gains `original_mint` as its last column, through
+a left join on the `2.0.12` link table. The version re-creates the view with
+`CREATE OR REPLACE`, which takes seconds and waits at most 5 seconds for the
+view lock. A version that cannot take it within that time fails and retries on
+the next boot. No action is needed. A database that holds `atomicassets_*`
+tables but configures no `atomicassets` reader never gets the view column. To
+serve `original_mint` from such a database, run this block once from the
+repository root, in one transaction that gives up on a held view lock after 5
+seconds:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+\i definitions/migrations/2.0.13/atomicassets.sql
+\i definitions/views/atomicassets_assets_master.sql
+COMMIT;
+```
+
+Run it with `psql <your connection options> -X -v ON_ERROR_STOP=1 -f` and the
+file you saved the block in. The table statements are idempotent.
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are
@@ -529,7 +552,7 @@ DROP VIEW IF EXISTS atomicassets_moves_master;
 DROP TABLE IF EXISTS atomicassets_moves_assets;
 DROP TABLE IF EXISTS atomicassets_moves;
 ALTER TABLE atomicassets_assets DROP COLUMN IF EXISTS holder;
-\i definitions/views/atomicassets_assets_master.sql
+\i definitions/views/atomicassets_assets_master.pre-original-mint.sql
 \i definitions/views/atomicmarket_assets_master.sql
 COMMIT;
 ```

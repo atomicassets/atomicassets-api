@@ -291,7 +291,11 @@ export async function getRawAssetsAction(
         sort: {type: 'string', min: 1},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'desc'},
 
-        count: {type: 'bool'}
+        count: {type: 'bool'},
+
+        original_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        min_original_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_original_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     // Eligible counts use aggregate totals before the listing query is built,
@@ -308,7 +312,8 @@ export async function getRawAssetsAction(
     // every caller with no error and no log line. Defaulting off makes taking
     // the fast path a decision an operator can validate against the raw count
     // on their own data first.
-    if (args.count && ctx.coreArgs.enable_fast_asset_counts === true && !options?.extraTables) {
+    if (args.count && ctx.coreArgs.enable_fast_asset_counts === true && !options?.extraTables
+        && args.sort !== 'original_mint') {
         const fastCount = await getFastAssetsCount(values, ctx);
 
         if (fastCount !== null) {
@@ -338,19 +343,50 @@ export async function getRawAssetsAction(
             || key.startsWith('template_data:') || key.startsWith('template_data.')
         );
 
+    // Only a request that reads the original mint joins the link table, so
+    // every other request plans without it.
+    const needsOriginalMintJoin = args.sort === 'original_mint'
+        || args.original_mint !== undefined
+        || args.min_original_mint !== undefined
+        || args.max_original_mint !== undefined;
+
     const query = new QueryBuilder(
         'SELECT asset.asset_id FROM atomicassets_assets asset' +
         (needsTemplateJoin
             ? ' LEFT JOIN atomicassets_templates "template" ON (' +
               'asset.contract = template.contract AND asset.template_id = template.template_id' +
               ') '
-            : ' ')
+            : ' ') +
+        (needsOriginalMintJoin
+            ? 'LEFT JOIN atomicassets_original_mints original_link ON (' +
+              'original_link.contract = asset.contract AND original_link.asset_id = asset.asset_id' +
+              ') '
+            : '')
     );
     if (options?.extraTables) {
         query.appendToBase(options.extraTables);
     }
 
     query.equal('asset.contract', ctx.coreArgs.atomicassets_account);
+
+    // The sort lists only assets that have an original mint, so the planner can
+    // drive from the link table's (contract, original_mint) index. The count
+    // applies the same condition and equals the number of rows the list returns.
+    if (args.sort === 'original_mint') {
+        query.addCondition('original_link.original_mint IS NOT NULL');
+    }
+
+    if (args.original_mint !== undefined) {
+        query.equal('original_link.original_mint', args.original_mint);
+    }
+
+    if (args.min_original_mint !== undefined) {
+        query.addCondition('original_link.original_mint >= ' + query.addVariable(args.min_original_mint));
+    }
+
+    if (args.max_original_mint !== undefined) {
+        query.addCondition('original_link.original_mint <= ' + query.addVariable(args.max_original_mint));
+    }
 
     await buildAssetQueryCondition(params, query, {
         assetTable: '"asset"',
@@ -381,6 +417,10 @@ export async function getRawAssetsAction(
             transferred: {column: 'asset.transferred_at_time', nullable: false, numericIndex: true},
             minted: {column: 'asset.asset_id', nullable: false, numericIndex: true},
             template_mint: {column: 'asset.template_mint', nullable: true, numericIndex: true},
+            // The IS NOT NULL condition always accompanies this sort, so no NULLS LAST
+            // is needed and a backward scan of the link index can supply the order.
+            // numericIndex stays false so the guard below never adds + 1 to this sort.
+            original_mint: {column: 'original_link.original_mint', nullable: false, numericIndex: false},
             name: {column: '(COALESCE(template.mutable_data, \'{}\') || COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true, numericIndex: false},
             ...options?.extraSort,
         };
@@ -399,15 +439,23 @@ export async function getRawAssetsAction(
     // Highly selective filters that should always use indexes (even with other filters)
     const hasHighlySelectiveFilter = params.owner || params.asset_id;
     
+    // An original mint filter under another sort lets the planner walk that sort's index and
+    // probe the link table per row, which runs long when few assets are linked. The + 1 form
+    // makes the bounded match set from the link table drive the plan, so it applies here
+    // even with a collection filter.
+    const hasOriginalMintFilterUnderOtherSort = args.sort !== 'original_mint'
+        && (args.original_mint !== undefined || args.min_original_mint !== undefined || args.max_original_mint !== undefined);
+
     // Simple collection query without complex operations can use index efficiently
-    const isSimpleCollectionQuery = params.collection_name && !hasComplexFilters && !hasBroadTemplateSearch;
+    const isSimpleCollectionQuery = params.collection_name && !hasComplexFilters && !hasBroadTemplateSearch
+        && !hasOriginalMintFilterUnderOtherSort;
     
     // Large OFFSET pagination requires index usage (sorting + skipping in memory is extremely slow)
     const offset = (args.page - 1) * args.limit;
     const hasLargeOffset = offset > 1000;
     
     // Only disable index for complex operations, unless we have highly selective filters or large offset
-    const ignoreIndex = (hasBroadTemplateSearch || hasComplexFilters)
+    const ignoreIndex = (hasBroadTemplateSearch || hasComplexFilters || hasOriginalMintFilterUnderOtherSort)
         && !hasHighlySelectiveFilter
         && !isSimpleCollectionQuery
         && !hasLargeOffset
@@ -498,7 +546,46 @@ export async function getAssetStatsAction(params: RequestValues, ctx: AtomicAsse
         [ctx.coreArgs.atomicassets_account, asset.asset_id, asset.template_id, asset.schema_name, asset.collection_name]
     );
 
-    return query.rows[0];
+    return {...query.rows[0], original: await getOriginalMintStats(ctx, asset.asset_id)};
+}
+
+// Group totals of the SimpleAssets card an asset was bridged from, or null
+// when the asset has no link, the source asset carries no group, or the
+// filler has no SimpleAssets tables or no link table. circulation counts every unburned asset
+// in the group whichever side of the bridge holds it, so a bridged card counts
+// once.
+async function getOriginalMintStats(ctx: AtomicAssetsContext, assetId: string): Promise<{
+    mint: string | null, total_ever: string, circulation: string, burned: string
+} | null> {
+    const {rows: [tables]} = await ctx.db.query(
+        'SELECT to_regclass(\'atomicassets_original_mints\') IS NOT NULL ' +
+        'AND to_regclass(\'simpleassets_assets\') IS NOT NULL ' +
+        'AND to_regclass(\'simpleassets_card_totals\') IS NOT NULL AS present'
+    );
+
+    if (!tables.present) {
+        return null;
+    }
+
+    const {rows: [stats]} = await ctx.db.query(
+        'SELECT link.original_mint::text AS mint, totals.total_ever::text AS total_ever, ' +
+        'circulation.count::text AS circulation, ' +
+        'GREATEST(0, totals.total_ever - circulation.count)::text AS burned ' +
+        'FROM atomicassets_original_mints link ' +
+        'JOIN simpleassets_assets source ON (source.contract = link.original_contract AND source.asset_id = link.original_asset_id) ' +
+        'JOIN simpleassets_card_totals totals ON (' +
+        'totals.contract = source.contract AND totals.author = source.author AND totals.mint_group = source.mint_group' +
+        ') ' +
+        'CROSS JOIN LATERAL (' +
+        'SELECT COUNT(*) AS count FROM simpleassets_assets member ' +
+        'WHERE member.contract = source.contract AND member.author = source.author ' +
+        'AND member.mint_group = source.mint_group AND member.owner IS NOT NULL' +
+        ') circulation ' +
+        'WHERE link.contract = $1 AND link.asset_id = $2',
+        [ctx.coreArgs.atomicassets_account, assetId]
+    );
+
+    return stats ?? null;
 }
 
 export async function getAssetLogsAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {
