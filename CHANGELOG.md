@@ -10,6 +10,21 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.5.0]
+
+Serves the original mint of a bridged asset, with filters, a sort and per-card totals.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.5.0`. The `2.5` and `latest` tags move to it.
+- The migration set moves to `2.0.13`, and the filler applies it on boot. `2.0.12` adds the new, empty `atomicassets_original_mints` table on every chain that runs the `atomicassets` handler, and `2.0.13` re-creates `atomicassets_assets_master` with one more column. Both take seconds, and `2.0.13` waits at most 5 seconds for the view lock. Other operators need no action.
+
+### Features
+
+- Every asset object carries `original_mint`: a string, or null for an asset that has no link to an original and for a link whose source asset has no mint number. The `atomicassets_assets_master` view gains it as its last column.
+- `/v1/assets` and `/v1/assets/_count` accept `original_mint`, `min_original_mint` and `max_original_mint`, and `/v1/assets` accepts `sort=original_mint`, which returns only assets that have an original mint, and `/v1/assets/_count` with that sort counts the same assets. Only a request that uses one of them joins the link table, so the `template_mint` filters and sorts keep their queries.
+- `/v1/assets/:asset_id/stats` gains `original`: `mint`, `total_ever`, `circulation` and `burned` of the SimpleAssets card group the asset was bridged from, all strings. It is null when the asset has no link, the source asset is not indexed or has no card group, the group has no totals row, or the database holds no SimpleAssets tables.
+
 ## [2.4.1]
 
 Takes the SHIP serialization helpers from the published package so the filler decodes with one copy of them.

@@ -3,6 +3,7 @@ import { expect } from 'chai';
 
 import { getRawAssetsAction } from './assets';
 import { AtomicAssetsContext } from '../index';
+import { initListValidator } from '../../lists';
 
 // Unit-style regression tests for the `needsTemplateJoin` gate in
 // getRawAssetsAction. These stub-only tests run in the default
@@ -173,4 +174,124 @@ describe('getRawAssetsAction - needsTemplateJoin gate', () => {
         ).to.equal(false);
         expect(captures.some(c => /SELECT\s+COUNT\(\*\)/i.test(c.text))).to.equal(true);
     });
+});
+
+describe('getRawAssetsAction - original mint link join', () => {
+    const hasLinkJoin = (captures: CapturedQuery[]): boolean =>
+        captures.some(c => /atomicassets_original_mints/i.test(c.text));
+
+    async function run(params: Record<string, string>): Promise<CapturedQuery[]> {
+        const captures: CapturedQuery[] = [];
+
+        await getRawAssetsAction(params, stubContext(captures));
+
+        return captures;
+    }
+
+    for (const params of [
+        {},
+        {template_mint: '3'},
+        {min_template_mint: '2', max_template_mint: '4', sort: 'template_mint'},
+        {hide_offers: 'true', sort: 'asset_id'},
+    ]) {
+        it(`${JSON.stringify(params)} keeps its SQL free of the link table`, async () => {
+            expect(hasLinkJoin(await run(params))).to.equal(false);
+        });
+    }
+
+    for (const params of [
+        {original_mint: '3'},
+        {min_original_mint: '2'},
+        {max_original_mint: '4'},
+        {sort: 'original_mint'},
+    ]) {
+        it(`${JSON.stringify(params)} joins the link table on its key`, async () => {
+            const captures = await run(params);
+            const text = captures.map(c => c.text).join('\n');
+
+            expect(hasLinkJoin(captures)).to.equal(true);
+            expect(text).to.match(/atomicassets_original_mints[^\n]*ON \(\s*\S*\.contract = asset\.contract AND \S*\.asset_id = asset\.asset_id\s*\)/);
+        });
+    }
+
+    it('a count with an original mint filter skips the aggregate table', async () => {
+        const captures = await run({count: 'true', min_original_mint: '2'});
+
+        expect(captures.some(c => /atomicassets_asset_counts/i.test(c.text))).to.equal(false);
+        expect(hasLinkJoin(captures)).to.equal(true);
+    });
+
+    it('sort=original_mint keeps only linked assets with a mint number', async () => {
+        const text = (await run({sort: 'original_mint'})).map(c => c.text).join('\n');
+
+        expect(text).to.contain('original_link.original_mint IS NOT NULL');
+    });
+
+    it('a filter without the sort adds no IS NOT NULL condition', async () => {
+        const text = (await run({min_original_mint: '2'})).map(c => c.text).join('\n');
+
+        expect(text).to.not.contain('IS NOT NULL');
+    });
+
+    it('a count with sort=original_mint skips the aggregate table and carries the condition', async () => {
+        const captures = await run({count: 'true', sort: 'original_mint'});
+
+        expect(captures.some(c => /atomicassets_asset_counts/i.test(c.text))).to.equal(false);
+        expect(captures.some(c => /original_link\.original_mint IS NOT NULL/.test(c.text))).to.equal(true);
+    });
+
+    it('template_mint requests keep their SQL free of the condition', async () => {
+        const text = (await run({sort: 'template_mint', min_template_mint: '2'})).map(c => c.text).join('\n');
+
+        expect(text).to.not.contain('original_');
+    });
+
+    it('the original_mint sort emits both directions without NULLS LAST or a + 1 guard', async () => {
+        for (const order of ['asc', 'desc']) {
+            const text = (await run({sort: 'original_mint', order})).map(c => c.text).join('\n');
+
+            expect(text).to.contain(`ORDER BY original_link.original_mint ${order} , asset.asset_id ASC`);
+            expect(text).to.not.contain('NULLS LAST');
+            expect(text).to.not.contain('original_mint + 1');
+        }
+    });
+
+    it('a filter under the default sort carries the guarded ORDER BY', async () => {
+        for (const params of [{original_mint: '3'}, {min_original_mint: '2'}, {max_original_mint: '4'}]) {
+            const text = (await run(params)).map(c => c.text).join('\n');
+
+            expect(text).to.contain('ORDER BY asset.asset_id + 1');
+        }
+    });
+
+    it('a filter with a collection filter and the default sort keeps the guard', async () => {
+        initListValidator({query: async () => ({rows: [], rowCount: 0})} as any);
+
+        const text = (await run({min_original_mint: '2', collection_name: 'abc'})).map(c => c.text).join('\n');
+
+        expect(text).to.contain('ORDER BY asset.asset_id + 1');
+    });
+
+    it('a request without an original mint filter keeps the plain asset_id ORDER BY', async () => {
+        const text = (await run({hide_offers: 'true'})).map(c => c.text).join('\n');
+
+        expect(text).to.contain('ORDER BY asset.asset_id');
+        expect(text).to.not.contain('asset_id + 1');
+    });
+
+    for (const key of ['original_mint', 'min_original_mint', 'max_original_mint']) {
+        it(`${key} above the safe integer range is refused as a 400`, async () => {
+            let error: any = null;
+
+            try {
+                await run({[key]: String(Number.MAX_SAFE_INTEGER) + '0'});
+            } catch (e) {
+                error = e;
+            }
+
+            expect(error).to.not.equal(null);
+            expect(error.code).to.equal(400);
+            expect(error.message).to.contain(`Invalid value for parameter ${key}`);
+        });
+    }
 });

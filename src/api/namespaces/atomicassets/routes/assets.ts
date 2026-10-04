@@ -16,7 +16,8 @@ import {
     completeAssetFilterParameters,
     extendedAssetFilterParameters,
     greylistFilterParameters,
-    hideOffersParameters
+    hideOffersParameters,
+    originalMintParameters
 } from '../openapi';
 import { fillAssets, FillerHook } from '../filler';
 import { createSocketApiNamespace, extractNotificationIdentifiers, } from '../../../utils';
@@ -72,6 +73,7 @@ export class AssetApi {
                             ...extendedAssetFilterParameters,
                             ...completeAssetFilterParameters,
                             ...hideOffersParameters,
+                            ...originalMintParameters,
                             ...greylistFilterParameters,
                             ...getPrimaryBoundaryParams('asset_id'),
                             ...dateBoundaryParameters,
@@ -79,11 +81,11 @@ export class AssetApi {
                             {
                                 name: 'sort',
                                 in: 'query',
-                                description: 'Column to sort',
+                                description: 'Column to sort. The original_mint sort returns only assets that have an original mint.',
                                 required: false,
                                 schema: {
                                     type: 'string',
-                                    enum: ['asset_id', 'minted', 'updated', 'transferred', 'template_mint', 'name'],
+                                    enum: ['asset_id', 'minted', 'updated', 'transferred', 'template_mint', 'original_mint', 'name'],
                                     default: 'asset_id'
                                 }
                             }
@@ -158,7 +160,18 @@ export class AssetApi {
                         responses: getOpenAPI3Responses([200, 500], {
                             type: 'object',
                             properties: {
-                                template_mint: {type: 'integer'}
+                                template_mint: {type: 'integer'},
+                                original: {
+                                    type: 'object',
+                                    nullable: true,
+                                    description: 'Totals of the card group the asset was bridged from. Null when the asset has no link, the source asset is not indexed or has no group, the group has no totals row, or the database holds no SimpleAssets tables',
+                                    properties: {
+                                        mint: {type: 'string', nullable: true},
+                                        total_ever: {type: 'string'},
+                                        circulation: {type: 'string'},
+                                        burned: {type: 'string'}
+                                    }
+                                }
                             }
                         })
                     }

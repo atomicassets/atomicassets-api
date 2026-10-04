@@ -1,7 +1,7 @@
 import 'mocha';
 import { expect } from 'chai';
 
-import { formatSchema } from './format';
+import { formatAsset, formatSchema } from './format';
 
 // `format[].mediatype` deliberately merges the authored `schematypes` descriptors
 // with a name/type heuristic, which answers "how should I render this field" and
@@ -96,5 +96,21 @@ describe('formatSchema', () => {
         ]), {includeTypes: true});
 
         expect(result.format.map((field: any) => field.mediatype)).to.deep.equal(['name', 'image', null]);
+    });
+});
+
+describe('formatAsset original_mint', () => {
+    const row = {collection: {}, schema: {format: [], types: []}, mutable_data: {}, immutable_data: {}};
+
+    it('carries a null key when the row omits the column', () => {
+        expect(formatAsset({...row})).to.have.property('original_mint', null);
+    });
+
+    it('keeps the string the view returns', () => {
+        expect(formatAsset({...row, original_mint: '12'}).original_mint).to.equal('12');
+    });
+
+    it('keeps a null the view returns', () => {
+        expect(formatAsset({...row, original_mint: null}).original_mint).to.equal(null);
     });
 });
