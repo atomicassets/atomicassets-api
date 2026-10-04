@@ -12,18 +12,28 @@ project follows semantic versioning.
 
 ## [2.5.0]
 
-Serves the original mint of a bridged asset, with filters, a sort and per-card totals.
+Serves the original mint of a bridged asset, with filters, a sort and per-card totals, from a `simpleassets` handler that numbers the source assets and links each bridged asset to its source.
 
 ### Upgrading
 
 - Image `ghcr.io/atomicassets/atomicassets-api:2.5.0`. The `2.5` and `latest` tags move to it.
-- The migration set moves to `2.0.13`, and the filler applies it on boot. `2.0.12` adds the new, empty `atomicassets_original_mints` table on every chain that runs the `atomicassets` handler, and `2.0.13` re-creates `atomicassets_assets_master` with one more column. Both take seconds, and `2.0.13` waits at most 5 seconds for the view lock. Other operators need no action.
+- The migration set moves to `2.0.13`, and the filler applies it on boot. `2.0.11` changes only a database whose reader runs the `simpleassets` handler: it adds three nullable columns, the `simpleassets_card_totals` table and the `simpleassets_assets_mint_group` index, which builds `CONCURRENTLY` while the filler's boot waits. `2.0.12` adds the new, empty `atomicassets_original_mints` table on every chain that runs the `atomicassets` handler, and `2.0.13` re-creates `atomicassets_assets_master` with one more column. Both take seconds, and `2.0.13` waits at most 5 seconds for the view lock. An operator who does not run the `simpleassets` handler needs no action. `UPGRADING.md` covers a database that holds tables of a handler no reader configures.
+- The `simpleassets` handler takes four new args, all optional: `numbered_authors`, `numbered_group_fields`, `atomicassets_account` and `bridge_account`. With the defaults an existing reader numbers nothing and links nothing.
 
 ### Features
 
-- Every asset object carries `original_mint`: a string, or null for an asset that has no link to an original and for a link whose source asset has no mint number. The `atomicassets_assets_master` view gains it as its last column.
-- `/v1/assets` and `/v1/assets/_count` accept `original_mint`, `min_original_mint` and `max_original_mint`, and `/v1/assets` accepts `sort=original_mint`, which returns only assets that have an original mint, and `/v1/assets/_count` with that sort counts the same assets. Only a request that uses one of them joins the link table, so the `template_mint` filters and sorts keep their queries.
-- `/v1/assets/:asset_id/stats` gains `original`: `mint`, `total_ever`, `circulation` and `burned` of the SimpleAssets card group the asset was bridged from, all strings. It is null when the asset has no link, the source asset is not indexed or has no card group, the group has no totals row, or the database holds no SimpleAssets tables.
+- Every asset object carries `original_mint`: a string, or null for an asset that has no link to an original and for a link whose source asset has no mint number. The `atomicassets_assets_master` view gains it as its last column. (#229)
+- `/v1/assets` and `/v1/assets/_count` accept `original_mint`, `min_original_mint` and `max_original_mint`, and `/v1/assets` accepts `sort=original_mint`, which returns only assets that have an original mint, and `/v1/assets/_count` with that sort counts the same assets. Only a request that uses one of them joins the link table, so the `template_mint` filters and sorts keep their queries. (#229)
+- `/v1/assets/:asset_id/stats` gains `original`: `mint`, `total_ever`, `circulation` and `burned` of the SimpleAssets card group the asset was bridged from, all strings. It is null when the asset has no link, the source asset is not indexed or has no card group, the group has no totals row, or the database holds no SimpleAssets tables. (#229)
+- The `simpleassets` handler numbers the assets of each author in `numbered_authors` within a card group and keeps the total per group in `simpleassets_card_totals`. The group key is the category and the `mdata` fields that `numbered_group_fields` names. (#226)
+- With `atomicassets_account` and `bridge_account` set, the `simpleassets` handler links each asset that the bridge account mints to the SimpleAssets asset its `sassets_id` names, and stores the source mint in `atomicassets_original_mints`. (#227)
+- `pnpm start:import-simpleassets-snapshot` loads a one-time seed of `simpleassets_assets`, `simpleassets_card_totals` and `simpleassets_config` from JSON lines files taken at one block, and backfills the links at or below that block. It runs in one transaction, a second run with the same files changes nothing, and it refuses a stale or partial seed. The README documents the file format and the order of operations. (#227)
+
+### Bug fixes
+
+- Every pool that `PostgresConnection.createPool()` returns has an `error` listener. A dead idle client, for example after a database restart, now logs a `PG pool error` warning and raises no uncaught exception. (#228)
+- Every `simpleassets` state change carries a block guard, so a replayed block cannot move an asset back to an older owner or older data. (#226)
+- The `simpleassets` authors processor writes only the columns that `simpleassets_authors` has. It wrote two that do not exist, which stopped the reader on the first author registration. (#226)
 
 ## [2.4.1]
 
