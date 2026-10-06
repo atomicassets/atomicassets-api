@@ -79,7 +79,12 @@ async function buildListingFilter(values: FilterValues, query: QueryBuilder, min
 }
 
 /** The rows of one listing's assets, with the asset as `a` and its link row as `om`. */
-export type EffectiveMintSource = {from: string, where: string};
+export type EffectiveMintSource = {
+    from: string,
+    where: string,
+    // Scalar test that no asset of the listing has a link row with an original mint.
+    unlinked: string,
+};
 
 function listingAssetsMintSource(
     table: string, contractColumn: string, where: string
@@ -89,6 +94,9 @@ function listingAssetsMintSource(
             `JOIN atomicassets_assets a ON a.contract = la.${contractColumn} AND a.asset_id = la.asset_id ` +
             `LEFT JOIN atomicassets_original_mints om ON om.contract = la.${contractColumn} AND om.asset_id = la.asset_id`,
         where,
+        unlinked: `(SELECT COUNT(*) FROM ${table} la ` +
+            `JOIN atomicassets_original_mints om ON om.contract = la.${contractColumn} AND om.asset_id = la.asset_id ` +
+            `WHERE ${where} AND om.original_mint IS NOT NULL) = 0`,
     };
 }
 
@@ -113,9 +121,16 @@ export const SALES_FILTER_MINT_SOURCE: EffectiveMintSource = {
     from: 'atomicassets_assets a ' +
         'LEFT JOIN atomicassets_original_mints om ON om.contract = a.contract AND om.asset_id = a.asset_id',
     where: 'a.contract = listing.assets_contract AND a.asset_id = ANY(listing.asset_ids)',
+    unlinked: '(SELECT COUNT(*) FROM atomicassets_original_mints om ' +
+        'WHERE om.contract = listing.assets_contract AND om.asset_id = ANY(listing.asset_ids) ' +
+        'AND om.original_mint IS NOT NULL) = 0',
 };
 
 const EFFECTIVE_MINT = 'COALESCE(om.original_mint, a.template_mint)';
+
+// The sales filter query switches from the indexed array predicate to an unindexed per-row
+// predicate above this many collection names, so the mint parameters stop at the same count.
+export const MAX_INDEXED_COLLECTION_NAMES = 50;
 
 async function requireMintScope(values: FilterValues): Promise<void> {
     const args = await filterQueryArgs(values, {collection_name: {type: 'list[name]'}});
@@ -125,10 +140,24 @@ async function requireMintScope(values: FilterValues): Promise<void> {
     if (!args.collection_name.length) {
         throw new ApiError('The effective mint filters and sort require collection_name', 400);
     }
+
+    if (args.collection_name.length > MAX_INDEXED_COLLECTION_NAMES) {
+        throw new ApiError(
+            `The effective mint filters and sort accept at most ${MAX_INDEXED_COLLECTION_NAMES} collection names`, 400
+        );
+    }
 }
 
-// One scalar aggregate per listing: the planner cannot reorder it, and the join
-// and array-overlap forms measured far slower on production-size sales tables.
+// No link with a stored range reads that range (exclusive upper bound), so cost stays flat as
+// asset rows grow. No link with no range yet, or a linked listing, reads one scalar aggregate.
+// An empty range has NULL bounds, which int8range reads as unbounded, so test empty first.
+// The link test avoids EXISTS because the planner turns it into a slower join.
+const STORED_RANGE = 'int8range(lower(listing.template_mint)::bigint, upper(listing.template_mint)::bigint)';
+
+function readsStoredRange(source: EffectiveMintSource): string {
+    return `listing.template_mint IS NOT NULL AND ${source.unlinked}`;
+}
+
 export async function buildEffectiveMintFilter(
     values: FilterValues, query: QueryBuilder, source: EffectiveMintSource
 ): Promise<void> {
@@ -147,13 +176,17 @@ export async function buildEffectiveMintFilter(
         throw new ApiError('Min effective mint can\'t be greater than max effective mint', 400);
     }
 
+    const bounds = 'int8range(' +
+        query.addVariable(args.min_effective_mint ?? null) + ', ' +
+        query.addVariable(args.max_effective_mint ?? null) + ', \'[]\')';
+
     // HAVING makes a listing without any mint a NULL range, which never matches.
     query.addCondition(
-        `(SELECT int8range(MIN(${EFFECTIVE_MINT}), MAX(${EFFECTIVE_MINT}), '[]') ` +
+        `CASE WHEN ${readsStoredRange(source)} ` +
+        `THEN listing.template_mint <> 'empty' AND ${STORED_RANGE} <@ ${bounds} ` +
+        `ELSE (SELECT int8range(MIN(${EFFECTIVE_MINT}), MAX(${EFFECTIVE_MINT}), '[]') ` +
         `FROM ${source.from} WHERE ${source.where} ` +
-        `HAVING COUNT(${EFFECTIVE_MINT}) > 0) <@ int8range(` +
-        query.addVariable(args.min_effective_mint ?? null) + ', ' +
-        query.addVariable(args.max_effective_mint ?? null) + ', \'[]\')'
+        `HAVING COUNT(${EFFECTIVE_MINT}) > 0) <@ ${bounds} END`
     );
 }
 
@@ -163,7 +196,8 @@ export async function buildEffectiveMintSort(
 ): Promise<string> {
     await requireMintScope(values);
 
-    const column = `(SELECT MIN(${EFFECTIVE_MINT}) FROM ${source.from} WHERE ${source.where})`;
+    const column = `CASE WHEN ${readsStoredRange(source)} THEN lower(listing.template_mint)::bigint ` +
+        `ELSE (SELECT MIN(${EFFECTIVE_MINT}) FROM ${source.from} WHERE ${source.where}) END`;
     query.addCondition(`${column} IS NOT NULL`);
 
     return column;

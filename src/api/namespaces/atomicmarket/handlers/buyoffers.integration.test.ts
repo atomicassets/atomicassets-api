@@ -3,7 +3,7 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getBuyOfferAction, getBuyOffersAction, getBuyOffersCountAction} from './buyoffers';
-import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
+import {createMintAsset, defineEffectiveMintSuite, storedTemplateRange} from '../effective-mint-suite';
 import {ApiError} from '../../../error';
 
 // TODO add more tests
@@ -163,12 +163,15 @@ describe('buy offer handler', () => {
     });
 
     defineEffectiveMintSuite({
+        canOverrideStoredRange: true,
         client,
         txit,
         makeListing: async (collectionName, assets, templateMint) => {
             const listing = await client.createBuyOffer({
                 collection_name: collectionName,
-                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+                template_mint: templateMint === undefined
+                    ? storedTemplateRange(assets)
+                    : (templateMint === null ? null : `[${templateMint},${templateMint}]`),
             });
             for (const [i, spec] of assets.entries()) {
                 const asset_id = await createMintAsset(client, collectionName, spec);

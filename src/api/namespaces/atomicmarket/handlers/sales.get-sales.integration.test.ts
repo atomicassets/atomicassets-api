@@ -1,7 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
 import {getSaleAction, getSalesAction, getSalesCountAction} from './sales';
-import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
+import {createMintAsset, defineEffectiveMintSuite, storedTemplateRange} from '../effective-mint-suite';
 import {SaleApiState} from '../index';
 import {OfferState} from '../../../../filler/handlers/atomicassets';
 import {SaleState} from '../../../../filler/handlers/atomicmarket';
@@ -773,6 +773,7 @@ describe('AtomicMarket Sales API', () => {
     });
 
     defineEffectiveMintSuite({
+        canOverrideStoredRange: true,
         client,
         txit,
         makeListing: async (collectionName, assets, templateMint) => {
@@ -784,7 +785,9 @@ describe('AtomicMarket Sales API', () => {
 
             return (await client.createSale({
                 offer_id, collection_name: collectionName,
-                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+                template_mint: templateMint === undefined
+                    ? storedTemplateRange(assets)
+                    : (templateMint === null ? null : `[${templateMint},${templateMint}]`),
             })).sale_id;
         },
         query: async (values) => await getSalesIds(values),

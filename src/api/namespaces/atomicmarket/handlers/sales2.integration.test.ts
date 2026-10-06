@@ -1053,6 +1053,47 @@ describe('AtomicMarket Sales API', () => {
         },
     });
 
+    describe('effective mint stored range of the sales filter table', () => {
+        async function unlinkedSale(collectionName: string, templateMint: number): Promise<number> {
+            const { offer_id } = await client.createOffer();
+            const asset_id = await createMintAsset(client, collectionName, { template: templateMint });
+            await client.createOfferAsset({ offer_id, asset_id });
+
+            return (await client.createSale({ offer_id, collection_name: collectionName })).sale_id;
+        }
+
+        async function storeRange(sale_id: number, range: string): Promise<void> {
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = $2 WHERE sale_id = $1', [sale_id, range]);
+        }
+
+        // The query runs without a refresh, so the stored range the update wrote is the one read.
+        txit('reads the stored range of an unlinked listing, not its assets', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const storedOut = await unlinkedSale(c, 5);
+            const storedIn = await unlinkedSale(c, 500);
+            await client.refreshSalesFilters();
+            await storeRange(storedOut, '[500,500]');
+            await storeRange(storedIn, '[5,5]');
+
+            const norefresh = { refresh: false };
+            const range = { collection_name: c, min_effective_mint: '4', max_effective_mint: '6' };
+
+            expect(await getSalesIds(range, norefresh)).to.deep.equal([storedIn]);
+            expect(await getSalesIds({ collection_name: c, sort: 'effective_mint', order: 'asc' }, norefresh))
+                .to.deep.equal([storedIn, storedOut]);
+        });
+
+        txit('reads the assets of a listing whose stored range is null', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const sale = await unlinkedSale(c, 5);
+            await client.refreshSalesFilters();
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = NULL WHERE sale_id = $1', [sale]);
+
+            expect(await getSalesIds({ collection_name: c, min_effective_mint: '4', max_effective_mint: '6' }, { refresh: false }))
+                .to.deep.equal([sale]);
+        });
+    });
+
     describe('effective mint sort with a state filter', () => {
         async function listedSale(collectionName: string, spec: MintAssetSpec): Promise<number> {
             const { offer_id } = await client.createOffer();

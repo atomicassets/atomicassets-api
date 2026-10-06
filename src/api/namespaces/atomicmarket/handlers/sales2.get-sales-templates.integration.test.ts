@@ -459,6 +459,40 @@ describe('AtomicMarket Sales API', () => {
             })).to.deep.equal([both]);
         });
 
+        txit('reads the stored range of an unlinked listing, not its assets', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const storedOut = await templateSale(c, {template: 5});
+            const storedIn = await templateSale(c, {template: 500});
+            await client.refreshSalesFilters();
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = $2 WHERE sale_id = $1', [storedOut, '[500,500]']);
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = $2 WHERE sale_id = $1', [storedIn, '[5,5]']);
+
+            // no refresh here, so the stored range the updates wrote is the one read
+            const result = await getSalesTemplatesV2Action({
+                symbol: 'TEST', collection_name: c, min_effective_mint: '4', max_effective_mint: '6',
+            }, getTestContext(client));
+
+            expect(result.map((s: any) => s.sale_id)).to.deep.equal([storedIn]);
+        });
+
+        txit('rejects 51 collection names with a bound', async () => {
+            const c = (await client.createCollection()).collection_name;
+            await templateSale(c, {original: 5});
+            const names = [c, ...Array.from({length: 50}, (_, i) =>
+                `zz${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`)].join(',');
+
+            let err: any;
+            try {
+                await getSalesIds({collection_name: names, min_effective_mint: '1'});
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err).to.be.instanceof(ApiError);
+            expect(err.code).to.equal(400);
+            expect(err.message).to.equal('The effective mint filters and sort accept at most 50 collection names');
+        });
+
         txit('requires collection_name and a valid range', async () => {
             const c = (await client.createCollection()).collection_name;
             await templateSale(c, {original: 5});
