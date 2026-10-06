@@ -12,7 +12,7 @@ import {
     getPrimaryBoundaryParams,
     paginationParameters
 } from '../../../docs';
-import { listingFilterParameters } from '../openapi';
+import { effectiveMintParameters, listingFilterParameters } from '../openapi';
 import {
     createSocketApiNamespace,
     extractNotificationIdentifiers,
@@ -99,7 +99,7 @@ export function salesEndpoints(core: AtomicMarketNamespace, server: HTTPServer, 
                                 type: 'string',
                                 enum: [
                                     'created', 'updated', 'sale_id', 'price',
-                                    'template_mint', 'name',
+                                    'template_mint', 'effective_mint', 'name',
                                 ],
                                 default: 'created'
                             }
@@ -140,6 +140,7 @@ export function salesEndpoints(core: AtomicMarketNamespace, server: HTTPServer, 
                         },
                         ...baseAssetFilterParameters,
                         ...extendedAssetFilterParameters,
+                        ...effectiveMintParameters,
                         ...paginationParameters,
                         {
                             name: 'sort',

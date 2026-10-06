@@ -8,7 +8,7 @@ import {toInt} from '../../../../utils';
 import moize from 'moize';
 import {filterQueryArgs, FilterValues} from '../../validation';
 import {hasAssetFilter} from '../../atomicassets/utils';
-import {buildTemplateMintFilter} from '../utils';
+import {buildEffectiveMintFilter, buildEffectiveMintSort, buildTemplateMintFilter, SALES_FILTER_MINT_SOURCE} from '../utils';
 
 type SalesSearchOptions = {
     values: FilterValues;
@@ -31,7 +31,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
             type: 'string',
             allowedValues: [
                 'created', 'updated', 'sale_id', 'price',
-                'template_mint', 'name',
+                'template_mint', 'effective_mint', 'name',
             ],
             default: 'created'
         },
@@ -65,6 +65,11 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         search.strongFilters.push('ids');
     }
 
+    // Added before the count so the count equals the rows this sort can return.
+    const effectiveMintColumn = args.sort === 'effective_mint'
+        ? await buildEffectiveMintSort(params, query, SALES_FILTER_MINT_SOURCE)
+        : '';
+
     if (args.count) {
         const countQuery = await ctx.db.query(
             'SELECT COUNT(*) counter FROM (' + query.buildString() + ') x',
@@ -80,6 +85,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         updated: {column: 'listing.updated_at_time', numericIndex: true},
         price: {column: 'listing.price', numericIndex: true},
         template_mint: {column: 'LOWER(listing.template_mint)', numericIndex: true},
+        effective_mint: {column: effectiveMintColumn, numericIndex: false},
         name: {column: 'SPLIT_PART(listing.asset_names, e\'\\n\', 1)', nullable: true, numericIndex: false},
     };
 
@@ -502,6 +508,7 @@ async function buildListingFilterV2(search: SalesSearchOptions): Promise<void> {
     }
 
     await buildTemplateMintFilter(values, query);
+    await buildEffectiveMintFilter(values, query, SALES_FILTER_MINT_SOURCE);
 }
 
 function getDataFilters(search: SalesSearchOptions): string[] {

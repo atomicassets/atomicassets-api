@@ -1,6 +1,7 @@
 import 'mocha';
 import {expect} from 'chai';
-import {getSaleAction, getSalesAction} from './sales';
+import {getSaleAction, getSalesAction, getSalesCountAction} from './sales';
+import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
 import {SaleApiState} from '../index';
 import {OfferState} from '../../../../filler/handlers/atomicassets';
 import {SaleState} from '../../../../filler/handlers/atomicmarket';
@@ -769,6 +770,25 @@ describe('AtomicMarket Sales API', () => {
             expect(result.current_collection_fee).to.equal(0.09);
             expect(result.collection.market_fee).to.equal(0.05);
         });
+    });
+
+    defineEffectiveMintSuite({
+        client,
+        txit,
+        makeListing: async (collectionName, assets, templateMint) => {
+            const {offer_id} = await client.createOffer();
+            for (const [i, spec] of assets.entries()) {
+                const asset_id = await createMintAsset(client, collectionName, spec);
+                await client.createOfferAsset({offer_id, asset_id, index: i + 1});
+            }
+
+            return (await client.createSale({
+                offer_id, collection_name: collectionName,
+                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+            })).sale_id;
+        },
+        query: async (values) => await getSalesIds(values),
+        count: async (values) => Number(await getSalesCountAction({...values}, getTestContext(client))),
     });
 
     after(async () => await client.end());
