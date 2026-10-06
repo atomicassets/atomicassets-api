@@ -392,7 +392,7 @@ export const effectiveMintParameters = [
         name: 'min_effective_mint',
         in: 'query',
         description: 'Min mint of the listing assets: the original mint of a bridged asset, else the template mint. ' +
-            'Requires collection_name.',
+            'Requires collection_name, at most 50 names.',
         required: false,
         schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
     },
@@ -400,7 +400,7 @@ export const effectiveMintParameters = [
         name: 'max_effective_mint',
         in: 'query',
         description: 'Max mint of the listing assets: the original mint of a bridged asset, else the template mint. ' +
-            'Requires collection_name.',
+            'Requires collection_name, at most 50 names.',
         required: false,
         schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
     }

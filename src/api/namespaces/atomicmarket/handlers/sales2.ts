@@ -8,7 +8,9 @@ import {toInt} from '../../../../utils';
 import moize from 'moize';
 import {filterQueryArgs, FilterValues} from '../../validation';
 import {hasAssetFilter} from '../../atomicassets/utils';
-import {buildEffectiveMintFilter, buildEffectiveMintSort, buildTemplateMintFilter, SALES_FILTER_MINT_SOURCE} from '../utils';
+import {
+    buildEffectiveMintFilter, buildEffectiveMintSort, buildTemplateMintFilter, MAX_INDEXED_COLLECTION_NAMES, SALES_FILTER_MINT_SOURCE
+} from '../utils';
 
 type SalesSearchOptions = {
     values: FilterValues;
@@ -334,7 +336,7 @@ async function buildMainFilterV2(search: SalesSearchOptions): Promise<void> {
         if (value?.length) {
             // when a single filter has multiple values, search ALL of them
             if (value.length > 1) {
-                if (value.length > 50 && filter === 'collection_name') {
+                if (value.length > MAX_INDEXED_COLLECTION_NAMES && filter === 'collection_name') {
                     // Not a GIN-array predicate and unindexed (compares filter[1] per row),
                     // so the hasMainGinFilter guard's bounded GIN-bitmap path does not exist
                     // here; forcing the hint would only trade the backward btree scan for a

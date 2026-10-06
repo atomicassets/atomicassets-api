@@ -4,7 +4,7 @@ import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
 import {getAuctionAction, getAuctionsAction, getAuctionsCountAction} from './auctions';
-import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
+import {createMintAsset, defineEffectiveMintSuite, storedTemplateRange} from '../effective-mint-suite';
 import {AuctionApiState} from '../index';
 import sinon from 'sinon';
 import {clearMarketVersionCache, MARKET_VERSION_CACHE_TTL_MS} from '../market-version';
@@ -337,12 +337,15 @@ describe('auction handler', () => {
     });
 
     defineEffectiveMintSuite({
+        canOverrideStoredRange: true,
         client,
         txit,
         makeListing: async (collectionName, assets, templateMint) => {
             const listing = await client.createAuction({
                 collection_name: collectionName,
-                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+                template_mint: templateMint === undefined
+                    ? storedTemplateRange(assets)
+                    : (templateMint === null ? null : `[${templateMint},${templateMint}]`),
             });
             for (const [i, spec] of assets.entries()) {
                 const asset_id = await createMintAsset(client, collectionName, spec);
