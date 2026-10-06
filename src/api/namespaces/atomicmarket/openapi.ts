@@ -387,6 +387,25 @@ export const atomicmarketComponents = {
     }
 };
 
+export const effectiveMintParameters = [
+    {
+        name: 'min_effective_mint',
+        in: 'query',
+        description: 'Min mint of the listing assets: the original mint of a bridged asset, else the template mint. ' +
+            'Requires collection_name.',
+        required: false,
+        schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
+    },
+    {
+        name: 'max_effective_mint',
+        in: 'query',
+        description: 'Max mint of the listing assets: the original mint of a bridged asset, else the template mint. ' +
+            'Requires collection_name.',
+        required: false,
+        schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
+    }
+];
+
 export const listingFilterParameters = [
     {
         name: 'max_assets',
@@ -513,5 +532,6 @@ export const listingFilterParameters = [
         description: 'Max template mint',
         required: false,
         schema: {type: 'number'}
-    }
+    },
+    ...effectiveMintParameters
 ];

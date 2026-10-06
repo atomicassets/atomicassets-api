@@ -2,7 +2,8 @@ import {expect} from 'chai';
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
-import {getBuyOfferAction, getBuyOffersAction} from './buyoffers';
+import {getBuyOfferAction, getBuyOffersAction, getBuyOffersCountAction} from './buyoffers';
+import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
 import {ApiError} from '../../../error';
 
 // TODO add more tests
@@ -159,6 +160,25 @@ describe('buy offer handler', () => {
             expect(result.current_collection_fee).to.equal(0.09);
             expect(result.collection.market_fee).to.equal(0.05);
         });
+    });
+
+    defineEffectiveMintSuite({
+        client,
+        txit,
+        makeListing: async (collectionName, assets, templateMint) => {
+            const listing = await client.createBuyOffer({
+                collection_name: collectionName,
+                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+            });
+            for (const [i, spec] of assets.entries()) {
+                const asset_id = await createMintAsset(client, collectionName, spec);
+                await client.createBuyOfferAssets({buyoffer_id: listing.buyoffer_id, asset_id, index: i + 1});
+            }
+
+            return listing.buyoffer_id;
+        },
+        query: async (values) => await getBuyOffersIds(values),
+        count: async (values) => Number(await getBuyOffersCountAction({...values}, getTestContext(client))),
     });
 
     after(async () => {

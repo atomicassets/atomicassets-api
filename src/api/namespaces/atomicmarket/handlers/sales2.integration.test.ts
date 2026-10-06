@@ -3,7 +3,8 @@ import { expect } from 'chai';
 import { RequestValues } from '../../utils';
 import { initAtomicMarketTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
-import { getSalesV2Action } from './sales2';
+import { getSalesCountV2Action, getSalesV2Action } from './sales2';
+import {createMintAsset, defineEffectiveMintSuite, MintAssetSpec} from '../effective-mint-suite';
 import { SaleApiState } from '../index';
 import { OfferState } from '../../../../filler/handlers/atomicassets';
 import { SaleState } from '../../../../filler/handlers/atomicmarket';
@@ -1026,6 +1027,54 @@ describe('AtomicMarket Sales API', () => {
                 expect((await getSalesIds({ template_blacklist: `${excludedTemplate.template_id}` })).sort())
                     .to.deep.equal([sale_id1, sale_id2].sort());
             });
+        });
+    });
+
+    defineEffectiveMintSuite({
+        client,
+        txit,
+        makeListing: async (collectionName, assets, templateMint) => {
+            const {offer_id} = await client.createOffer();
+            for (const [i, spec] of assets.entries()) {
+                const asset_id = await createMintAsset(client, collectionName, spec);
+                await client.createOfferAsset({offer_id, asset_id, index: i + 1});
+            }
+
+            return (await client.createSale({
+                offer_id, collection_name: collectionName,
+                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+            })).sale_id;
+        },
+        query: async (values) => await getSalesIds(values),
+        count: async (values) => {
+            await client.refreshSalesFilters();
+
+            return Number(await getSalesCountV2Action({...values}, getTestContext(client)));
+        },
+    });
+
+    describe('effective mint sort with a state filter', () => {
+        async function listedSale(collectionName: string, spec: MintAssetSpec): Promise<number> {
+            const { offer_id } = await client.createOffer();
+            const asset_id = await createMintAsset(client, collectionName, spec);
+            await client.createOfferAsset({ offer_id, asset_id });
+
+            return (await client.createSale({ offer_id, collection_name: collectionName })).sale_id;
+        }
+
+        txit('orders and paginates through the state recheck', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const high = await listedSale(c, { template: 30 });
+            const low = await listedSale(c, { original: 2, template: 99 });
+            const middle = await listedSale(c, { original: 8 });
+            await listedSale(c, {});
+
+            const params = { collection_name: c, state: String(SaleApiState.LISTED), sort: 'effective_mint', order: 'asc' };
+
+            expect(await getSalesIds(params)).to.deep.equal([low, middle, high]);
+            expect(await getSalesIds({ ...params, limit: '1', page: '2' })).to.deep.equal([middle]);
+            expect(await getSalesIds({ ...params, min_effective_mint: '1', max_effective_mint: '10' }))
+                .to.deep.equal([low, middle]);
         });
     });
 

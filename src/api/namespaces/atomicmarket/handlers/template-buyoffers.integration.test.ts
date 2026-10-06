@@ -2,7 +2,8 @@ import {expect} from 'chai';
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
-import {getTemplateBuyOfferAction, getTemplateBuyOffersAction} from './template-buyoffers';
+import {getTemplateBuyOfferAction, getTemplateBuyOffersAction, getTemplateBuyOffersCountAction} from './template-buyoffers';
+import {createMintAsset, defineEffectiveMintSuite} from '../effective-mint-suite';
 import {ApiError} from '../../../error';
 
 // TODO add more tests
@@ -230,6 +231,26 @@ describe('template buy offer handler', () => {
             expect(result.current_collection_fee).to.equal(0.09);
             expect(result.collection.market_fee).to.equal(0.05);
         });
+    });
+
+    defineEffectiveMintSuite({
+        client,
+        txit,
+        makeListing: async (collectionName, assets, templateMint) => {
+            const {template_id} = await client.createTemplate({collection_name: collectionName});
+            const listing = await client.createTemplateBuyOffer({
+                collection_name: collectionName, template_id,
+                ...(templateMint === undefined ? {} : {template_mint: `[${templateMint},${templateMint}]`}),
+            });
+            for (const [i, spec] of assets.entries()) {
+                const asset_id = await createMintAsset(client, collectionName, spec);
+                await client.createTemplateBuyOfferAssets({buyoffer_id: listing.buyoffer_id, asset_id, index: i + 1});
+            }
+
+            return listing.buyoffer_id;
+        },
+        query: async (values) => await getBuyOffersIds(values),
+        count: async (values) => Number(await getTemplateBuyOffersCountAction({...values}, getTestContext(client))),
     });
 
     after(async () => {

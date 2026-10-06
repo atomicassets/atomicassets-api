@@ -10,6 +10,22 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.6.0]
+
+Adds an effective mint filter and sort to the market listing endpoints, so a client can range over the mint of a bridged asset and of a plain asset with one parameter.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.0`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Features
+
+- `/v0/sales`, `/v1/sales`, `/v2/sales`, `/v1/auctions`, `/v1/buyoffers` and `/v1/template_buyoffers` accept `min_effective_mint` and `max_effective_mint`, and `/v1/sales/templates` accepts the two filters. Each is an integer from 1 up to `Number.MAX_SAFE_INTEGER`, either one alone is valid, and a minimum above the maximum returns 400. (#234)
+- The effective mint of an asset is its `original_mint` from `atomicassets_original_mints` when a link row with a mint number exists, else its template mint. An asset with neither is ignored. A listing matches when at least one of its assets has an effective mint and every such asset lies in the range, so a listing of an asset with no link is still found by its template mint. (#234)
+- The listing endpoints above, except `/v1/sales/templates`, accept `sort=effective_mint`, which orders by the lowest effective mint of the listing. It returns only listings where an asset has an effective mint, with or without a bound, and the matching `_count` endpoint counts the same listings. (#234)
+- A request that uses `min_effective_mint`, `max_effective_mint` or `sort=effective_mint` needs `collection_name` and returns 400 without it, because without that scope each listing needs its own lookup of the link table. The `template_mint` filters and sorts keep their queries. (#234)
+
 ## [2.5.0]
 
 Serves the original mint of a bridged asset, with filters, a sort and per-card totals, from a `simpleassets` handler that numbers the source assets and links each bridged asset to its source.
