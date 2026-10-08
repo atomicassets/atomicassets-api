@@ -2,27 +2,18 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
     createBlock,
     createContractRow,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
     processContractRow,
 } from '../../test-helper';
 import { authorProcessor } from './authors';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'simpleassets';
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
-}
 
 function authorRow(dappinfo: Record<string, any>): Record<string, any> {
     return {

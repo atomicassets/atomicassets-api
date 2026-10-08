@@ -2,13 +2,14 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createMockNotifier,
-    createBlock,
-    createTx,
     createActionTrace,
-    processActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createMockNotifier,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
+    processActionTrace,
 } from '../../test-helper';
 import { assetProcessor } from './assets';
 import DataProcessor, { ProcessingState } from '../../../processor';
@@ -20,7 +21,6 @@ import {
     LogTransferActionData,
     LogBackAssetActionData,
 } from '../types/actions';
-import { ModuleLoader } from '../../../modules';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 
 const CONTRACT = 'atomicassets';
@@ -40,15 +40,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             offer_counter: 0,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 describe('assetProcessor', () => {

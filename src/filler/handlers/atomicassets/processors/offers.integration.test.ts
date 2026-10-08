@@ -2,13 +2,14 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createMockNotifier,
-    createBlock,
-    createTx,
     createActionTrace,
-    processActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createMockNotifier,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
+    processActionTrace,
 } from '../../test-helper';
 import { offerProcessor } from './offers';
 import DataProcessor, { ProcessingState } from '../../../processor';
@@ -21,7 +22,6 @@ import {
     CancelOfferActionData,
     LogTransferActionData,
 } from '../types/actions';
-import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';
 
@@ -34,15 +34,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 describe('offerProcessor', () => {

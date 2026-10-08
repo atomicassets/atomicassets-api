@@ -18,7 +18,7 @@ import { ModuleLoader } from '../modules';
 // ---------------------------------------------------------------------------
 // Mock ModuleLoader that has no modules (nothing to filter)
 // ---------------------------------------------------------------------------
-function createMockModuleLoader(): ModuleLoader {
+export function createMockModuleLoader(): ModuleLoader {
     // ModuleLoader constructor tries to require() module files from disk.
     // We bypass this by creating a plain object that satisfies the interface.
     const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
