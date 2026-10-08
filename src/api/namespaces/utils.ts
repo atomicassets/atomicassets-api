@@ -32,11 +32,12 @@ export async function buildBoundaryFilter(
     primaryColumn: string, primaryType: 'string' | 'int',
     dateColumn: string | null
 ): Promise<void> {
+    const primaryBound = primaryType === 'int' ? {max: Number.MAX_SAFE_INTEGER} : {};
     const filters: FiltersDefinition = {
-        lower_bound: {type: primaryType, min: 1},
-        upper_bound: {type: primaryType, min: 1},
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1},
+        lower_bound: {type: primaryType, min: 1, ...primaryBound},
+        upper_bound: {type: primaryType, min: 1, ...primaryBound},
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
         ids: {type: 'list[string]'},
     };
     let primaryColumnName;

@@ -206,8 +206,8 @@ export async function buildEffectiveMintSort(
 
 export async function buildTemplateMintFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
     const args = await filterQueryArgs(values, {
-        min_template_mint: {type: 'int', min: 1},
-        max_template_mint: {type: 'int', min: 1}
+        min_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     if (args.min_template_mint || args.max_template_mint) {
@@ -232,8 +232,8 @@ export async function buildSaleFilter(values: FilterValues, query: QueryBuilder)
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        max_assets: {type: 'int', min: 1},
-        min_assets: {type: 'int', min: 1},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -344,8 +344,8 @@ export async function buildAuctionFilter(values: FilterValues, query: QueryBuild
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        min_assets: {type: 'int', min: 1},
-        max_assets: {type: 'int', min: 1},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -513,8 +513,8 @@ export async function buildBuyofferFilter(values: FilterValues, query: QueryBuil
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        min_assets: {type: 'int', min: 1},
-        max_assets: {type: 'int', min: 1},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},

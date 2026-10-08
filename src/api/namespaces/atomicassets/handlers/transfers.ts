@@ -8,7 +8,7 @@ import { ApiError } from '../../../error';
 export async function getRawTransfersAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.transfers || 100;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {type: 'string', allowedValues: ['created'], default: 'created'},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'desc'},

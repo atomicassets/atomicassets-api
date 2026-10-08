@@ -27,7 +27,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
     const args = await filterQueryArgs(params, {
         state: {type: 'string[]', min: 1},
 
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {
             type: 'string',
@@ -171,8 +171,8 @@ export async function getSalesCountV2Action(params: RequestValues, ctx: AtomicMa
 async function buildSaleFilterV2(search: SalesSearchOptions): Promise<void> {
     const {values, query, ctx} = search;
     const args = await filterQueryArgs(values, {
-        max_assets: {type: 'int', min: 1},
-        min_assets: {type: 'int', min: 1},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -488,8 +488,8 @@ async function buildListingFilterV2(search: SalesSearchOptions): Promise<void> {
         taker_marketplace: {type: 'string[]', min: 1},
         marketplace: {type: 'string[]', min: 1},
 
-        min_template_mint: {type: 'int', min: 1},
-        max_template_mint: {type: 'int', min: 1}
+        min_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     if (!args.show_seller_contracts) {
@@ -643,7 +643,7 @@ export async function getSalesTemplatesV2Action(params: RequestValues, ctx: Atom
         symbol: {type: 'string', min: 1},
         collection_whitelist: {type: 'list[name]'},
 
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {
             type: 'string',
