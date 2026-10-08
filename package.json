@@ -63,7 +63,7 @@
     "await-lock": "^2.2.1",
     "body-parser": "^2.3.0",
     "common-tags": "^1.8.2",
-    "compression": "^1.8.0",
+    "compression": "^1.8.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.2",
