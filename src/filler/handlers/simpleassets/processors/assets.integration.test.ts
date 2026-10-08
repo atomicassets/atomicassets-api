@@ -3,17 +3,17 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createBlock,
-    createTx,
     createActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
 } from '../../test-helper';
 import { assetProcessor } from './assets';
 import SimpleAssetsHandler from '../index';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { ModuleLoader } from '../../../modules';
 import { ShipBlock } from '../../../../types/ship';
 import logger from '../../../../utils/winston';
 
@@ -31,15 +31,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 function blockAt(blockNum: number): ShipBlock {

@@ -3,14 +3,14 @@ import { expect } from 'chai';
 import { Client } from 'pg';
 
 import {
-    createProcessorTestContext,
-    createBlock,
-    createTx,
     createActionTrace,
-    processActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
+    processActionTrace,
 } from '../../test-helper';
-import { ModuleLoader } from '../../../modules';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 
@@ -32,15 +32,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore - test-only construction matches atomicmarket pattern.
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 /**

@@ -2,17 +2,17 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
     createBlock,
     createContractRow,
-    processContractRow,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    processContractRow,
 } from '../../test-helper';
 import { configProcessor } from './config';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import type { TokenConfigsTableRow } from '@atomichub/atomicassets';
-import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';
 
@@ -35,15 +35,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
         },
         ...overrides,
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 async function seedConfigRow(client: Client, markerBlock: number | null = null): Promise<void> {

@@ -4,16 +4,16 @@ import { Client } from 'pg';
 import { serialize, ObjectSchema } from '@atomichub/atomicassets';
 import type { CollectionsTableRow } from '@atomichub/atomicassets';
 import {
-    createProcessorTestContext,
     createBlock,
     createContractRow,
-    processContractRow,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    processContractRow,
 } from '../../test-helper';
 import { collectionProcessor } from './collections';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';
 
@@ -40,15 +40,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             offer_counter: 0,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 /**

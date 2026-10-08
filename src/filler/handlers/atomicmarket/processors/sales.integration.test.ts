@@ -2,13 +2,14 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createMockNotifier,
-    createBlock,
-    createTx,
     createActionTrace,
-    processActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createMockNotifier,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
+    processActionTrace,
 } from '../../test-helper';
 import { saleProcessor } from './sales';
 import DataProcessor, { ProcessingState } from '../../../processor';
@@ -20,7 +21,6 @@ import {
     CancelSaleActionData,
     PurchaseSaleActionData,
 } from '../types/actions';
-import { ModuleLoader } from '../../../modules';
 
 const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
@@ -40,15 +40,6 @@ function createMockCore(overrides: Record<string, any> = {}, version?: string): 
         // covered by legacy-bundles.test.ts and processors/config.integration.test.ts.
         v2MarkerBlock: version ? 1 : null,
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 describe('saleProcessor', () => {
