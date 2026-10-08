@@ -51,6 +51,11 @@ function compareCreates(a: PendingCreate, b: PendingCreate): number {
     return left < right ? -1 : (left > right ? 1 : 0);
 }
 
+type AssetMatch = 'asset_id = $2'
+    | 'asset_id = ANY($2)'
+    | 'asset_id = ANY ($2)'
+    | 'asset_id = ANY ($2) AND owner = $3';
+
 export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcessor): () => any {
     const destructors: Array<() => any> = [];
     const contract = core.args.simpleassets_account;
@@ -62,6 +67,48 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
     // group get consecutive ordinals in asset id order. The queue runs every
     // create in the commit batch before any action that changes an asset.
     let pendingCreates: PendingCreate[] = [];
+
+    // The block guard keeps a replayed older action from overwriting a newer asset state.
+    // The match text starts after the contract condition ($1) and ends before the guard. Its
+    // parameters follow $1 in order, and the block number is the last parameter. The type lists
+    // each allowed text, so no caller can build one from action data.
+    async function updateAssetGuarded(
+        db: ContractDBTransaction, block: ShipBlock, fields: Record<string, any>, match: AssetMatch, matchValues: any[]
+    ): Promise<void> {
+        const blockTime = eosioTimestampToDate(block.timestamp).getTime();
+
+        await db.update('simpleassets_assets', {
+            ...fields,
+            updated_at_block: block.block_num,
+            updated_at_time: blockTime,
+        }, {
+            str: 'contract = $1 AND ' + match + ' AND updated_at_block <= $' + (matchValues.length + 2),
+            values: [contract, ...matchValues, block.block_num]
+        }, ['contract', 'asset_id']);
+    }
+
+    async function insertTransferRecord(
+        db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<TransferActionData | ClaimActionData>,
+        sender: string, recipient: string, memo: string, onConflict: 'update' | 'nothing'
+    ): Promise<void> {
+        await db.insert('simpleassets_transfers', {
+            contract: contract,
+            transfer_id: trace.global_sequence,
+            sender,
+            recipient,
+            memo,
+            txid: Buffer.from(tx.id, 'hex'),
+            created_at_block: block.block_num,
+            created_at_time: eosioTimestampToDate(block.timestamp).getTime()
+        }, ['contract', 'transfer_id'], true, true, onConflict);
+
+        await db.insert('simpleassets_transfers_assets', trace.act.data.assetids.map((assetID, index) => ({
+            transfer_id: trace.global_sequence,
+            contract: contract,
+            index: index + 1,
+            asset_id: assetID
+        })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+    }
 
     async function readBaselineBlock(db: ContractDBTransaction): Promise<number | null> {
         const query = await db.query(
@@ -215,80 +262,47 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
     destructors.push(processor.onActionTrace(
         contract, 'burnlog',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<BurnLogActionData>): Promise<void> => {
-            await db.update('simpleassets_assets', {
+            await updateAssetGuarded(db, block, {
                 owner: null,
                 burned_by_account: trace.act.data.owner,
                 burned_at_block: block.block_num,
                 burned_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-                updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = ANY($2) AND updated_at_block <= $3',
-                values: [contract, trace.act.data.assetids, block.block_num]
-            }, ['contract', 'asset_id']);
+            }, 'asset_id = ANY($2)', [trace.act.data.assetids]);
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
 
     destructors.push(processor.onActionTrace(
         contract, 'update',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<UpdateActionData>): Promise<void> => {
-            await db.update('simpleassets_assets', {
+            await updateAssetGuarded(db, block, {
                 mutable_data: encodeDatabaseJson(parseJsonObject(trace.act.data.mdata)),
-                updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = $2 AND updated_at_block <= $3',
-                values: [contract, trace.act.data.assetid, block.block_num]
-            }, ['contract', 'asset_id']);
+            }, 'asset_id = $2', [trace.act.data.assetid]);
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
 
     destructors.push(processor.onActionTrace(
         contract, 'changeauthor',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<ChangeAuthorActionData>): Promise<void> => {
-            await db.update('simpleassets_assets', {
+            await updateAssetGuarded(db, block, {
                 author: trace.act.data.newauthor,
-                updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = ANY($2) AND updated_at_block <= $3',
-                values: [contract, trace.act.data.assetids, block.block_num]
-            }, ['contract', 'asset_id']);
+            }, 'asset_id = ANY($2)', [trace.act.data.assetids]);
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
 
     destructors.push(processor.onActionTrace(
         contract, 'transfer',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<TransferActionData>): Promise<void> => {
-            await db.update('simpleassets_assets', {
+            await updateAssetGuarded(db, block, {
                 owner: trace.act.data.to,
                 transferred_at_block: block.block_num,
                 transferred_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-                updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = ANY ($2) AND owner = $3 AND updated_at_block <= $4',
-                values: [contract, trace.act.data.assetids, trace.act.data.from, block.block_num]
-            }, ['contract', 'asset_id']);
+            }, 'asset_id = ANY ($2) AND owner = $3', [trace.act.data.assetids, trace.act.data.from]);
 
             if (core.args.store_transfers) {
-                await db.insert('simpleassets_transfers', {
-                    contract: contract,
-                    transfer_id: trace.global_sequence,
-                    sender: trace.act.data.from,
-                    recipient: trace.act.data.to,
-                    memo: String(trace.act.data.memo).substr(0, 256),
-                    txid: Buffer.from(tx.id, 'hex'),
-                    created_at_block: block.block_num,
-                    created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'transfer_id'], true, true, 'update');
-
-                await db.insert('simpleassets_transfers_assets', trace.act.data.assetids.map((assetID, index) => ({
-                    transfer_id: trace.global_sequence,
-                    contract: contract,
-                    index: index + 1,
-                    asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+                await insertTransferRecord(
+                    db, block, tx, trace,
+                    trace.act.data.from, trace.act.data.to, String(trace.act.data.memo).substr(0, 256), 'update'
+                );
             }
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));
@@ -303,36 +317,18 @@ export function assetProcessor(core: SimpleAssetsHandler, processor: DataProcess
                 [contract, trace.act.data.assetids]
             ) : null;
 
-            await db.update('simpleassets_assets', {
+            await updateAssetGuarded(db, block, {
                 owner: trace.act.data.claimer,
                 transferred_at_block: block.block_num,
                 transferred_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-                updated_at_block: block.block_num,
-                updated_at_time: eosioTimestampToDate(block.timestamp).getTime(),
-            }, {
-                str: 'contract = $1 AND asset_id = ANY ($2) AND updated_at_block <= $3',
-                values: [contract, trace.act.data.assetids, block.block_num]
-            }, ['contract', 'asset_id']);
+            }, 'asset_id = ANY ($2)', [trace.act.data.assetids]);
 
             if (core.args.store_transfers) {
                 // A replay reads the claimer as the owner, so the first write keeps the sender.
-                await db.insert('simpleassets_transfers', {
-                    contract: contract,
-                    transfer_id: trace.global_sequence,
-                    sender: fromQuery.rowCount > 0 ? fromQuery.rows[0].owner : '.',
-                    recipient: trace.act.data.claimer,
-                    memo: '',
-                    txid: Buffer.from(tx.id, 'hex'),
-                    created_at_block: block.block_num,
-                    created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'transfer_id'], true, true, 'nothing');
-
-                await db.insert('simpleassets_transfers_assets', trace.act.data.assetids.map((assetID, index) => ({
-                    transfer_id: trace.global_sequence,
-                    contract: contract,
-                    index: index + 1,
-                    asset_id: assetID
-                })), ['contract', 'transfer_id', 'asset_id'], true, true, 'update');
+                await insertTransferRecord(
+                    db, block, tx, trace,
+                    fromQuery.rowCount > 0 ? fromQuery.rows[0].owner : '.', trace.act.data.claimer, '', 'nothing'
+                );
             }
         }, SimpleAssetsUpdatePriority.ACTION_UPDATE_ASSET.valueOf()
     ));

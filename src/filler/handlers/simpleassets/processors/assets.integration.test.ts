@@ -408,6 +408,29 @@ describe('simpleassets assetProcessor', () => {
         });
     });
 
+    describe('transfer record', () => {
+        it('records the sender, the recipient, the memo cut to 256 characters and each asset when store_transfers is on', async () => {
+            register({ store_transfers: true });
+            await seedAsset('600', { owner: 'alice' });
+            await seedAsset('601', { owner: 'alice' });
+
+            await runBatch([{
+                block: blockAt(6000), name: 'transfer',
+                data: { from: 'alice', to: 'bob', assetids: ['600', '601'], memo: 'm'.repeat(300) }
+            }]);
+
+            const transfers = await client.query(
+                'SELECT sender, recipient, memo FROM simpleassets_transfers WHERE contract = $1', [CONTRACT]
+            );
+            expect(transfers.rows).to.deep.equal([{ sender: 'alice', recipient: 'bob', memo: 'm'.repeat(256) }]);
+
+            const assets = await client.query(
+                'SELECT asset_id, "index" FROM simpleassets_transfers_assets WHERE contract = $1 ORDER BY "index"', [CONTRACT]
+            );
+            expect(assets.rows.map(row => [String(row.asset_id), Number(row.index)])).to.deep.equal([['600', 1], ['601', 2]]);
+        });
+    });
+
     describe('catch-up write buffer', () => {
         it('gives consecutive ordinals across two create flushes in one transaction', async () => {
             await setTotal(GROUP_A, 10);
