@@ -14,15 +14,15 @@ export async function getAllCollectionStatsAction(params: RequestValues, ctx: At
         match: {type: 'name'},
         search: {type: 'string', min: 1},
 
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1},
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         collection_name: {type: 'list[name]'},
         collection_whitelist: {type: 'list[name]'},
         collection_blacklist: {type: 'list[name]'},
 
         sort: {type: 'string', allowedValues: ['volume', 'sales'], default: 'volume'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: 100, default: 100}
     });
 
@@ -110,11 +110,11 @@ export async function getAllAccountStatsAction(params: RequestValues, ctx: Atomi
 
         symbol: {type: 'string', min: 1},
 
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1},
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         sort: {type: 'string', allowedValues: ['sell_volume', 'buy_volume'], default: 'sell_volume'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: 100, default: 100}
     });
 
@@ -184,8 +184,8 @@ export async function getSchemaStatsByCollectionV1Action(params: RequestValues, 
         symbol: {type: 'string', min: 1},
         match: {type: 'name'},
 
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1},
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         sort: {type: 'string', allowedValues: ['volume', 'listings'], default: 'volume'}
     });
@@ -222,8 +222,8 @@ export async function getSchemaStatsByCollectionV2Action(params: RequestValues, 
     const args = await filterQueryArgs(params, {
         symbol: {type: 'string', min: 1},
 
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1},
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         sort: {type: 'string', allowedValues: ['volume', 'sales'], default: 'volume'}
     });
@@ -318,11 +318,11 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
         search: {type: 'string', min: 1},
 
         sort: {type: 'string', allowedValues: ['volume', 'sales'], default: 'volume'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: 1000, default: 100},
 
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1}
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     const symbol = await fetchSymbol(ctx.db, ctx.coreArgs.atomicmarket_account, args.symbol);
@@ -406,8 +406,8 @@ export async function getMarketStatsAction(params: RequestValues, ctx: AtomicMar
         collection_blacklist: {type: 'list[name]'},
 
         symbol: {type: 'string', min: 1},
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1}
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     const symbol = await fetchSymbol(ctx.db, ctx.coreArgs.atomicmarket_account, args.symbol);
@@ -443,8 +443,8 @@ export async function getStatsGraphAction(params: RequestValues, ctx: AtomicMark
         maker_marketplace: {type: 'string'},
 
         symbol: {type: 'string', min: 1},
-        before: {type: 'int', min: 1},
-        after: {type: 'int', min: 1}
+        before: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        after: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     const symbol = await fetchSymbol(ctx.db, ctx.coreArgs.atomicmarket_account, args.symbol);

@@ -10,6 +10,19 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.6.1]
+
+Refuses an integer request parameter above the safe integer range with a 400 response.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.1`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- An integer request parameter with a value above `Number.MAX_SAFE_INTEGER` now returns 400. Before, such a value passed the validation of the template mint filters of the asset and market endpoints, the asset count filters of the market endpoints, the supply filters of `/v1/templates`, the `before` and `after` filters, the integer forms of `lower_bound` and `upper_bound`, `page`, and the `limit` of the asset sales history. The database then refused the value, and the request ended with a 500 response and a warn log line.
+
 ## [2.6.0]
 
 Adds an effective mint filter and sort to the market listing endpoints, so a client can range over the mint of a bridged asset and of a plain asset with one parameter.
