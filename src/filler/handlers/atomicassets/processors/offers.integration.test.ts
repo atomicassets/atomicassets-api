@@ -15,6 +15,8 @@ import { offerProcessor } from './offers';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { OfferState } from '../index';
+import { ShipBlock } from '../../../../types/ship';
+import { EosioActionTrace } from '../../../../types/eosio';
 import {
     LogNewOfferActionData,
     AcceptOfferActionData,
@@ -251,6 +253,135 @@ describe('offerProcessor', () => {
                 [CONTRACT, '200003']
             );
             expect(result.rows[0].state).to.equal(OfferState.CANCELLED.valueOf());
+        });
+    });
+
+    describe('invalidation timestamps', () => {
+        const SENDER = 'sender111111';
+        const RECEIVER = 'receiver1111';
+
+        async function createOfferWithAsset(offerId: string, assetId: string): Promise<{ created: ShipBlock }> {
+            await client.query(
+                `INSERT INTO atomicassets_assets (contract, asset_id, collection_name, schema_name, owner,
+                    transferred_at_block, transferred_at_time, updated_at_block, updated_at_time, minted_at_block, minted_at_time)
+                VALUES ($1, $2, 'testcol11111', 'testschema11', $3, 1, 1, 1, 1, 1, 1)`,
+                [CONTRACT, assetId, SENDER]
+            );
+            const created = createBlock({ timestamp: '2023-01-01T00:00:00.000' });
+            const data: LogNewOfferActionData = {
+                offer_id: offerId,
+                sender: SENDER,
+                recipient: RECEIVER,
+                sender_asset_ids: [assetId],
+                recipient_asset_ids: [],
+                memo: 'trade',
+            };
+            await processActionTrace(processor, db, created, createTx(), createActionTrace(CONTRACT, 'lognewoffer', data));
+            return { created };
+        }
+
+        function moveAsset(assetId: string, owner: string): Promise<unknown> {
+            return client.query('UPDATE atomicassets_assets SET owner = $3 WHERE contract = $1 AND asset_id = $2', [CONTRACT, assetId, owner]);
+        }
+
+        function transferTrace(assetId: string, from: string, to: string): EosioActionTrace<LogTransferActionData> {
+            return createActionTrace(CONTRACT, 'logtransfer', {
+                collection_name: 'testcol11111',
+                from,
+                to,
+                asset_ids: [assetId],
+                memo: '',
+            });
+        }
+
+        async function readOffer(offerId: string): Promise<{ state: number; block: number; time: number }> {
+            const result = await client.query(
+                'SELECT state, updated_at_block, updated_at_time FROM atomicassets_offers WHERE contract = $1 AND offer_id = $2',
+                [CONTRACT, offerId]
+            );
+            const row = result.rows[0];
+            return { state: row.state, block: Number(row.updated_at_block), time: Number(row.updated_at_time) };
+        }
+
+        it('sets the update block and time of the newest transfer block when an offer turns invalid', async () => {
+            await createOfferWithAsset('300001', '5000001');
+            await moveAsset('5000001', RECEIVER);
+
+            // Two blocks in one commit batch: the newer block must win.
+            const older = createBlock({ timestamp: '2023-02-01T00:00:00.000' });
+            const newer = createBlock({ timestamp: '2023-02-02T00:00:00.000' });
+            processor.processActionTrace(older, createTx(), transferTrace('5000001', SENDER, RECEIVER));
+            processor.processActionTrace(newer, createTx(), transferTrace('5000001', SENDER, RECEIVER));
+            await processor.executeHeadQueue(db);
+
+            expect(await readOffer('300001')).to.deep.equal({
+                state: OfferState.INVALID.valueOf(),
+                block: newer.block_num,
+                time: new Date('2023-02-02T00:00:00.000Z').getTime(),
+            });
+        });
+
+        it('sets the update block and time of the burn block when a burn turns an offer invalid', async () => {
+            await createOfferWithAsset('300002', '5000002');
+            await client.query('UPDATE atomicassets_assets SET owner = NULL WHERE contract = $1 AND asset_id = $2', [CONTRACT, '5000002']);
+
+            const burnBlock = createBlock({ timestamp: '2023-03-01T00:00:00.000' });
+            const burn = createActionTrace(CONTRACT, 'logburnasset', {
+                asset_owner: SENDER,
+                asset_id: '5000002',
+                collection_name: 'testcol11111',
+                schema_name: 'testschema11',
+                template_id: -1,
+                backed_tokens: [],
+                old_immutable_data: [],
+                old_mutable_data: [],
+                asset_ram_payer: SENDER,
+            });
+            await processActionTrace(processor, db, burnBlock, createTx(), burn);
+
+            expect(await readOffer('300002')).to.deep.equal({
+                state: OfferState.INVALID.valueOf(),
+                block: burnBlock.block_num,
+                time: new Date('2023-03-01T00:00:00.000Z').getTime(),
+            });
+        });
+
+        it('keeps the invalidation block and time when the asset returns and the offer turns pending', async () => {
+            await createOfferWithAsset('300003', '5000003');
+            await moveAsset('5000003', RECEIVER);
+            const invalidBlock = createBlock({ timestamp: '2023-04-01T00:00:00.000' });
+            await processActionTrace(processor, db, invalidBlock, createTx(), transferTrace('5000003', SENDER, RECEIVER));
+
+            await moveAsset('5000003', SENDER);
+            const returnBlock = createBlock({ timestamp: '2023-04-05T00:00:00.000' });
+            await processActionTrace(processor, db, returnBlock, createTx(), transferTrace('5000003', RECEIVER, SENDER));
+
+            expect(await readOffer('300003')).to.deep.equal({
+                state: OfferState.PENDING.valueOf(),
+                block: invalidBlock.block_num,
+                time: new Date('2023-04-01T00:00:00.000Z').getTime(),
+            });
+        });
+
+        it('leaves an accepted, declined, or cancelled offer unchanged when its asset moves', async () => {
+            const cases: Array<[string, string, string, string]> = [
+                ['300004', '5000004', 'acceptoffer', 'ACCEPTED'],
+                ['300005', '5000005', 'declineoffer', 'DECLINED'],
+                ['300006', '5000006', 'canceloffer', 'CANCELLED'],
+            ];
+            for (const [offerId, assetId, action, state] of cases) {
+                await createOfferWithAsset(offerId, assetId);
+                const closeBlock = createBlock({ timestamp: '2023-05-01T00:00:00.000' });
+                await processActionTrace(processor, db, closeBlock, createTx(), createActionTrace(CONTRACT, action, { offer_id: offerId }));
+                await moveAsset(assetId, RECEIVER);
+                await processActionTrace(processor, db, createBlock({ timestamp: '2023-05-09T00:00:00.000' }), createTx(), transferTrace(assetId, SENDER, RECEIVER));
+
+                expect(await readOffer(offerId)).to.deep.equal({
+                    state: (OfferState as any)[state].valueOf(),
+                    block: closeBlock.block_num,
+                    time: new Date('2023-05-01T00:00:00.000Z').getTime(),
+                });
+            }
         });
     });
 
