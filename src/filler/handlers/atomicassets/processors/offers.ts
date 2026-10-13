@@ -97,10 +97,19 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
     ));
 
     let transferredAssets: string[] = [];
+    // The commit listener gets no block, so the trace handlers record the
+    // newest block that moved an asset in the batch.
+    let newestMoveBlock: { num: number, time: number } | null = null;
+    const recordMoveBlock = (block: ShipBlock): void => {
+        if (newestMoveBlock === null || block.block_num > newestMoveBlock.num) {
+            newestMoveBlock = {num: block.block_num, time: eosioTimestampToDate(block.timestamp).getTime()};
+        }
+    };
     destructors.push(processor.onActionTrace(
         contract, 'logtransfer',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogTransferActionData>): Promise<void> => {
             transferredAssets.push(...trace.act.data.asset_ids);
+            recordMoveBlock(block);
         }, AtomicAssetsUpdatePriority.INDEPENDENT.valueOf()
     ));
 
@@ -108,6 +117,7 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
         contract, 'logburnasset',
         async (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<LogBurnAssetActionData>): Promise<void> => {
             transferredAssets.push(trace.act.data.asset_id);
+            recordMoveBlock(block);
         }, AtomicAssetsUpdatePriority.INDEPENDENT.valueOf()
     ));
 
@@ -208,9 +218,14 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 }
 
                 if (invalidOffers.length > 0) {
-                    await db.update('atomicassets_offers', {
-                        state: OfferState.INVALID.valueOf()
-                    }, {
+                    // A restored offer (below) writes state only, so it keeps
+                    // the block and time of this invalidation.
+                    const invalidValues: Record<string, any> = {state: OfferState.INVALID.valueOf()};
+                    if (newestMoveBlock !== null) {
+                        invalidValues.updated_at_block = newestMoveBlock.num;
+                        invalidValues.updated_at_time = newestMoveBlock.time;
+                    }
+                    await db.update('atomicassets_offers', invalidValues, {
                         str: 'contract = $1 AND offer_id = ANY ($2) AND state = $3',
                         values: [core.args.atomicassets_account, invalidOffers, OfferState.PENDING.valueOf()]
                     }, ['contract', 'offer_id']);
@@ -226,6 +241,7 @@ export function offerProcessor(core: AtomicAssetsHandler, processor: DataProcess
                 }
             } finally {
                 transferredAssets = [];
+                newestMoveBlock = null;
             }
         }
     ));

@@ -10,6 +10,20 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.7.0]
+
+Moves the update time of a trade offer when the offer turns invalid.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.7.0`. The `2.7` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- `updated_at_time` and `updated_at_block` of an offer in `/v1/offers` now move to the block of the transfer or the burn of an offer asset when the offer turns invalid. Before, the offer turned invalid with no change to either value, so a reader that sorts or filters offers by update time never saw it. An offer that turns pending again after its assets return keeps the two values of the invalidation block. (#243)
+- When the filler commits several blocks in one transaction during catch-up, the two values of an offer that turns invalid are those of the newest block of that transaction with an asset transfer or burn. (#243)
+
 ## [2.6.1]
 
 Refuses an integer request parameter above the safe integer range with a 400 response.
