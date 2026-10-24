@@ -16,7 +16,7 @@ import SimpleAssetsHandler from '../index';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { EosioActionTrace } from '../../../../types/eosio';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 
 const CONTRACT = 'simpleassets';
 const AA_CONTRACT = 'atomicassets';

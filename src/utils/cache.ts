@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 
 import type { RedisClientInstance } from '../connections/redis';
 
-import logger from './winston';
+import logger from './logger';
 import { mergeRequestData } from '../api/namespaces/utils';
 
 

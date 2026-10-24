@@ -1,5 +1,5 @@
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 const settingOverrides: {[key: string]: {scale: string, threshold: number}} = {
     atomicassets_templates: {

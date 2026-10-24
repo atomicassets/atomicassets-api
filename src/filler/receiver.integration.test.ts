@@ -9,7 +9,7 @@ import StateReceiver from './receiver';
 import { ProcessingState } from './processor';
 import { connectionConfig, getTestPostgresConfig } from '../utils/test';
 import { ShipBlockResponse } from '../types/ship';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 // Live-database coverage for block-processing failure recovery: a real
 // duplicate-key conflict must leave the reader's on-disk state exactly as

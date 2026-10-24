@@ -43,7 +43,7 @@
  */
 import { ClientBase, Pool } from 'pg';
 
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 
 /** Advisory key, taken transaction-scoped so one batch runs at a time across the fleet. */
 export const FLOAT_REPAIR_LOCK_NAME = 'atomicassets_float_repair';
@@ -137,7 +137,7 @@ export interface FloatRepairResult {
     non_finite: number;
 }
 
-/** Structural subset of the winston logger, so a test can pass a recorder. */
+/** Structural subset of the application logger, so a test can pass a recorder. */
 export interface RepairLogger {
     info(message: string, ...meta: any[]): any;
     warn(message: string, ...meta: any[]): any;

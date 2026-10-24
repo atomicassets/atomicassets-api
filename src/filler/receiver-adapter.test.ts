@@ -9,7 +9,7 @@ import StateReceiver from './receiver';
 import ConnectionManager from '../connections/manager';
 import { IReaderConfig } from '../types/config';
 import { ModuleLoader } from './modules';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 type ShipStub = EventEmitter & {
     startProcessing: sinon.SinonStub;
@@ -160,9 +160,7 @@ describe('StateReceiver as an IShipConsumer', () => {
     });
 
     describe('connection events', () => {
-        it('reaches winston at the mapped level', () => {
-            // winston's leveled methods are overloaded, so the stubs are read
-            // back through the plain SinonStub shape to assert on call args.
+        it('reaches the logger at the mapped level', () => {
             const errorSpy = sandbox.stub(logger, 'error') as unknown as sinon.SinonStub;
             const warnSpy = sandbox.stub(logger, 'warn') as unknown as sinon.SinonStub;
             const infoSpy = sandbox.stub(logger, 'info') as unknown as sinon.SinonStub;
@@ -186,10 +184,11 @@ describe('StateReceiver as an IShipConsumer', () => {
             const warnSpy = sandbox.stub(logger, 'warn') as unknown as sinon.SinonStub;
             const { ship } = createReceiver();
             const meta = { type: 'unknown_result_v9' };
+            const error = new Error('unknown result');
 
-            ship.emit('warning', 'Not supported message received', meta);
+            ship.emit('warning', 'Not supported message received', meta, error, 'extra context');
 
-            expect(warnSpy.calledWith('Not supported message received', meta)).to.equal(true);
+            expect(warnSpy.calledWithExactly('Not supported message received', meta, error, 'extra context')).to.equal(true);
         });
     });
 

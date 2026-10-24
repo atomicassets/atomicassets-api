@@ -15,7 +15,7 @@ import SimpleAssetsHandler from '../index';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { ShipBlock } from '../../../../types/ship';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 
 const CONTRACT = 'simpleassets';
 const GPK = 'gpk.topps';

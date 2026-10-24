@@ -7,7 +7,7 @@ import Semaphore from '../utils/semaphore';
 import StateReceiver from './receiver';
 import { ShipBlockResponse } from '../types/ship';
 import { ProcessingState } from './processor';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 /**
  * Build a minimal StateReceiver-like object that has the fields used

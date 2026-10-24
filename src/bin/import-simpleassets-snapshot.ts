@@ -15,7 +15,7 @@
 */
 
 import PostgresConnection from '../connections/postgres';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig, IReaderConfig } from '../types/config';
 import { configFile } from '../utils/config-path';
 import { importSimpleAssetsSnapshot } from '../filler/handlers/simpleassets/snapshot-import';

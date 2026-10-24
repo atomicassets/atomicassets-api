@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { Pool, PoolClient, PoolConfig, QueryResult } from 'pg';
 // @ts-ignore
 import exitHook from 'async-exit-hook';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 function buildSslConfig(): PoolConfig['ssl'] {
     const sslMode = process.env.PGSSLMODE || 'prefer';

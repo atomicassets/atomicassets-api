@@ -16,7 +16,7 @@ import {Pool, QueryResult} from 'pg';
 
 import ConnectionManager from '../connections/manager';
 import {IServerConfig} from '../types/config';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import {expressRedisCache, ExpressRedisCacheHandler} from '../utils/cache';
 import {compileRequestWhitelist, warnIfWhitelistTrustsForwardedHeader} from '../utils/ip-whitelist';
 import {eosioTimestampToDate} from '../utils/eosio';

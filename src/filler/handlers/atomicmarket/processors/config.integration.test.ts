@@ -14,6 +14,7 @@ import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { ConfigTableRow } from '../types/tables';
 import { marketDissolvesBundles } from '../legacy-bundles';
+import AtomicMarketHandler from '../index';
 
 const MARKET_CONTRACT = 'atomicmarket';
 const READER_NAME = 'test-reader';
@@ -111,6 +112,40 @@ describe('configProcessor v2 legacy bundle marker', () => {
             processor, db, block,
             createContractRow(MARKET_CONTRACT, 'config', createConfigValue(version), true)
         );
+    }
+
+    for (const buffered of [false, true]) {
+        for (const seeded of [false, true]) {
+            it(`retains replayed token and pair catalogs (${buffered ? 'buffered' : 'direct'}, ${seeded ? 'RPC seeded' : 'new entries'})`, async () => {
+                await client.query('DELETE FROM atomicmarket_config WHERE market_contract = $1', [MARKET_CONTRACT]);
+                await client.query('DELETE FROM atomicmarket_tokens WHERE market_contract = $1', [MARKET_CONTRACT]);
+                await client.query('DELETE FROM atomicmarket_symbol_pairs WHERE market_contract = $1', [MARKET_CONTRACT]);
+                const populated = {
+                    ...createConfigValue('1.2.2'),
+                    supported_tokens: [{ token_contract: 'eosio.token', token_symbol: '8,WAX' }],
+                    supported_symbol_pairs: [{
+                        listing_symbol: '2,USD', settlement_symbol: '8,WAX',
+                        delphi_pair_name: 'waxusd', invert_delphi_pair: true,
+                    }],
+                };
+                const empty = createConfigValue('1.2.2');
+                const core = createMockCore('1.2.2', null);
+                core.connection = { chain: { rpc: { get_table_rows: async () => ({ rows: [seeded ? populated : empty] }) } } };
+                // Exercise the real startup seed before moving backwards through history.
+                await AtomicMarketHandler.prototype.init.call(core, client as any);
+                if (buffered) db.enableWriteBuffer();
+                destroyProcessor = configProcessor(core, processor);
+                for (const value of [empty, populated, empty, populated]) {
+                    await processContractRow(processor, db, createBlock(), createContractRow(MARKET_CONTRACT, 'config', value, true));
+                }
+                // query() flushes the real catch-up buffer, including repeated additions.
+                const tokens = await db.query('SELECT token_contract, token_symbol, token_precision FROM atomicmarket_tokens WHERE market_contract = $1', [MARKET_CONTRACT]);
+                const pairs = await db.query('SELECT listing_symbol, settlement_symbol, delphi_pair_name, invert_delphi_pair FROM atomicmarket_symbol_pairs WHERE market_contract = $1', [MARKET_CONTRACT]);
+                expect(tokens.rows).to.deep.equal([{ token_contract: 'eosio.token', token_symbol: 'WAX', token_precision: 8 }]);
+                expect(pairs.rows).to.deep.equal([{ listing_symbol: 'USD', settlement_symbol: 'WAX', delphi_pair_name: 'waxusd', invert_delphi_pair: true }]);
+                expect(core.config).to.equal(populated);
+            });
+        }
     }
 
     it('writes the marker at the block of the first v2 config delta', async () => {

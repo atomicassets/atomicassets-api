@@ -1,6 +1,6 @@
 import { decodeNotificationMessage, NotificationData } from '../filler/notification-format';
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 export type NotificationListener = (notifications: NotificationData[]) => Promise<any>;
 

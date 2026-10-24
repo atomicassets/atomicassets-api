@@ -8,7 +8,7 @@ import { ShipBlock } from '../types/ship';
 import { eosioTimestampToDate } from '../utils/eosio';
 import { arrayChunk, arraysEqual } from '../utils';
 import { positiveIntEnv } from '../utils/env';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { EosioActionTrace, EosioTransaction } from '../types/eosio';
 import { encodeDatabaseJson } from './utils';
 

@@ -8,7 +8,7 @@ import express from 'express';
 
 import Filler from '../filler/filler';
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig, IReaderConfig } from '../types/config';
 import { upgradeDb } from '../filler/upgrade-db';
 import { MetricsCollectorHandler } from '../metrics/handler';

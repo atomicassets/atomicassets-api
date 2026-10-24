@@ -5,7 +5,7 @@ import * as sinon from 'sinon';
 import ApiNotificationReceiver from './notification';
 import {encodeNotifications, NotificationData} from '../filler/notification-format';
 import {EosioTransaction} from '../types/eosio';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 const CHANNEL = 'eosio-contract-api:test:test-reader:api';
 

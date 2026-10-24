@@ -1,6 +1,6 @@
 import ConnectionManager from '../connections/manager';
 import StateReceiver from './receiver';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IReaderConfig } from '../types/config';
 import { formatSecondsLeft } from '../utils/time';
 import { getHandlers } from './handlers';

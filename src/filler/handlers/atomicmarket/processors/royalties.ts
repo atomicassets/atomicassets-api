@@ -5,7 +5,7 @@ import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../../../.
 import { ShipBlock } from '../../../../types/ship';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { preventInt64Overflow } from '../../../../utils/binary';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 import AtomicMarketHandler, { AtomicMarketUpdatePriority, RoyaltyListingType, RoyaltyPayoutCategory } from '../index';
 import { RoyaltyAttrTableRow, RoyaltyConfTableRow, RoyaltyTempTableRow } from '../types/tables';
 import {

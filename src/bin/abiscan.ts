@@ -1,6 +1,6 @@
 
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig } from '../types/config';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires

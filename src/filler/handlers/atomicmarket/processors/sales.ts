@@ -11,7 +11,7 @@ import {
 import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
 import ApiNotificationSender from '../../../notifier';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 import { saleDissolvesAsLegacyBundle } from '../legacy-bundles';
 
 export function saleProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {

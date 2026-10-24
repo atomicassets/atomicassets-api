@@ -5,7 +5,7 @@ import { ContractHandler } from '../interfaces';
 import { ShipBlock } from '../../../types/ship';
 import { EosioContractRow } from '../../../types/eosio';
 import { ContractDBTransaction } from '../../database';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 import { eosioTimestampToDate } from '../../../utils/eosio';
 import Filler from '../../filler';
 import DataProcessor from '../../processor';

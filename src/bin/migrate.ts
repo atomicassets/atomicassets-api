@@ -1,6 +1,6 @@
 import { runMigrations } from '../filler/upgrade-db';
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig } from '../types/config';
 import { configFile } from '../utils/config-path';
 

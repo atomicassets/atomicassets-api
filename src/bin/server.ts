@@ -1,5 +1,5 @@
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig, IServerConfig } from '../types/config';
 import Api from '../api/api';
 import {MetricsServer} from '../metrics/server';

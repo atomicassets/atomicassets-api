@@ -4,7 +4,7 @@ import * as sinon from 'sinon';
 import type express from 'express';
 
 import { expressRedisCache } from './cache';
-import logger from './winston';
+import logger from './logger';
 
 
 type RedisLike = {
