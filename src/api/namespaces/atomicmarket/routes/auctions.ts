@@ -23,12 +23,13 @@ import { extractNotificationBlocks, readNotifiedRows } from '../../../notificati
 import { NotificationData } from '../../../../filler/notifier';
 import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { getAuctionAction, getAuctionLogsAction, getAuctionsAction, getAuctionsCountAction } from '../handlers/auctions';
+import { serverSellerPolicy } from '../seller-policy';
 
 export function auctionsEndpoints(core: AtomicMarketNamespace, server: HTTPServer, router: express.Router): any {
     const {caching, returnAsJSON} = server.web;
 
-    router.all('/v1/auctions', caching(), returnAsJSON(getAuctionsAction, core));
-    router.all('/v1/auctions/_count', caching(), returnAsJSON(getAuctionsCountAction, core));
+    router.all('/v1/auctions', serverSellerPolicy(core), caching(), returnAsJSON(getAuctionsAction, core));
+    router.all('/v1/auctions/_count', serverSellerPolicy(core), caching(), returnAsJSON(getAuctionsCountAction, core));
 
     router.all('/v1/auctions/:auction_id', caching(), returnAsJSON(getAuctionAction, core));
 
