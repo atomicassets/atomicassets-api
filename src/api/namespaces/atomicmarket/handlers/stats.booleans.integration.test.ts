@@ -1,7 +1,6 @@
 import 'mocha';
 import {expect} from 'chai';
 import express from 'express';
-import bodyParser from 'body-parser';
 import request from 'supertest';
 import {initAtomicMarketTest} from '../test';
 import {getTestContext} from '../../../../utils/test';
@@ -23,7 +22,7 @@ describe('AtomicMarket template stats boolean filters', () => {
 
                 const context = getTestContext(client);
                 const app = express();
-                app.use(bodyParser.json());
+                app.use(express.json());
                 app.all('/atomicmarket/v1/stats/templates', async (req, res) => {
                     try {
                         res.json(await getTemplateStatsAction(mergeRequestData(req), context));
