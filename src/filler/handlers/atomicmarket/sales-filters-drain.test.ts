@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { drainAtomicmarketSalesFilters, priceRefreshSlice, runWithWorkMem } from './index';
 
@@ -169,7 +168,7 @@ describe('drainAtomicmarketSalesFilters', () => {
 
         await expect(
             drainAtomicmarketSalesFilters(pool, 500, 30_000, STMT_TIMEOUT_MS, WORK_MEM_MB),
-        ).to.be.rejectedWith(/statement timeout/);
+        ).rejects.toThrow(/statement timeout/);
 
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');
@@ -224,7 +223,7 @@ describe('runWithWorkMem', () => {
         const { pool, queries, released } = makeClient('template_prices');
         await expect(
             runWithWorkMem(pool, 'SELECT update_atomicmarket_template_prices()', 1024, 900),
-        ).to.be.rejectedWith(/boom/);
+        ).rejects.toThrow(/boom/);
 
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');

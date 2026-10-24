@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect } from 'vitest';
 import * as fs from 'fs';
 
 import { initAtomicMarketTest } from '../../../api/namespaces/atomicmarket/test';
@@ -226,7 +225,7 @@ describe('stats-market queue - enqueue triggers (2.0.10)', () => {
         await expect(client.query(
             'INSERT INTO atomicmarket_stats_markets_updates (market_contract, listing_type, listing_id) VALUES (NULL, $1, 1)',
             ['sale'],
-        )).to.be.rejectedWith(/not-null constraint/);
+        )).rejects.toThrow(/not-null constraint/);
     });
 });
 

@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 import {getSaleAction, getSalesAction, getSalesCountAction} from './sales';
 import {createMintAsset, defineEffectiveMintSuite, storedTemplateRange} from '../effective-mint-suite';
 import {SaleApiState} from '../index';
@@ -45,7 +44,7 @@ describe('AtomicMarket Sales API', () => {
                 .to.deep.equal([sale_id1, sale_id2]);
         });
 
-        context('with template_blacklist args', () => {
+        describe('with template_blacklist args', () => {
             txit('filter out the given template matching the blacklist', async () => {
                 //Included
                 const templateIncluded = await client.createTemplate();
@@ -794,5 +793,5 @@ describe('AtomicMarket Sales API', () => {
         count: async (values) => Number(await getSalesCountAction({...values}, getTestContext(client))),
     });
 
-    after(async () => await client.end());
+    afterAll(async () => await client.end());
 });

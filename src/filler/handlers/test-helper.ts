@@ -77,7 +77,7 @@ export interface ProcessorTestContext {
 /**
  * Setup a full processor-test context.
  *
- * Call `ctx.client.connect()` in before(), `ctx.client.end()` in after().
+ * Call `ctx.client.connect()` in beforeAll(), `ctx.client.end()` in afterAll().
  */
 export function createProcessorTestContext(): ProcessorTestContext {
     const client = new Client(getTestPostgresConfig());

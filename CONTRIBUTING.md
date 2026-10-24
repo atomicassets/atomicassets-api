@@ -20,13 +20,14 @@ Run the standard checks:
 ```sh
 pnpm build         # compile TypeScript to ./build
 pnpm check-types   # type-only check
-pnpm test          # unit tests (mocha)
+pnpm test          # unit tests (Vitest)
 pnpm lint          # ESLint
 ```
 
-For integration / end-to-end tests you will need a running Postgres and
-Redis along with `config/connections.config.json` populated. See
-[README.md](./README.md) for details.
+For integration / end-to-end tests, use dedicated local Postgres and Redis/Valkey
+services with explicit `POSTGRES_TEST_*` / `REDIS_TEST_*` variables. Test commands
+never use operator connection configs. See [README.md](./README.md#development)
+for setup, coverage, and watch commands.
 
 ## Branching and commits
 

@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 
 import { extractNotificationBlocks, readNotifiedRows } from './notification-read';

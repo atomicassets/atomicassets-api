@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { afterEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import { EventEmitter } from 'events';
 import { ShipError } from '@atomichub/antelope-ship-utils';

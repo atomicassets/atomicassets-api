@@ -1,15 +1,11 @@
 import * as path from 'path';
-import chai from 'chai';
-import chaiAsPromised from 'chai-as-promised';
-
-chai.use(chaiAsPromised);
 
 process.env.DO_NOT_TRACK = '1';
 process.env.NODE_ENV = 'test';
 process.env.LOG_LEVEL = 'error';
 
 // config-path.ts resolves CONFIG_DIR once, at module load time, so it has to
-// be set before mocha requires any spec file - this --require hook runs
+// be set before Vitest imports any spec file - this setup file runs
 // first. Pinned unconditionally, not merely defaulted: points at a fixture
 // readers.config.json (zero contracts) so upgrade-db.ts's runMigrations(),
 // which requires readers.config.json off this directory, resolves the
@@ -20,4 +16,10 @@ process.env.LOG_LEVEL = 'error';
 // and fail on any machine with it set, while passing in CI.
 process.env.CONFIG_DIR = path.join(__dirname, 'fixtures', 'config');
 
-export default chai;
+// ConnectionManager also accepts runtime environment overrides. Do not let an
+// operator's exported production endpoints bypass the test-only connection config.
+for (const key of Object.keys(process.env)) {
+    if (/^(POSTGRES|REDIS|CHAIN)_/.test(key) && !/^(POSTGRES|REDIS)_TEST_/.test(key)) {
+        delete process.env[key];
+    }
+}

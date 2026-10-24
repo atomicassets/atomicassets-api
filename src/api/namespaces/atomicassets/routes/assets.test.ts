@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { describe, expect, it } from 'vitest';
 import sinon from 'sinon';
 import {HTTPServer} from '../../../server';
 import {AtomicAssetsContext, AtomicAssetsNamespace} from '../index';

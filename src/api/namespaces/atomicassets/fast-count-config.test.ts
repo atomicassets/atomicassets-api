@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { describe, expect, it } from 'vitest';
 import {AtomicAssetsNamespace} from './index';
 import {AtomicMarketNamespace} from '../atomicmarket';
 
@@ -25,7 +24,7 @@ describe('fast asset count namespace configuration', () => {
 
         for (const value of ['false', 0, null]) {
             it(`${Namespace.namespaceName} rejects ${JSON.stringify(value)}`, async () => {
-                await expect(namespace(value).init()).to.be.rejectedWith(
+                await expect(namespace(value).init()).rejects.toThrow(
                     `Invalid argument in ${Namespace.namespaceName} api namespace: enable_fast_asset_counts must be a boolean`
                 );
             });

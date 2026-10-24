@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import { Client } from 'pg';
 
@@ -40,7 +39,7 @@ describe('filler transient failure recovery (live database)', () => {
     let contract: ContractDB;
     let rawClient: Client;
 
-    before(async () => {
+    beforeAll(async () => {
         connection = new ConnectionManager({...connectionConfig, postgres: getTestPostgresConfig()});
         contract = new ContractDB(READER_NAME, connection);
 
@@ -48,7 +47,7 @@ describe('filler transient failure recovery (live database)', () => {
         await rawClient.connect();
     });
 
-    after(async () => {
+    afterAll(async () => {
         await rawClient.end();
         await connection.redis.disconnect();
         await connection.database.pool.end();

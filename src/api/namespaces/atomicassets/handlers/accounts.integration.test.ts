@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 
 import {initAtomicAssetsTest} from '../test';
 import {getAccountAction, getAccountCollectionAction, getAccountsAction} from './accounts';
@@ -170,7 +170,7 @@ describe('Account handler', () => {
             expect(response[1]).to.deep.equal({assets: '1', account: asset2['owner']});
         });
 
-        context('when filter match_owner argument is given', () => {
+        describe('when filter match_owner argument is given', () => {
             txit('returns asset count filtered by owner', async () => {
                 const asset1 = await client.createAsset({
                     owner: 'account1',
@@ -200,7 +200,7 @@ describe('Account handler', () => {
             });
         });
 
-        context('when filter collection name is given', () => {
+        describe('when filter collection name is given', () => {
             txit('returns asset count filtered by collection name', async () => {
                 const asset1 = await client.createAsset({
                     owner: 'account1',
@@ -232,7 +232,7 @@ describe('Account handler', () => {
             });
         });
 
-        context('when filter schema name is given', () => {
+        describe('when filter schema name is given', () => {
             txit('returns asset count filtered by schema name', async () => {
                 const schema1 = await client.createSchema();
                 const schema2 = await client.createSchema();
@@ -267,7 +267,7 @@ describe('Account handler', () => {
             });
         });
 
-        context('when filter template id is given', () => {
+        describe('when filter template id is given', () => {
             txit('returns asset count filtered by schema name', async () => {
                 const template = await client.createTemplate();
                 const anotherTemplate = await client.createTemplate();
@@ -305,7 +305,7 @@ describe('Account handler', () => {
         });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

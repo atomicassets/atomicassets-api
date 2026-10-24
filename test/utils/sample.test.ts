@@ -1,5 +1,4 @@
-import { expect } from 'chai';
-import { describe, it } from 'mocha';
+import { describe, expect, it } from 'vitest';
 
 describe('Sample Test - eosio-contract-api', () => {
   it('should pass basic assertion', () => {

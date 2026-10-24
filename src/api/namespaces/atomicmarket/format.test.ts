@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { formatAuction } from './format';
 import { AuctionApiState } from './index';

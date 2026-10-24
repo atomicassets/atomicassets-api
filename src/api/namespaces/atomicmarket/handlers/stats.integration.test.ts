@@ -1,8 +1,8 @@
+import { afterAll, describe, expect } from 'vitest';
 import {initAtomicMarketTest} from '../test';
 import {getTestContext} from '../../../../utils/test';
 import {getTemplateStatsAction} from './stats';
 import {SaleApiState} from '../index';
-import {expect} from 'chai';
 
 const {client, txit} = initAtomicMarketTest();
 
@@ -49,7 +49,7 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
-        context('with template_id filter', () => {
+        describe('with template_id filter', () => {
             txit('gets the templates sales and volume even if they dont have sales', async () => {
                 await client.createContractReader();
 
@@ -72,7 +72,7 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
-        context('with schema_name filter', () => {
+        describe('with schema_name filter', () => {
             txit('gets the templates sales and volume even if they dont have sales', async () => {
                 await client.createContractReader();
 
@@ -96,7 +96,7 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
-        context('with collection_name filter', () => {
+        describe('with collection_name filter', () => {
             txit('gets the templates sales and volume even if they dont have sales', async () => {
                 await client.createContractReader();
 
@@ -120,7 +120,7 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
-        context('with search filter', () => {
+        describe('with search filter', () => {
             txit('gets the templates sales and volume even if they dont have sales', async () => {
                 await client.createContractReader();
 
@@ -143,7 +143,7 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
-        context('with time after and before filter', () => {
+        describe('with time after and before filter', () => {
             txit('gets the templates sales and volume even if they dont have sales in the period defined', async () => {
                 await client.createContractReader();
 
@@ -211,5 +211,5 @@ describe('AtomicMarket Stats API', () => {
         });
     });
 
-    after(async () => await client.end());
+    afterAll(async () => await client.end());
 });

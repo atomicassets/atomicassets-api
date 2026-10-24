@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 import {RequestValues} from '../../utils';
 import {initAtomicMarketTest} from '../test';
 import {getTestContext} from '../../../../utils/test';
@@ -515,5 +514,5 @@ describe('AtomicMarket Sales API', () => {
         });
     });
 
-    after(async () => await client.end());
+    afterAll(async () => await client.end());
 });

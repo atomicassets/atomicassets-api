@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import * as fs from 'fs';
 
@@ -66,7 +65,7 @@ describe('resolveMigrationStatementTimeoutMs', () => {
 describe('runMigrations - wiring and lifecycle', () => {
     let availableVersions: string[];
 
-    before(() => {
+    beforeAll(() => {
         availableVersions = fs.readdirSync('./definitions/migrations').sort(compareVersionString);
     });
 

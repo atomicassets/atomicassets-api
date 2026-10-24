@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import { Client } from 'pg';
 
@@ -18,13 +17,13 @@ describe('migration 2.0.9 legacy bundle marker backfill', () => {
     let client: Client;
     let migration: string;
 
-    before(async () => {
+    beforeAll(async () => {
         client = new Client(getTestPostgresConfig());
         await client.connect();
         migration = fs.readFileSync(MIGRATION, { encoding: 'utf8' });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

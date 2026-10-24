@@ -1,6 +1,5 @@
-import 'mocha';
+import { afterAll, describe, expect } from 'vitest';
 import * as fs from 'fs';
-import { expect } from 'chai';
 import { RequestValues } from '../../utils';
 import { initAtomicAssetsTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
@@ -1176,7 +1175,7 @@ describe('AtomicAssets Assets API', () => {
         });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

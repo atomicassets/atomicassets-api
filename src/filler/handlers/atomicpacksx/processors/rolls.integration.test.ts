@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 
 import {
@@ -55,13 +54,13 @@ describe('atomicpacksx rollsProcessor (WAX ABI: lognewroll + addpackroll)', () =
     let db: ContractDBTransaction;
     let destroy: () => any;
 
-    before(async () => {
+    beforeAll(async () => {
         const ctx = createProcessorTestContext();
         client = ctx.client;
         await client.connect();
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

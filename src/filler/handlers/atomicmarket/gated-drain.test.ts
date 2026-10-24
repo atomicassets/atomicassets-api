@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { runGatedDrain } from './index';
 
@@ -71,7 +70,7 @@ describe('runGatedDrain', () => {
                 async () => { throw new Error('probe failed'); },
                 async () => { drained = true; return 1; },
             ),
-        ).to.be.rejectedWith(/probe failed/);
+        ).rejects.toThrow(/probe failed/);
         expect(drained).to.equal(false);
     });
 });

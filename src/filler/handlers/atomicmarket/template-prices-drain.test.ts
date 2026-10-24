@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { drainAtomicmarketTemplatePrices, TEMPLATE_PRICES_WORK_PROBE_SQL } from './index';
 
@@ -165,7 +164,7 @@ describe('drainAtomicmarketTemplatePrices', () => {
 
         await expect(
             drainAtomicmarketTemplatePrices(pool, 200, 55_000, STMT_TIMEOUT_S, WORK_MEM_MB),
-        ).to.be.rejectedWith(/statement timeout/);
+        ).rejects.toThrow(/statement timeout/);
 
         expect(queries).to.include('ROLLBACK');
         expect(queries).to.not.include('COMMIT');

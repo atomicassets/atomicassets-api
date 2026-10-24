@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -130,13 +129,13 @@ describe('simpleassets snapshot import', () => {
         return null;
     }
 
-    before(async () => {
+    beforeAll(async () => {
         client = new Client(getTestPostgresConfig());
         await client.connect();
         dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-import-'));
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
         fs.rmSync(dir, { recursive: true, force: true });
     });

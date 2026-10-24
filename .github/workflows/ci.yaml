@@ -37,8 +37,14 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Test
-        run: pnpm test
+      - name: Unit tests and coverage
+        run: pnpm test:coverage
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-coverage
+          path: coverage/
 
       - name: Release notes script
         run: bash scripts/release-notes.test.sh
@@ -69,7 +75,17 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
+      REDIS_TEST_HOST: localhost
+      REDIS_TEST_PORT: 6379
       # init-test-db reads POSTGRES_TEST_* (CI mode). PGSSLMODE override is
       # required because src/connections/postgres.ts defaults to `prefer`,
       # which throws against the GHA postgres service container (no SSL
