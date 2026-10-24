@@ -1,7 +1,7 @@
 import { IListPollConfig } from '../types/config';
 import PostgresConnection from '../connections/postgres';
 import logger from '../utils/winston';
-import moize from 'moize';
+import {memoize} from 'micro-memoize';
 
 const DEFAULT_POLL_FREQUENCY = 60 * 10; // 10 minutes
 
@@ -103,13 +103,18 @@ type ListItem = {
     itemName: string
 }
 
-const getListId = moize({
-    isPromise: true,
-    maxSize: 9999990,
-    maxArgs: 1,
-})(async (listName: string, database: PostgresConnection): Promise<number> => {
-    return (
-        await database.fetchOne('SELECT id FROM lists WHERE list_name = $1', [listName])
-            ?? await database.fetchOne('INSERT INTO lists (list_name) VALUES ($1) RETURNING id', [listName])
-    ).id;
-});
+const getListId = memoize(
+    async (listName: string, database: PostgresConnection): Promise<number> => {
+        return (
+            await database.fetchOne('SELECT id FROM lists WHERE list_name = $1', [listName])
+                ?? await database.fetchOne('INSERT INTO lists (list_name) VALUES ($1) RETURNING id', [listName])
+        ).id;
+    },
+    {
+        async: true,
+        maxSize: 9999990,
+        maxArgs: 1,
+        // Preserve moize's SameValueZero equality, including 0 and -0.
+        isKeyItemEqual: (a, b) => a === b || Object.is(a, b),
+    },
+);

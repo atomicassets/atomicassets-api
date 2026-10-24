@@ -5,7 +5,7 @@ import {fillSales} from '../filler';
 import {formatSale} from '../format';
 import {ApiError} from '../../../error';
 import {toInt} from '../../../../utils';
-import moize from 'moize';
+import {memoize} from 'micro-memoize';
 import {filterQueryArgs, FilterValues} from '../../validation';
 import {hasAssetFilter} from '../../atomicassets/utils';
 import {
@@ -553,26 +553,32 @@ function getDataFilters(search: SalesSearchOptions): string[] {
 
 const largeSalesResult = 50_000;
 
-const getSaleCount = moize({
-    isPromise: true,
-    maxAge: 1000 * 60 * 60 * 24,
-    maxArgs: 3,
-    maxSize: 1_000_000,
-})(async (filter: string, value: string, saleState: number, search: SalesSearchOptions): Promise<number> => {
-    const {rows} = await search.ctx.db.query(`
-        SELECT COUNT(*)::INT ct
-        FROM (
-                SELECT
-                FROM atomicmarket_sales_filters
-                WHERE market_contract = $1
-                    AND ((filter @> create_atomicmarket_sales_filter(${filter}s => $2)))
-                    AND sale_state = $3
-                LIMIT ${largeSalesResult + 1}
-            ) filtered
-            `, [search.ctx.coreArgs.atomicmarket_account, [value], saleState]);
+const getSaleCount = memoize(
+    async (filter: string, value: string, saleState: number, search: SalesSearchOptions): Promise<number> => {
+        const {rows} = await search.ctx.db.query(`
+            SELECT COUNT(*)::INT ct
+            FROM (
+                    SELECT
+                    FROM atomicmarket_sales_filters
+                    WHERE market_contract = $1
+                        AND ((filter @> create_atomicmarket_sales_filter(${filter}s => $2)))
+                        AND sale_state = $3
+                    LIMIT ${largeSalesResult + 1}
+                ) filtered
+                `, [search.ctx.coreArgs.atomicmarket_account, [value], saleState]);
 
-    return rows[0].ct;
-});
+        return rows[0].ct;
+    },
+    {
+        async: true,
+        // Fixed TTL from insertion; hits and promise resolution must not reset it.
+        expires: 1000 * 60 * 60 * 24,
+        maxArgs: 3,
+        maxSize: 1_000_000,
+        // Preserve moize's SameValueZero equality, including 0 and -0.
+        isKeyItemEqual: (a, b) => a === b || Object.is(a, b),
+    },
+);
 
 const FILTERS_REQUIRING_COUNTING = ['collection_name', 'template_id', 'schema_name'];
 async function isStrongMainFilter(filter: string, values: string[], search: SalesSearchOptions): Promise<boolean> {
