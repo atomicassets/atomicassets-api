@@ -1,4 +1,4 @@
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import * as fs from 'fs';
 import { ClientBase, Pool, PoolClient } from 'pg';
 import { handlers } from './handlers/loader';

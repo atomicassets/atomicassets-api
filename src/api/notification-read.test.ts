@@ -4,7 +4,7 @@ import * as sinon from 'sinon';
 
 import { extractNotificationBlocks, readNotifiedRows } from './notification-read';
 import { NotificationData } from '../filler/notification-format';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 type ScriptedDb = {
     db: any,

@@ -1,6 +1,6 @@
 import { initBaseTables } from '../filler/upgrade-db';
 import PostgresConnection from '../connections/postgres';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig } from '../types/config';
 import { configFile } from '../utils/config-path';
 

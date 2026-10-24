@@ -3,7 +3,7 @@ import {expect} from 'chai';
 import * as sinon from 'sinon';
 
 import {compileAddressList, compileRequestWhitelist, warnIfWhitelistTrustsForwardedHeader} from './ip-whitelist';
-import logger from './winston';
+import logger from './logger';
 
 describe('compileAddressList', () => {
     it('matches an exact address and nothing else', () => {

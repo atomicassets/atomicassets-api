@@ -7,7 +7,7 @@ import ApiNotificationSender from './notifier';
 import {decodeNotificationMessage, NotificationEnvelope} from './notification-format';
 import {EosioActionTrace, EosioContractRow, EosioTransaction} from '../types/eosio';
 import {ShipBlock} from '../types/ship';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import {
     notificationBatchesSkipped,
     notificationBytesPublished,

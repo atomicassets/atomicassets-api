@@ -3,7 +3,7 @@ import { ClientBase } from 'pg';
 import { readSnapshotRows } from './snapshot-file';
 import { ORIGINAL_MINTS_TABLE, originalMintsTableExists } from './processors/bridge';
 import { encodeDatabaseJson } from '../../utils';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 
 type SnapshotFiles = {
     assets: string,

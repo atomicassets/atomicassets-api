@@ -1,7 +1,7 @@
 import {isIP} from 'net';
 import {compile} from 'proxy-addr';
 
-import logger from './winston';
+import logger from './logger';
 import type {IServerConfig} from '../types/config';
 
 type AddressMatcher = (ip: string | undefined) => boolean;

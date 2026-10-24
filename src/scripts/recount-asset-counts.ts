@@ -16,7 +16,7 @@
  */
 
 import { Pool } from 'pg';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 interface CorrectionRow {
     template_id: string;

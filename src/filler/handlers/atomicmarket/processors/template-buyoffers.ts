@@ -12,7 +12,7 @@ import {
 } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 
 export function templateBuyofferProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {
     const destructors: Array<() => any> = [];

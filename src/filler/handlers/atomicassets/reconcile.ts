@@ -14,7 +14,7 @@
 import { PoolClient } from 'pg';
 import { deserialize, CachedObjectSchema } from '@atomichub/atomicassets';
 import { encodeDatabaseJson } from '../../utils';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 
 export interface ReconcileRpc {
     get_info(): Promise<{ head_block_num: number | string }>;

@@ -8,7 +8,7 @@ import ApiNotificationSender from '../../../notifier';
 import { AcceptBuyofferActionData, CancelBuyofferActionData, DeclineBuyofferActionData, LogNewBuyofferActionData } from '../types/actions';
 import { preventInt64Overflow } from '../../../../utils/binary';
 import { normalizeMarketplace } from '../../../../utils/marketplace';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 import { buyofferDissolvesAsLegacyBundle } from '../legacy-bundles';
 
 export function buyofferProcessor(core: AtomicMarketHandler, processor: DataProcessor, notifier: ApiNotificationSender): () => any {

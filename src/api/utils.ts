@@ -4,7 +4,7 @@ import express from 'express';
 import {DB, HTTPServer} from './server';
 import {NotificationData} from '../filler/notifier';
 import {ApiError} from './error';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 // Serialize a metadata-condition object into the two `::jsonb` parameter
 // variants needed to match contract_traces rows. validateId returns numeric

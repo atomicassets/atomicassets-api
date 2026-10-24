@@ -1,4 +1,4 @@
-import logger from './winston';
+import logger from './logger';
 
 // Connection-transient error codes worth retrying: the node/endpoint (or
 // DB/redis) is momentarily unreachable - pod mid-restart, DNS not yet

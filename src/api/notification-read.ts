@@ -1,6 +1,6 @@
 import type { DB } from './server';
 import type { NotificationData } from '../filler/notification-format';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 // The query surface alone. A socket handler holds the pg pool, which serves
 // query() but not the rest of DB.

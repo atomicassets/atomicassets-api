@@ -4,7 +4,7 @@ import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { ConfigTableRow } from '../types/tables';
 import AtomicMarketHandler, { AtomicMarketUpdatePriority } from '../index';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 import { versionDissolvesBundles } from '../legacy-bundles';
 
 export function configProcessor(core: AtomicMarketHandler, processor: DataProcessor): () => any {

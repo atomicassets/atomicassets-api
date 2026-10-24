@@ -1,5 +1,5 @@
 import ConnectionManager from '../connections/manager';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig, IReaderConfig } from '../types/config';
 import { configFile } from '../utils/config-path';
 import { assertReaderStopped, reconcileAtomicAssetsContract } from '../filler/handlers/atomicassets/reconcile';

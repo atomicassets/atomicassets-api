@@ -3,7 +3,7 @@ import PQueue from 'p-queue';
 import { EOSJsDeserializer, StateHistoryConnection } from '@atomichub/antelope-ship-utils';
 import type { IBlockRequest, IShipConsumer } from '@atomichub/antelope-ship-utils';
 
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import ConnectionManager from '../connections/manager';
 import { IReaderConfig } from '../types/config';
 import { ShipBlock, ShipBlockResponse, ShipTableDelta, ShipTransactionTrace } from '../types/ship';
@@ -453,16 +453,20 @@ export default class StateReceiver implements IShipConsumer {
             } else if (trace.act.account === 'eosio' && trace.act.name === 'setabi') {
                 await this.handleAbiUpdate(block, trace.act);
             } else {
-                logger.debug('Trace for reader ' + this.config.name + ' received', {
-                    contract: trace.act.account, action: trace.act.name, data: trace.act.data
-                });
+                if (logger.isLevelEnabled('debug')) {
+                    logger.debug('Trace for reader ' + this.config.name + ' received', {
+                        contract: trace.act.account, action: trace.act.name, data: trace.act.data
+                    });
+                }
 
                 this.processor.processActionTrace(block, tx, trace);
             }
         } else if (processingInfo.process) {
-            logger.debug('Trace for reader ' + this.config.name + ' received', {
-                contract: trace.act.account, action: trace.act.name
-            });
+            if (logger.isLevelEnabled('debug')) {
+                logger.debug('Trace for reader ' + this.config.name + ' received', {
+                    contract: trace.act.account, action: trace.act.name
+                });
+            }
 
             // @ts-ignore
             trace.act.data = typeof trace.act.data === 'string' ? trace.act.data : binToHex(trace.act.data);
@@ -505,15 +509,19 @@ export default class StateReceiver implements IShipConsumer {
                 }
             }
 
-            logger.debug('Contract row for reader ' + this.config.name + ' received', {
-                contract: delta.code, table: delta.table, scope: delta.scope, value: delta.value
-            });
+            if (logger.isLevelEnabled('debug')) {
+                logger.debug('Contract row for reader ' + this.config.name + ' received', {
+                    contract: delta.code, table: delta.table, scope: delta.scope, value: delta.value
+                });
+            }
 
             this.processor.processContractRow(block, delta);
         } else if (processingInfo.process) {
-            logger.debug('Contract row for reader ' + this.config.name + ' received', {
-                contract: delta.code, table: delta.table, scope: delta.scope
-            });
+            if (logger.isLevelEnabled('debug')) {
+                logger.debug('Contract row for reader ' + this.config.name + ' received', {
+                    contract: delta.code, table: delta.table, scope: delta.scope
+                });
+            }
 
             // @ts-ignore
             delta.value = typeof delta.value.binary === 'string' ? delta.value.binary : binToHex(delta.value.binary);
@@ -547,9 +555,17 @@ export default class StateReceiver implements IShipConsumer {
                     ]
                 );
 
-                logger.info('ABI updated for contract ' + action.data.account + ' at block #' + block.block_num);
+                if (this.processor.tracksContractAccount(action.data.account)) {
+                    logger.info('ABI updated for contract ' + action.data.account + ' at block #' + block.block_num);
+                } else if (logger.isLevelEnabled('debug')) {
+                    logger.debug('ABI updated for untracked contract ' + action.data.account + ' at block #' + block.block_num);
+                }
             } catch (e) {
-                logger.info('ABI ' + action.data.account + ' already in cache. Ignoring ABI update');
+                if (e?.code === '23505') {
+                    logger.debug('ABI ' + action.data.account + ' already in cache. Ignoring ABI update', e);
+                } else {
+                    logger.error('Could not persist ABI update for contract ' + action.data.account, e);
+                }
             }
         } else {
             logger.error('Could not update ABI for contract because action could not be deserialized');
@@ -564,9 +580,17 @@ export default class StateReceiver implements IShipConsumer {
                     [action.data.account, block.block_num, eosioTimestampToDate(block.timestamp).getTime()]
                 );
 
-                logger.info('Code updated for contract ' + action.data.account + ' at block #' + block.block_num);
+                if (this.processor.tracksContractAccount(action.data.account)) {
+                    logger.info('Code updated for contract ' + action.data.account + ' at block #' + block.block_num);
+                } else if (logger.isLevelEnabled('debug')) {
+                    logger.debug('Code updated for untracked contract ' + action.data.account + ' at block #' + block.block_num);
+                }
             } catch (e) {
-                logger.info('Code ' + action.data.account + ' already in cache. Ignoring code update');
+                if (e?.code === '23505') {
+                    logger.debug('Code ' + action.data.account + ' already in cache. Ignoring code update', e);
+                } else {
+                    logger.error('Could not persist code update for contract ' + action.data.account, e);
+                }
             }
         } else {
             logger.error('Could not update contract code because action could not be deserialized');

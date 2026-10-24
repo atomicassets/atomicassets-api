@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { Pool, PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 import type { ConfigTableRow, TokenConfigsTableRow } from '@atomichub/atomicassets';
 import DataProcessor from '../../processor';
 import ApiNotificationSender from '../../notifier';
