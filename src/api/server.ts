@@ -10,7 +10,6 @@ import * as http from 'http';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 
-import bodyParser from 'body-parser';
 import cors from 'cors';
 import {Pool, QueryResult} from 'pg';
 
@@ -264,8 +263,8 @@ class WebServer {
     };
 
     private middleware(): void {
-        this.express.use(bodyParser.json({limit: '10MB'}));
-        this.express.use(bodyParser.urlencoded({extended: false, limit: '10MB'}));
+        this.express.use(express.json({limit: '10MB'}));
+        this.express.use(express.urlencoded({extended: false, limit: '10MB'}));
         const publicCors = cors({origin: true, allowedHeaders: '*'});
         const restrictedCors = this.server.config.cors?.length
             ? cors({origin: this.server.config.cors.map(d => new RegExp(d, 'i')), allowedHeaders: '*'})

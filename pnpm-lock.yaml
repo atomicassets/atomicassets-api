@@ -26,9 +26,6 @@ importers:
       await-lock:
         specifier: ^2.2.1
         version: 2.2.2
-      body-parser:
-        specifier: ^2.3.0
-        version: 2.3.0
       common-tags:
         specifier: ^1.8.2
         version: 1.8.2
@@ -87,9 +84,6 @@ importers:
       '@swc/core':
         specifier: ^1.16.2
         version: 1.16.2
-      '@types/body-parser':
-        specifier: ^1.19.6
-        version: 1.19.6
       '@types/chai':
         specifier: ^5.2.3
         version: 5.2.3
@@ -3579,7 +3573,7 @@ snapshots:
 
   bn.js@4.12.3: {}
 
-  body-parser@2.3.0:
+  body-parser@2.3.0(supports-color@8.1.1):
     dependencies:
       bytes: 3.1.2
       content-type: 2.0.0
@@ -3960,7 +3954,7 @@ snapshots:
   express@5.2.1(supports-color@8.1.1):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.3.0
+      body-parser: 2.3.0(supports-color@8.1.1)
       content-disposition: 1.1.0
       content-type: 1.0.5
       cookie: 0.7.2
