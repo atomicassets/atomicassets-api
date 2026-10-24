@@ -21,12 +21,11 @@ updates:
           - 'eslint*'
           - '@eslint/*'
           - 'typescript-eslint'
-      mocha:
+      testing:
         patterns:
-          - 'mocha'
-          - '@types/mocha'
-          - 'chai'
-          - '@types/chai'
+          - 'vitest'
+          - '@vitest/*'
+          - 'vite'
           - 'sinon'
           - '@types/sinon'
 

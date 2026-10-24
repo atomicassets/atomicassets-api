@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { buildAssetQueryCondition } from './assets';
 import QueryBuilder from '../../../builder';

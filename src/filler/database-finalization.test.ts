@@ -1,16 +1,12 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import { PoolClient } from 'pg';
 
 import { ContractDB, ContractDBTransaction } from './database';
 
-// No live database here on purpose: database.test.ts wraps its whole suite in
-// describe.skip unless POSTGRES_TEST_HOST / config/connections.config.json is
-// present, so finalization coverage placed there would silently skip in both
-// CI lanes. A fake client whose release() we can count, and whose query()
-// never touches a real socket, is all commit()/abort() need to exercise the
-// finalization contract.
+// No live database is needed for finalization coverage. A fake client whose
+// release() we can count, and whose query() never touches a real socket, is all
+// commit()/abort() need to exercise the exactly-once finalization contract.
 
 function createFakeClient(): { client: PoolClient; query: sinon.SinonStub; release: sinon.SinonStub } {
     const query = sinon.stub().resolves({ rows: [], rowCount: 0 });

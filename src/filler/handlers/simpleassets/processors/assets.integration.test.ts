@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 import { Client } from 'pg';
 import {
@@ -63,13 +62,13 @@ describe('simpleassets assetProcessor', () => {
     let db: ContractDBTransaction;
     let destroyProcessor: (() => any) | null = null;
 
-    before(async () => {
+    beforeAll(async () => {
         const ctx = createProcessorTestContext();
         client = ctx.client;
         await client.connect();
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 import { RequestValues } from '../../utils';
 import { initAtomicMarketTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
@@ -862,7 +861,7 @@ describe('AtomicMarket Sales API', () => {
             expect(result).to.haveOwnProperty('collection');
         });
 
-        context('main-GIN-filter sort hint', () => {
+        describe('main-GIN-filter sort hint', () => {
             // A GIN include-filter (here the `burned` flag, which produces the
             // `filter @> create_atomicmarket_sales_filter(...)` containment) combined
             // with a price, created, or updated sort must force the ' + 0' planner hint
@@ -1010,7 +1009,7 @@ describe('AtomicMarket Sales API', () => {
             });
         });
 
-        context('with template_blacklist arg', () => {
+        describe('with template_blacklist arg', () => {
             txit('filters out sales that contain the template id', async () => {
                 const included = await client.createTemplate();
                 const { sale_id: sale_id1 } = await client.createFullSale({}, {
@@ -1119,7 +1118,7 @@ describe('AtomicMarket Sales API', () => {
         });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

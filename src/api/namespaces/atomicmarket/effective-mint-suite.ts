@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import { describe, expect } from 'vitest';
 import {ApiError} from '../../error';
 import {AtomicMarketTestClient} from './test';
 

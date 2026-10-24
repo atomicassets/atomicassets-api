@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 import { serialize, ObjectSchema } from '@atomichub/atomicassets';
 import type { CollectionsTableRow } from '@atomichub/atomicassets';
@@ -57,13 +56,13 @@ describe('collectionProcessor', () => {
     let db: ContractDBTransaction;
     let destroyProcessor: () => any;
 
-    before(async () => {
+    beforeAll(async () => {
         const ctx = createProcessorTestContext();
         client = ctx.client;
         await client.connect();
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

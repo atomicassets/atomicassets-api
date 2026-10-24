@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 import { serialize, ObjectSchema } from '@atomichub/atomicassets';
 import { getTestPostgresConfig } from '../../../utils/test';
@@ -47,12 +46,12 @@ function createMockRpc(options: {
 describe('reconcileAtomicAssetsContract', () => {
     let client: Client;
 
-    before(async () => {
+    beforeAll(async () => {
         client = new Client(getTestPostgresConfig());
         await client.connect();
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

@@ -624,17 +624,48 @@ carries p2p sync and API traffic.
 ```sh
 pnpm build         # compile TypeScript to ./build
 pnpm check-types   # type-only check (no emit)
-pnpm test          # run the unit test suite (mocha)
+pnpm test          # run the unit test suite (Vitest)
 pnpm lint          # ESLint
 pnpm dev:server    # rebuild + run server with --trace-warnings
 pnpm dev:filler    # rebuild + run filler with --trace-warnings
 ```
 
-Integration tests require a running Postgres and the connection config:
+Integration tests use only a dedicated local test database (Postgres 14+), plus
+a local Redis/Valkey instance. They never read operator connection configs.
+Create a disposable database first, then run:
 
 ```sh
-pnpm test:e2e:ci
+export POSTGRES_TEST_HOST=127.0.0.1
+export POSTGRES_TEST_PORT=5432
+export POSTGRES_TEST_USER=root
+export POSTGRES_TEST_PASSWORD=testpassword
+export POSTGRES_TEST_DATABASE=test_atomicassets
+export REDIS_TEST_HOST=127.0.0.1
+export REDIS_TEST_PORT=6379
+export PGSSLMODE=disable
+pnpm test:integration:ci # initialize schema, then run integration tests
+pnpm test:e2e:ci         # initialize schema, then run unit + integration tests
 ```
+
+Initialization applies all migrations to the selected database; use a fresh,
+disposable database, never a live/shared database. The host must be a loopback
+address and the database name must start with `test_` / `test-` or end in `_test` /
+`-test`. Remote hosts and operator config fallbacks are refused. To repeat a run,
+recreate the disposable database before running initialization again.
+
+`pnpm test:integration` runs against an already initialized test database and
+fails when prerequisites are missing. `pnpm test:watch` (also `dev:test:watch`)
+watches unit tests. `pnpm test:coverage` produces unit coverage in `coverage/`
+(text, HTML, LCOV and JSON); `pnpm test:coverage:ci` initializes the database and
+covers both projects. The e2e command remains the combined unit/integration suite;
+there is no separate chain-backed e2e suite.
+
+Vitest runs test files and hooks serially with per-file module isolation. Keep
+transaction tests sequential: `txit` shares one PostgreSQL client and always
+rolls back after each test, including initialization or assertion failures.
+Sinon remains for the existing spies/stubs. Production still builds as CommonJS
+with SWC; `@swc-node/register` also remains for `test:init-db`.
+
 
 ## Releases
 

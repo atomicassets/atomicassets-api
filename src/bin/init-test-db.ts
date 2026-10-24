@@ -1,44 +1,14 @@
 import { initBaseTables } from '../filler/upgrade-db';
 import PostgresConnection from '../connections/postgres';
 import logger from '../utils/winston';
-import { IConnectionsConfig } from '../types/config';
+import { getTestPostgresConfig } from '../utils/test-config';
 import * as fs from 'fs';
 import { handlers } from '../filler/handlers/loader';
 import { compareVersionString } from '../utils';
 
-function getPostgresConfig(): { host: string; port: number; user: string; password: string; database: string } {
-    // CI mode: use POSTGRES_TEST_* env vars
-    if (process.env.POSTGRES_TEST_HOST) {
-        return {
-            host: process.env.POSTGRES_TEST_HOST,
-            port: parseInt(process.env.POSTGRES_TEST_PORT || '5432', 10),
-            user: process.env.POSTGRES_TEST_USER || 'root',
-            password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
-            database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
-        };
-    }
-
-    // Local dev mode: use connections.config.json
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const connectionConfig: IConnectionsConfig = require('../../config/connections.config.json');
-    return connectionConfig.postgres;
-}
-
 async function main(): Promise<void> {
-    const pg = getPostgresConfig();
-
-    // In CI, POSTGRES_TEST_DATABASE is already the test database name.
-    // In local dev, we append '-test' to the configured database name.
-    const isCI = !!process.env.POSTGRES_TEST_HOST;
-    const db = isCI ? pg.database : `${pg.database}-test`;
-
-    if (!isCI) {
-        const tmpConnection = new PostgresConnection(pg.host, pg.port, pg.user, pg.password, pg.database);
-        logger.info(`Dropping test db with name ${db}`);
-        await tmpConnection.query(`DROP DATABASE IF EXISTS "${db}"`);
-        logger.info(`Creating test db with name ${db}`);
-        await tmpConnection.query(`CREATE DATABASE "${db}"`);
-    }
+    const pg = getTestPostgresConfig();
+    const db = pg.database;
 
     const connection = new PostgresConnection(pg.host, pg.port, pg.user, pg.password, db);
 

@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { assertReaderStopped, RECONCILE_STOPPED_READER_SAFETY_THRESHOLD_MS, ReconcileRpc, walkTable } from './reconcile';
 

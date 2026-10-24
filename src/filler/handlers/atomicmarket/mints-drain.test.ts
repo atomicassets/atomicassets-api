@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { drainAtomicmarketMints, mintsWorkProbeSql, MINTS_WORK_FILTER } from './index';
 
@@ -96,7 +95,7 @@ describe('drainAtomicmarketMints', () => {
         };
         await expect(
             drainAtomicmarketMints(pool, FN, CONTRACT, LIB, BATCH, 30_000),
-        ).to.be.rejectedWith(/statement timeout/);
+        ).rejects.toThrow(/statement timeout/);
     });
 
     it('refuses an fnName outside the allowlist (no query issued)', async () => {
@@ -104,7 +103,7 @@ describe('drainAtomicmarketMints', () => {
         const pool = { query: async () => { called = true; return { rows: [{ updated: 0 }] }; } };
         await expect(
             drainAtomicmarketMints(pool, 'evil(); DROP TABLE atomicmarket_sales; --', CONTRACT, LIB, BATCH, 30_000),
-        ).to.be.rejectedWith(/unknown function/);
+        ).rejects.toThrow(/unknown function/);
         expect(called).to.equal(false);
     });
 

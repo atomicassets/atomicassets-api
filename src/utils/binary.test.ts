@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 import { deserializeUInt, serializeUInt } from './binary';
 import { deserializeEosioName, serializeEosioName } from './eosio';
 

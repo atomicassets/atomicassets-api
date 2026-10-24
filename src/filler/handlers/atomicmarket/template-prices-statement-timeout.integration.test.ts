@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Pool } from 'pg';
 
 import { runWithWorkMem } from './index';
@@ -19,7 +18,7 @@ describe('runWithWorkMem - per-transaction statement_timeout override', () => {
     const POOL_STATEMENT_TIMEOUT_MS = 300_000; // mirrors longRunningPool's 5min default
     let pool: Pool;
 
-    before(async () => {
+    beforeAll(async () => {
         pool = new Pool({ ...getTestPostgresConfig(), max: 1, statement_timeout: POOL_STATEMENT_TIMEOUT_MS });
         await pool.query(`
             CREATE TABLE IF NOT EXISTS wsc_statement_timeout_probe (
@@ -33,7 +32,7 @@ describe('runWithWorkMem - per-transaction statement_timeout override', () => {
         await pool.query('DELETE FROM wsc_statement_timeout_probe');
     });
 
-    after(async () => {
+    afterAll(async () => {
         await pool.query('DROP TABLE IF EXISTS wsc_statement_timeout_probe');
         await pool.end();
     });

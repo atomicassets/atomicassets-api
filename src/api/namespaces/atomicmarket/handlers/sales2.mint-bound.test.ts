@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import { getSalesV2Action } from './sales2';
 import { AtomicMarketContext } from '../index';

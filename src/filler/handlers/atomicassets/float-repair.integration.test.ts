@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Client, Pool } from 'pg';
 
 import { getTestPostgresConfig } from '../../../utils/test';
@@ -152,13 +151,13 @@ describe('atomicassets float attribute repair', () => {
         return query.rows[0].kind;
     }
 
-    before(async () => {
+    beforeAll(async () => {
         client = new Client(getTestPostgresConfig());
         await client.connect();
         pool = new Pool({ ...getTestPostgresConfig(), max: 2 });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await cleanup();
         await client.end();
         await pool.end();
