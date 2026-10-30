@@ -3,6 +3,7 @@ import {getTestContext} from '../../../../utils/test';
 import {getTemplateStatsAction} from './stats';
 import {SaleApiState} from '../index';
 import {expect} from 'chai';
+import {OfferState} from '../../../../filler/handlers/atomicassets';
 
 const {client, txit} = initAtomicMarketTest();
 
@@ -42,6 +43,42 @@ describe('AtomicMarket Stats API', () => {
                 collection_blacklist: listed.collection_name
             }, context);
             expect(blocked.results).to.have.length(0);
+        });
+
+        txit('rechecks stale sale and offer states and paginates eligible templates deterministically', async () => {
+            await client.createContractReader();
+            await client.createToken({token_symbol: 'TOKEN1'});
+            const templates = [];
+            const sales = [];
+            for (let i = 0; i < 4; i++) {
+                const template = await client.createTemplate();
+                templates.push(template);
+                sales.push(await client.createFullSale({
+                    collection_name: template.collection_name,
+                    listing_symbol: 'TOKEN1', settlement_symbol: 'TOKEN1', listing_price: 10
+                }, {template_id: template.template_id}));
+            }
+            await client.refreshSalesFilters();
+            // Leave the indexed LISTED rows stale, as can happen before the filter queue drains.
+            await client.query('UPDATE atomicmarket_sales SET state = $1 WHERE market_contract = $2 AND sale_id = $3',
+                [SaleApiState.SOLD, 'amtest', sales[0].sale_id]);
+            await client.query('UPDATE atomicassets_offers SET state = $1 WHERE contract = $2 AND offer_id = $3',
+                [OfferState.ACCEPTED, 'aatest', sales[1].offer_id]);
+            const context = getTestContext(client);
+            const params = {symbol: 'TOKEN1', include_listings: 'true', after: '9999999999999'};
+            const all = await getTemplateStatsAction(params, context);
+            for (const template of templates.slice(0, 2)) {
+                expect(all.results.find((row: any) => row.template.template_id === template.template_id))
+                    .to.include({listing_count: '0', lowest_listing_price: null});
+            }
+            for (let page = 1; page <= 2; page++) {
+                const result = await getTemplateStatsAction({
+                    ...params, hide_unlisted_templates: 'true', limit: '1', page: String(page)
+                }, context);
+                expect(result.results).to.have.length(1);
+                expect(result.results[0].template.template_id).to.equal(templates[page + 1].template_id);
+                expect(result.results[0].listing_count).to.equal('1');
+            }
         });
 
         txit('gets the templates sales and volume', async () => {

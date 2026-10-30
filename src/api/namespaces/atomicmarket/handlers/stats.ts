@@ -387,11 +387,13 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
     buildDataConditions(params, query, {templateTable: '"template"'});
 
     if (args.hide_unlisted_templates && args.include_listings) {
-        query.addCondition(`EXISTS(
-            SELECT 1 FROM atomicmarket_sales_filters listing
+        // Compute membership once: a correlated EXISTS can rescan all eligible sales per template.
+        query.addCondition(`template.template_id IN (
+            SELECT DISTINCT SUBSTRING(u.f FROM 2)::BIGINT
+            FROM atomicmarket_sales_filters listing
             ${templateListingJoins}
+            JOIN LATERAL UNNEST(listing.filter) u(f) ON u.f LIKE 't%'
             WHERE ${templateListingEligibility()}
-                AND array['t' || template.template_id] && listing.filter
         )`);
     } else if (args.hide_unlisted_templates) {
         query.addCondition(`EXISTS(
@@ -428,6 +430,7 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
                     ON listing.filter && array['t' || ids.template_id]
                 ${templateListingJoins}
                 WHERE ${templateListingEligibility()}
+                    AND listing.filter && $5::text[]
             ), ranked AS (
                 SELECT *, count(*) OVER (PARTITION BY template_id)::text listing_count,
                     row_number() OVER (PARTITION BY template_id ORDER BY price ASC NULLS LAST, sale_id) rank
@@ -438,11 +441,16 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
                     master.price::jsonb || jsonb_build_object('amount', master.raw_price::text)
                 END lowest_listing_price
             FROM ranked
-            LEFT JOIN atomicmarket_sales_master master
-                ON master.market_contract = ranked.market_contract AND master.sale_id = ranked.sale_id
+            -- Keep price conversion lookups bounded to the cheapest sale per page template.
+            LEFT JOIN LATERAL (
+                SELECT price, raw_price FROM atomicmarket_sales_master
+                WHERE market_contract = ranked.market_contract AND sale_id = ranked.sale_id
+                LIMIT 1
+            ) master ON true
             WHERE ranked.rank = 1
         `, [ctx.coreArgs.atomicassets_account, ctx.coreArgs.atomicmarket_account, args.symbol,
-            templateQuery.rows.map((row: any) => row.template_id)]);
+            templateQuery.rows.map((row: any) => row.template_id),
+            templateQuery.rows.map((row: any) => 't' + row.template_id)]);
         for (const row of summaries.rows) {
             listingLookup[String(row.template_id)] = {
                 listing_count: row.listing_count,
