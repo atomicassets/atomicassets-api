@@ -94,6 +94,17 @@ export function statsEndpoints(core: AtomicMarketNamespace, server: HTTPServer, 
         type: 'object',
         properties: {
             template: atomicassetsComponents.Template,
+            listing_count: {type: 'string', description: 'Only with include_listings: number of eligible sale listings. Bundles count once per matching template.'},
+            lowest_listing_price: {
+                type: 'object', nullable: true,
+                description: 'Only with include_listings: full listing price, including bundles; never a per-asset price.',
+                properties: {
+                    amount: {type: 'string'},
+                    token_precision: {type: 'integer'},
+                    token_symbol: {type: 'string'},
+                    token_contract: {type: 'string'}
+                }
+            },
             sales: {type: 'string'},
             volume: {type: 'string'}
         }
@@ -408,6 +419,12 @@ export function statsEndpoints(core: AtomicMarketNamespace, server: HTTPServer, 
                             schema: {
                                 type: 'string'
                             }
+                        },
+                        {
+                            name: 'include_listings',
+                            in: 'query',
+                            description: 'Include current listing counts and cheapest listing price using v2 sales currency, sorting and offer validity rules. Historical after/before do not restrict listings.',
+                            schema: {type: 'boolean', default: false}
                         },
                         {
                             name: 'hide_unlisted_templates',
