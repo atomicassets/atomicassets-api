@@ -305,6 +305,31 @@ export async function getSchemaStatsByCollectionV2Action(params: RequestValues, 
     };
 }
 
+// Shared by pre-pagination eligibility and the batched page summary.
+// Filter tokens represent template membership, so bundles count once per template.
+function templateListingEligibility(): string {
+    return `
+        listing.market_contract = $2 AND listing.assets_contract = $1
+        AND listing.settlement_symbol = $3 AND listing.sale_state = 1
+        AND atomicmarket_get_sale_state(sale.state, offer.state) = 1
+    `;
+}
+
+const templateListingJoins = `
+    JOIN atomicmarket_sales sale ON sale.market_contract = listing.market_contract AND sale.sale_id = listing.sale_id
+    LEFT JOIN atomicassets_offers offer ON offer.contract = sale.assets_contract AND offer.offer_id = sale.offer_id
+`;
+
+export interface TemplateListingSummary {
+    listing_count: string;
+    lowest_listing_price: {
+        amount: string;
+        token_precision: number;
+        token_symbol: string;
+        token_contract: string;
+    } | null;
+}
+
 export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicMarketContext): Promise<any> {
     const args = await filterQueryArgs(params, {
         symbol: {type: 'string', min: 1},
@@ -315,6 +340,7 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
 
         hide_unlisted_templates: {type: 'bool', default: false},
         include_deleted: {type: 'bool', default: false},
+        include_listings: {type: 'bool', default: false},
 
         search: {type: 'string', min: 1},
 
@@ -360,7 +386,14 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
     await buildBoundaryFilter(params, query, '"template".template_id', 'int', null);
     buildDataConditions(params, query, {templateTable: '"template"'});
 
-    if (args.hide_unlisted_templates) {
+    if (args.hide_unlisted_templates && args.include_listings) {
+        query.addCondition(`EXISTS(
+            SELECT 1 FROM atomicmarket_sales_filters listing
+            ${templateListingJoins}
+            WHERE ${templateListingEligibility()}
+                AND array['t' || template.template_id] && listing.filter
+        )`);
+    } else if (args.hide_unlisted_templates) {
         query.addCondition(`EXISTS(
             SELECT sale_id FROM atomicmarket_sales_filters_listed listing
             WHERE listing.assets_contract = template.contract AND array['t' || template.template_id] && listing.filter
@@ -385,6 +418,39 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
 
     const templateQuery = await ctx.db.query(query.buildString(), query.buildValues());
 
+    const listingLookup: Record<string, TemplateListingSummary> = {};
+    if (args.include_listings && templateQuery.rows.length) {
+        const summaries = await ctx.db.query(`
+            WITH candidates AS (
+                SELECT ids.template_id, listing.sale_id, listing.market_contract, listing.price
+                FROM unnest($4::bigint[]) ids(template_id)
+                JOIN atomicmarket_sales_filters listing
+                    ON listing.filter && array['t' || ids.template_id]
+                ${templateListingJoins}
+                WHERE ${templateListingEligibility()}
+            ), ranked AS (
+                SELECT *, count(*) OVER (PARTITION BY template_id)::text listing_count,
+                    row_number() OVER (PARTITION BY template_id ORDER BY price ASC NULLS LAST, sale_id) rank
+                FROM candidates
+            )
+            SELECT ranked.template_id, ranked.listing_count,
+                CASE WHEN master.raw_price IS NULL THEN NULL ELSE
+                    master.price::jsonb || jsonb_build_object('amount', master.raw_price::text)
+                END lowest_listing_price
+            FROM ranked
+            LEFT JOIN atomicmarket_sales_master master
+                ON master.market_contract = ranked.market_contract AND master.sale_id = ranked.sale_id
+            WHERE ranked.rank = 1
+        `, [ctx.coreArgs.atomicassets_account, ctx.coreArgs.atomicmarket_account, args.symbol,
+            templateQuery.rows.map((row: any) => row.template_id)]);
+        for (const row of summaries.rows) {
+            listingLookup[String(row.template_id)] = {
+                listing_count: row.listing_count,
+                lowest_listing_price: row.lowest_listing_price
+            };
+        }
+    }
+
     const templateLookup: { [key: string]: any } = {};
     const result = await ctx.db.query(
         'SELECT * FROM atomicassets_templates_master WHERE contract = $1 AND template_id = ANY ($2)',
@@ -398,6 +464,9 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
     return {
         symbol,
         results: templateQuery.rows.map((row: any) => ({
+            ...(args.include_listings ? listingLookup[String(row.template_id)] || {
+                listing_count: '0', lowest_listing_price: null
+            } : {}),
             sales: row.sales,
             volume: row.volume,
             template: formatTemplate(templateLookup[String(row.template_id)])
