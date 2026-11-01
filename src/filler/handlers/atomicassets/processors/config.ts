@@ -87,5 +87,27 @@ export function configProcessor(core: AtomicAssetsHandler, processor: DataProces
         }, AtomicAssetsUpdatePriority.TABLE_CONFIG.valueOf()
     ));
 
+    // SQL rollback does not restore this handler's in-memory snapshots. Reload both
+    // before the replacement block so an orphaned token/config cannot mask it.
+    destructors.push(processor.onFork(async (db: ContractDBTransaction): Promise<void> => {
+        const config = await db.query(
+            'SELECT version, collection_format FROM atomicassets_config WHERE contract = $1', [contract]
+        );
+        if (config.rowCount !== 1) {
+            throw new Error('AtomicAssets: config unavailable after fork rollback');
+        }
+        const tokens = await db.query(
+            'SELECT token_symbol, token_contract, token_precision FROM atomicassets_tokens WHERE contract = $1', [contract]
+        );
+        const row = config.rows[0];
+        const supported_tokens = tokens.rows.map((token: any) => ({
+            contract: token.token_contract,
+            sym: token.token_precision + ',' + token.token_symbol
+        }));
+        // Publish neither snapshot until both reads have succeeded.
+        core.config = {...core.config, collection_format: row.collection_format, supported_tokens};
+        core.tokenconfigs = {...core.tokenconfigs, version: row.version};
+    }, AtomicAssetsUpdatePriority.TABLE_CONFIG.valueOf()));
+
     return (): any => destructors.map(fn => fn());
 }
