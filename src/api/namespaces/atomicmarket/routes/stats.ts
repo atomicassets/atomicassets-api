@@ -418,6 +418,15 @@ export function statsEndpoints(core: AtomicMarketNamespace, server: HTTPServer, 
                                 type: 'boolean',
                             }
                         },
+                        {
+                            name: 'include_deleted',
+                            in: 'query',
+                            description: 'Include deleted templates (default: false)',
+                            required: false,
+                            schema: {
+                                type: 'boolean',
+                            }
+                        },
                         ...dateBoundaryParameters,
                         ...getPrimaryBoundaryParams('template_id'),
                         ...paginationParameters,

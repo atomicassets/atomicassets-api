@@ -143,6 +143,47 @@ describe('AtomicMarket Stats API', () => {
             });
         });
 
+        context('with deleted templates', () => {
+            txit('leaves deleted templates out by default', async () => {
+                await client.createContractReader();
+
+                await client.createToken({token_symbol: 'TOKEN1'});
+                const {template_id} = await client.createTemplate();
+                await client.createTemplate({deleted_at_block: 2, deleted_at_time: 2});
+
+                const context = getTestContext(client);
+
+                await client.refreshStatsMarket();
+
+                const response = await getTemplateStatsAction({symbol: 'TOKEN1'}, context);
+
+                expect(response.results.length).to.equal(1);
+                expect(response.results[0].template.template_id).to.equal(template_id);
+            });
+
+            txit('returns deleted templates with include_deleted', async () => {
+                await client.createContractReader();
+
+                await client.createToken({token_symbol: 'TOKEN1'});
+                const {template_id} = await client.createTemplate();
+                const {template_id: deletedTemplateId} = await client.createTemplate({
+                    deleted_at_block: 2,
+                    deleted_at_time: 2,
+                });
+
+                const context = getTestContext(client);
+
+                await client.refreshStatsMarket();
+
+                const response = await getTemplateStatsAction({symbol: 'TOKEN1', include_deleted: 'true'}, context);
+
+                expect(response.results.map((r: any) => r.template.template_id)).to.have.members([
+                    template_id,
+                    deletedTemplateId,
+                ]);
+            });
+        });
+
         context('with time after and before filter', () => {
             txit('gets the templates sales and volume even if they dont have sales in the period defined', async () => {
                 await client.createContractReader();
