@@ -314,6 +314,7 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
         template_id: {type: 'list[id]'},
 
         hide_unlisted_templates: {type: 'bool', default: false},
+        include_deleted: {type: 'bool', default: false},
 
         search: {type: 'string', min: 1},
 
@@ -350,6 +351,10 @@ export async function getTemplateStatsAction(params: RequestValues, ctx: AtomicM
     );
 
     query.addCondition('template.contract = $1');
+
+    if (!args.include_deleted) {
+        query.isNull('template.deleted_at_block');
+    }
 
     await buildGreylistFilter(params, query, { collectionName: '"template".collection_name' });
     await buildBoundaryFilter(params, query, '"template".template_id', 'int', null);
