@@ -13,7 +13,7 @@
 */
 
 import PostgresConnection from '../connections/postgres';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { IConnectionsConfig } from '../types/config';
 
 let connectionConfig: IConnectionsConfig = { postgres: {}, redis: {}, chain: {} } as IConnectionsConfig;

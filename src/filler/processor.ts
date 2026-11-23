@@ -1,7 +1,7 @@
 import { ContractDBTransaction } from './database';
 import { ShipBlock } from '../types/ship';
 import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../types/eosio';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import { ModuleLoader } from './modules';
 
 export type TraceListener = (db: ContractDBTransaction, block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<any>) => Promise<any>;
@@ -279,6 +279,14 @@ export default class DataProcessor {
         };
     }
 
+    /** Includes wildcard and binary-only listeners, but excludes inactive head-only listeners. */
+    tracksContractAccount(account: string): boolean {
+        const matches = (element: TraceListenerElement | DeltaListenerElement): boolean =>
+            (this.state === ProcessingState.HEAD || !element.options.headOnly) &&
+            (element.contract === '*' || element.contract === account);
+        return this.traceListeners.some(matches) || this.tableListeners.some(matches);
+    }
+
     processActionTrace(block: ShipBlock, tx: EosioTransaction, trace: EosioActionTrace<any>): void {
         if (!this.modules.checkTrace(block, tx, trace)) {
             return;
@@ -358,7 +366,7 @@ export default class DataProcessor {
             try {
                 await job.listener.callback(...[db, ...job.args]);
             } catch (e) {
-                logger.error('Error while processing data', job.args);
+                logger.error('Error while processing data', e, job.args);
 
                 throw e;
             }
@@ -395,7 +403,7 @@ export default class DataProcessor {
             try {
                 await job.listener.callback(...[db, ...job.args]);
             } catch (e) {
-                logger.error('Error while processing data', job.args);
+                logger.error('Error while processing data', e, job.args);
 
                 throw e;
             }

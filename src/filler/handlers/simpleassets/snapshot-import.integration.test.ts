@@ -10,7 +10,7 @@ import { createBlock, createTx, createActionTrace, createTestTransaction, create
 import { importSimpleAssetsSnapshot, runSnapshotImport, SnapshotImportOptions } from './snapshot-import';
 import { assetProcessor } from './processors/assets';
 import DataProcessor, { ProcessingState } from '../../processor';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 
 const SA = 'simpleassets';
 const AA = 'atomicassets';

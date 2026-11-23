@@ -1,7 +1,7 @@
 import {join} from 'path';
 import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../types/eosio';
 import { ShipBlock } from '../types/ship';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 
 export interface IModule {
     traceFilter?: (block: ShipBlock, tx: EosioTransaction<any>, trace: EosioActionTrace<any>) => boolean,

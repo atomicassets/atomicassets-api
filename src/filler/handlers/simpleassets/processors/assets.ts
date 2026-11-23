@@ -15,7 +15,7 @@ import {
 } from '../types/actions';
 import { parseJsonObject } from '../../../../utils/binary';
 import { encodeDatabaseJson } from '../../../utils';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 
 type PendingCreate = {
     assetId: string,

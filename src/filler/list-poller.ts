@@ -1,6 +1,6 @@
 import { IListPollConfig } from '../types/config';
 import PostgresConnection from '../connections/postgres';
-import logger from '../utils/winston';
+import logger from '../utils/logger';
 import moize from 'moize';
 
 const DEFAULT_POLL_FREQUENCY = 60 * 10; // 10 minutes

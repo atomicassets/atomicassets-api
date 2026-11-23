@@ -619,6 +619,43 @@ jumps against another node settles it. When the rate holds, measure disk service
 time on the node's state-history volume and check whether the same process also
 carries p2p sync and API traffic.
 
+## Logging
+
+Pino writes newline-delimited JSON to stdout when `NODE_ENV=production`.
+Other environments use readable `pino-pretty` output, with colors only on a TTY.
+Records include `time`, numeric `level`, `pid`, `hostname`, and `msg`.
+Additional call arguments live under `metadata` (an array for multiple
+arguments); Error arguments also populate `err` with message, stack, cause,
+and custom fields. Errors inside SQL/event metadata retain their details too.
+
+`LOG_LEVEL` defaults to `info`. Development accepts `debug` for per-action/row
+details. Production retains the existing minimum console severity of `info`,
+even with `LOG_LEVEL=debug`; stricter `warn` and `error` settings still apply.
+`silent` disables both outputs. Legacy `silly` enables debug in development;
+`verbose` and `http` retain info/warn/error output without enabling debug.
+Invalid level names fall back to `info`.
+
+Errors also append as JSON to `./logs/error.log` in every environment. The
+directory is created if needed. Error-file writes are synchronous so command
+line tools that immediately exit retain their diagnostics; stdout follows its
+normal stream behavior. Existing log collectors that parse the former colored
+text format must switch to the JSON fields.
+
+ABI/code updates for contracts with active action or table listeners stay at
+info, including wildcard and binary-only listeners. Inactive head-only
+listeners do not count during catch-up. Updates for untracked contracts and
+duplicate cache entries are debug-only; deserialization and persistence errors
+remain visible. Caching and database writes still cover untracked contracts.
+
+For a serialization/dispatch microbenchmark, run:
+
+```sh
+node --require @swc-node/register scripts/benchmark-logger.cjs
+```
+
+It uses counting sinks, excluding disk/terminal I/O, pretty printing, SHIP and
+database work. Its results do not measure indexing throughput.
+
 ## Development
 
 ```sh

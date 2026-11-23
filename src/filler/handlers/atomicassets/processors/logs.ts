@@ -4,7 +4,7 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioActionTrace, EosioContractRow, EosioTransaction } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { AuthorSwapsTableRow } from '@atomichub/atomicassets';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 import {
     AcceptAuthorSwapActionData,
     AcceptOfferActionData,

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import { PoolClient } from 'pg';
 
 import { ContractHandler } from '../interfaces';
-import logger from '../../../utils/winston';
+import logger from '../../../utils/logger';
 import { ConfigTableRow } from './types/tables';
 import Filler from '../../filler';
 import DataProcessor from '../../processor';

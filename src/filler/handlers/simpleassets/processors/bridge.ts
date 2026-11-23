@@ -7,7 +7,7 @@ import { ContractDBTransaction } from '../../../database';
 import { EosioActionTrace, EosioTransaction } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
 import { LogMintAssetActionData } from '../../atomicassets/types/actions';
-import logger from '../../../../utils/winston';
+import logger from '../../../../utils/logger';
 
 export const ORIGINAL_MINTS_TABLE = 'atomicassets_original_mints';
 
