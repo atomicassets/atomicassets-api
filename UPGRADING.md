@@ -175,6 +175,66 @@ SELECT count(*) AS queued,
 FROM atomicmarket_stats_markets_updates;
 ```
 
+### 2.0.11 adds simpleassets mint numbering
+
+A chain that runs no `simpleassets` handler needs no action. The version only
+advances `dbinfo` there.
+
+A chain that runs the handler gets three nullable columns, which are
+catalog-only changes, and the new `simpleassets_card_totals` table. It also
+gets the `simpleassets_assets_mint_group` index, which the deferred file builds
+`CONCURRENTLY`. That build scans the whole of `simpleassets_assets`, and the
+filler's boot blocks until it finishes, as with `2.0.8`. The API server keeps
+serving throughout. Pre-build the index with the statement in
+`definitions/migrations/2.0.11/simpleassets-deferred.sql` to remove the wait.
+
+A database can hold `simpleassets_*` tables from an earlier deployment while
+no reader configures the handler. Such a database never gets the `2.0.11`
+columns: the version's handler file runs only for configured handlers, and
+handler setup creates nothing while `simpleassets_config` exists. Before you
+add the handler there, back up the data you need, then drop
+`simpleassets_transfers_assets`, `simpleassets_transfers`,
+`simpleassets_assets`, `simpleassets_authors` and `simpleassets_config`. The
+handler then creates them at the current schema.
+
+### 2.0.12 adds the bridge link table
+
+A chain that runs the `atomicassets` handler gets the new, empty
+`atomicassets_original_mints` table and its index. The migration locks no
+existing table and takes seconds. No action is needed. A chain without that
+handler only advances `dbinfo`.
+
+A database can hold `atomicassets_*` tables while no reader configures the
+handler. Such a database never gets the `2.0.12` table: the version's handler
+file runs only for configured handlers, and handler setup creates nothing
+while `atomicassets_config` exists. A `simpleassets` reader with
+`bridge_account` set then stops at startup. Before you add the handler there
+or set `bridge_account`, apply
+`definitions/migrations/2.0.12/atomicassets.sql` by hand. It is idempotent.
+
+### 2.0.13 adds original_mint to the asset master view
+
+`atomicassets_assets_master` gains `original_mint` as its last column, through
+a left join on the `2.0.12` link table. The version re-creates the view with
+`CREATE OR REPLACE`, which takes seconds and waits at most 5 seconds for the
+view lock. A version that cannot take it within that time fails and retries on
+the next boot. No action is needed. A database that holds `atomicassets_*`
+tables but configures no `atomicassets` reader never gets the view column. To
+serve `original_mint` from such a database, run this block once from the
+repository root, in one transaction that gives up on a held view lock after 5
+seconds:
+
+```sql
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+\i definitions/migrations/2.0.13/atomicassets.sql
+\i definitions/views/atomicassets_assets_master.sql
+COMMIT;
+```
+
+Run it with `psql <your connection options> -X -v ON_ERROR_STOP=1 -f` and the
+file you saved the block in. The table statements are idempotent.
+
 ### From 1.3.x, hours
 
 The chain rebuilds indexes on the largest tables in the schema. The heaviest are
@@ -492,7 +552,7 @@ DROP VIEW IF EXISTS atomicassets_moves_master;
 DROP TABLE IF EXISTS atomicassets_moves_assets;
 DROP TABLE IF EXISTS atomicassets_moves;
 ALTER TABLE atomicassets_assets DROP COLUMN IF EXISTS holder;
-\i definitions/views/atomicassets_assets_master.sql
+\i definitions/views/atomicassets_assets_master.pre-original-mint.sql
 \i definitions/views/atomicmarket_assets_master.sql
 COMMIT;
 ```

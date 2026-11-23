@@ -15,6 +15,8 @@ CREATE TABLE simpleassets_assets (
     updated_at_time bigint NOT NULL,
     minted_at_block bigint NOT NULL,
     minted_at_time bigint NOT NULL,
+    mint_number bigint,
+    mint_group text,
     CONSTRAINT simpleassets_assets_pkey PRIMARY KEY (contract, asset_id)
 );
 
@@ -50,7 +52,16 @@ CREATE TABLE simpleassets_transfers_assets (
 CREATE TABLE simpleassets_config (
     contract character varying(12) NOT NULL,
     version character varying(64) NOT NULL,
+    bootstrap_baseline_block bigint,
     CONSTRAINT simpleassets_config_pkey PRIMARY KEY (contract)
+);
+
+CREATE TABLE simpleassets_card_totals (
+    contract character varying(12) NOT NULL,
+    author character varying(12) NOT NULL,
+    mint_group text NOT NULL,
+    total_ever bigint NOT NULL DEFAULT 0,
+    CONSTRAINT simpleassets_card_totals_pkey PRIMARY KEY (contract, author, mint_group)
 );
 
 
@@ -70,6 +81,7 @@ CREATE INDEX simpleassets_assets_transferred_at_time ON simpleassets_assets USIN
 CREATE INDEX simpleassets_assets_minted_at_time ON simpleassets_assets USING btree (minted_at_time);
 CREATE INDEX simpleassets_assets_mutable_data_gin ON simpleassets_assets USING gin (mutable_data);
 CREATE INDEX simpleassets_assets_immutable_data_gin ON simpleassets_assets USING gin (immutable_data);
+CREATE INDEX simpleassets_assets_mint_group ON simpleassets_assets USING btree (contract, author, mint_group);
 
 CREATE INDEX simpleassets_transfers_sender ON simpleassets_transfers USING btree (sender);
 CREATE INDEX simpleassets_transfers_recipient ON simpleassets_transfers USING btree (recipient);

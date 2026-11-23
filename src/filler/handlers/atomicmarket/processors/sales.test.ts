@@ -4,6 +4,7 @@ import { expect } from 'chai';
 import {
     createActionTrace,
     createBlock,
+    createMockModuleLoader,
     createRecordingNotifier,
     createStubTransaction,
     createTx,
@@ -11,7 +12,6 @@ import {
     StubTransaction,
 } from '../../test-helper';
 import DataProcessor, { ProcessingState } from '../../../processor';
-import { ModuleLoader } from '../../../modules';
 import { saleProcessor } from './sales';
 import { SaleState } from '../index';
 import { PurchaseSaleActionData } from '../types/actions';
@@ -20,15 +20,6 @@ const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
 const OFFER_ID = '999001';
 const LISTING_PRICE = '100000';
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
-}
 
 function createMockCore(version: string | null, overrides: Record<string, any> = {}): any {
     return {

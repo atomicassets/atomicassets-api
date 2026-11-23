@@ -118,4 +118,43 @@ export class AtomicAssetsTestClient extends TestClient {
         });
     }
 
+    async createOriginalMint(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('atomicassets_original_mints', {
+            contract: 'aatest',
+            original_contract: 'sstest',
+            original_asset_id: this.getId(),
+            original_mint: 1,
+            block_num: this.getId(),
+            ...values,
+        });
+    }
+
+    async createSimpleAsset(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('simpleassets_assets', {
+            contract: 'sstest',
+            asset_id: this.getId(),
+            author: 'sauthor',
+            category: 'cards',
+            owner: 'owner',
+            mutable_data: '{}',
+            immutable_data: '{}',
+            transferred_at_block: this.getId(),
+            transferred_at_time: this.getId(),
+            updated_at_block: this.getId(),
+            updated_at_time: this.getId(),
+            minted_at_block: this.getId(),
+            minted_at_time: this.getId(),
+            ...values,
+        });
+    }
+
+    async createSimpleCardTotal(values: Record<string, any> = {}): Promise<Record<string, any>> {
+        return this.insert('simpleassets_card_totals', {
+            contract: 'sstest',
+            author: 'sauthor',
+            total_ever: 1,
+            ...values,
+        });
+    }
+
 }

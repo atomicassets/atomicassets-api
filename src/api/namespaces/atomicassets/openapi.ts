@@ -52,6 +52,7 @@ export const atomicassetsComponents = {
             is_transferable: {type: 'boolean'},
             is_burnable: {type: 'boolean'},
             template_mint: {type: 'string'},
+            original_mint: {type: 'string', nullable: true, description: 'Mint number of the asset this asset was bridged from. Null when the asset has no link, and null when the linked source asset has no mint number'},
             collection: {
                 type: 'object',
                 properties: {
@@ -508,6 +509,30 @@ export const completeAssetFilterParameters = [
             type: 'string'
         }
     },
+];
+
+export const originalMintParameters = [
+    {
+        name: 'original_mint',
+        in: 'query',
+        description: 'Filter by the mint number of the asset this asset was bridged from',
+        required: false,
+        schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
+    },
+    {
+        name: 'min_original_mint',
+        in: 'query',
+        description: 'Min original mint',
+        required: false,
+        schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
+    },
+    {
+        name: 'max_original_mint',
+        in: 'query',
+        description: 'Max original mint',
+        required: false,
+        schema: {type: 'integer', minimum: 1, maximum: Number.MAX_SAFE_INTEGER}
+    }
 ];
 
 export const hideOffersParameters = [

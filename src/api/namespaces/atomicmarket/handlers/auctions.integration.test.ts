@@ -3,7 +3,8 @@ import {expect} from 'chai';
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
-import {getAuctionAction, getAuctionsAction} from './auctions';
+import {getAuctionAction, getAuctionsAction, getAuctionsCountAction} from './auctions';
+import {createMintAsset, defineEffectiveMintSuite, storedTemplateRange} from '../effective-mint-suite';
 import {AuctionApiState} from '../index';
 import sinon from 'sinon';
 import {clearMarketVersionCache, MARKET_VERSION_CACHE_TTL_MS} from '../market-version';
@@ -333,6 +334,28 @@ describe('auction handler', () => {
             expect(result.map((row: any) => row.auction_id).sort())
                 .to.deep.equal([bundle.auction_id, single.auction_id].sort());
         });
+    });
+
+    defineEffectiveMintSuite({
+        canOverrideStoredRange: true,
+        client,
+        txit,
+        makeListing: async (collectionName, assets, templateMint) => {
+            const listing = await client.createAuction({
+                collection_name: collectionName,
+                template_mint: templateMint === undefined
+                    ? storedTemplateRange(assets)
+                    : (templateMint === null ? null : `[${templateMint},${templateMint}]`),
+            });
+            for (const [i, spec] of assets.entries()) {
+                const asset_id = await createMintAsset(client, collectionName, spec);
+                await client.createAuctionAssets({auction_id: listing.auction_id, asset_id, index: i + 1});
+            }
+
+            return listing.auction_id;
+        },
+        query: async (values) => await getAuctionsIds(values),
+        count: async (values) => Number(await getAuctionsCountAction({...values}, getTestContext(client))),
     });
 
     after(async () => {

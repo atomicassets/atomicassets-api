@@ -9,6 +9,7 @@ import Filler from '../../filler';
 import { authorProcessor } from './processors/authors';
 import { TokenConfigsTableRow } from './types/tables';
 import { configProcessor } from './processors/config';
+import { bridgeProcessor, ORIGINAL_MINTS_TABLE, originalMintsTableExists } from './processors/bridge';
 
 const SIMPLEASSETS_BASE_PRIORITY = 0;
 
@@ -18,12 +19,28 @@ export enum SimpleAssetsUpdatePriority {
     TABLE_AUTHORS = SIMPLEASSETS_BASE_PRIORITY + 20,
     ACTION_MINT_ASSET = SIMPLEASSETS_BASE_PRIORITY + 50,
     ACTION_UPDATE_ASSET = SIMPLEASSETS_BASE_PRIORITY + 60,
+    // After the mint priority flush, so a create and its bridge mint in one batch link to the numbered row.
+    ACTION_LINK_BRIDGE_MINT = SIMPLEASSETS_BASE_PRIORITY + 70,
 }
 
 export type SimpleAssetsReaderArgs = {
     simpleassets_account: string,
     store_transfers: boolean,
+    numbered_authors: string[],
+    numbered_group_fields: string[],
+    atomicassets_account?: string,
+    bridge_account?: string,
 };
+
+function readStringList(args: {[key: string]: any}, name: string): string[] {
+    const value = args[name] ?? [];
+
+    if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+        throw new Error('SimpleAssets: Argument ' + name + ' must be an array of strings');
+    }
+
+    return value;
+}
 
 export default class SimpleAssetsHandler extends ContractHandler {
     static handlerName = 'simpleassets';
@@ -60,12 +77,32 @@ export default class SimpleAssetsHandler extends ContractHandler {
             throw new Error('SimpleAssets: Argument missing in simpleassets handler: simpleassets_account');
         }
 
+        this.args.numbered_authors = readStringList(args, 'numbered_authors');
+        this.args.numbered_group_fields = readStringList(args, 'numbered_group_fields');
+
+        const bridgeArgs = [args.bridge_account, args.atomicassets_account];
+
+        if (bridgeArgs.some(value => value !== undefined) &&
+            !bridgeArgs.every(value => typeof value === 'string' && value.length > 0)) {
+            throw new Error(
+                'SimpleAssets: set both bridge_account and atomicassets_account or neither, each as a non-empty string'
+            );
+        }
+
         if (!this.args.store_transfers) {
             logger.warn('SimpleAssets: disabled store_transfers');
         }
     }
 
     async init(client: PoolClient): Promise<void> {
+        // The atomicassets handler owns the link table, so a database without it cannot take links.
+        if (this.args.bridge_account && !(await originalMintsTableExists(client))) {
+            throw new Error(
+                'SimpleAssets: bridge_account is set but table ' + ORIGINAL_MINTS_TABLE +
+                ' does not exist. Run the atomicassets handler on this database or remove bridge_account'
+            );
+        }
+
         const configQuery = await client.query(
             'SELECT * FROM simpleassets_config WHERE contract = $1',
             [this.args.simpleassets_account]
@@ -77,8 +114,12 @@ export default class SimpleAssetsHandler extends ContractHandler {
                 scope: this.args.simpleassets_account, table: 'tokenconfigs'
             });
 
+            if (tokenconfigsTable.rows.length === 0) {
+                throw new Error('SimpleAssets: tokenconfigs table empty on ' + this.args.simpleassets_account);
+            }
+
             if (tokenconfigsTable.rows[0].standard !== 'simpleassets') {
-                throw new Error('SimpleAssets: Contract not deployed on the account');
+                throw new Error('SimpleAssets: Contract not deployed on ' + this.args.simpleassets_account);
             }
 
             this.tokenconfigs = {
@@ -86,14 +127,10 @@ export default class SimpleAssetsHandler extends ContractHandler {
                 standard: tokenconfigsTable.rows[0].standard
             };
 
-            if (tokenconfigsTable.rows.length > 0) {
-                await client.query(
-                    'INSERT INTO simpleassets_config (contract, version) VALUES ($1, $2)',
-                    [this.args.simpleassets_account, tokenconfigsTable.rows[0].version]
-                );
-            } else {
-                throw new Error('SimpleAssets: Tokenconfigs table empty');
-            }
+            await client.query(
+                'INSERT INTO simpleassets_config (contract, version) VALUES ($1, $2)',
+                [this.args.simpleassets_account, tokenconfigsTable.rows[0].version]
+            );
         } else {
             this.tokenconfigs = {
                 version: configQuery.rows[0].version,
@@ -105,12 +142,19 @@ export default class SimpleAssetsHandler extends ContractHandler {
     async deleteDB(client: PoolClient): Promise<void> {
         const tables = [
             'simpleassets_assets', 'simpleassets_transfers', 'simpleassets_transfers_assets',
-            'simpleassets_config', 'simpleassets_authors'
+            'simpleassets_config', 'simpleassets_authors', 'simpleassets_card_totals'
         ];
 
         for (const table of tables) {
             await client.query(
                 'DELETE FROM ' + client.escapeIdentifier(table) + ' WHERE contract = $1',
+                [this.args.simpleassets_account]
+            );
+        }
+
+        if (await originalMintsTableExists(client)) {
+            await client.query(
+                'DELETE FROM ' + client.escapeIdentifier(ORIGINAL_MINTS_TABLE) + ' WHERE original_contract = $1',
                 [this.args.simpleassets_account]
             );
         }
@@ -122,6 +166,7 @@ export default class SimpleAssetsHandler extends ContractHandler {
         destructors.push(assetProcessor(this, processor));
         destructors.push(authorProcessor(this, processor));
         destructors.push(configProcessor(this, processor));
+        destructors.push(bridgeProcessor(this, processor));
 
         return (): any => destructors.map(fn => fn());
     }

@@ -3,7 +3,6 @@ import DataProcessor from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { EosioContractRow } from '../../../../types/eosio';
 import { ShipBlock } from '../../../../types/ship';
-import { eosioTimestampToDate } from '../../../../utils/eosio';
 import { AuthorsTableRow } from '../types/tables';
 import { parseJsonObject } from '../../../../utils/binary';
 import { encodeDatabaseJson } from '../../../utils';
@@ -26,10 +25,8 @@ export function authorProcessor(core: SimpleAssetsHandler, processor: DataProces
                     author: delta.value.author,
                     dappinfo: encodeDatabaseJson(parseJsonObject(delta.value.dappinfo)),
                     fieldtypes: encodeDatabaseJson(parseJsonObject(delta.value.fieldtypes)),
-                    priorityimg: encodeDatabaseJson(parseJsonObject(delta.value.priorityimg)),
-                    created_at_block: block.block_num,
-                    created_at_time: eosioTimestampToDate(block.timestamp).getTime()
-                }, ['contract', 'author'], ['created_at_block', 'created_at_time']);
+                    priorityimg: encodeDatabaseJson(parseJsonObject(delta.value.priorityimg))
+                }, ['contract', 'author']);
             }
         }, SimpleAssetsUpdatePriority.TABLE_AUTHORS.valueOf()
     ));

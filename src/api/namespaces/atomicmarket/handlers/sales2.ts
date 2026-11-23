@@ -8,7 +8,9 @@ import {toInt} from '../../../../utils';
 import moize from 'moize';
 import {filterQueryArgs, FilterValues} from '../../validation';
 import {hasAssetFilter} from '../../atomicassets/utils';
-import {buildTemplateMintFilter} from '../utils';
+import {
+    buildEffectiveMintFilter, buildEffectiveMintSort, buildTemplateMintFilter, MAX_INDEXED_COLLECTION_NAMES, SALES_FILTER_MINT_SOURCE
+} from '../utils';
 
 type SalesSearchOptions = {
     values: FilterValues;
@@ -25,13 +27,13 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
     const args = await filterQueryArgs(params, {
         state: {type: 'string[]', min: 1},
 
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {
             type: 'string',
             allowedValues: [
                 'created', 'updated', 'sale_id', 'price',
-                'template_mint', 'name',
+                'template_mint', 'effective_mint', 'name',
             ],
             default: 'created'
         },
@@ -65,6 +67,11 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         search.strongFilters.push('ids');
     }
 
+    // Added before the count so the count equals the rows this sort can return.
+    const effectiveMintColumn = args.sort === 'effective_mint'
+        ? await buildEffectiveMintSort(params, query, SALES_FILTER_MINT_SOURCE)
+        : '';
+
     if (args.count) {
         const countQuery = await ctx.db.query(
             'SELECT COUNT(*) counter FROM (' + query.buildString() + ') x',
@@ -80,6 +87,7 @@ export async function getSalesV2Action(params: RequestValues, ctx: AtomicMarketC
         updated: {column: 'listing.updated_at_time', numericIndex: true},
         price: {column: 'listing.price', numericIndex: true},
         template_mint: {column: 'LOWER(listing.template_mint)', numericIndex: true},
+        effective_mint: {column: effectiveMintColumn, numericIndex: false},
         name: {column: 'SPLIT_PART(listing.asset_names, e\'\\n\', 1)', nullable: true, numericIndex: false},
     };
 
@@ -163,8 +171,8 @@ export async function getSalesCountV2Action(params: RequestValues, ctx: AtomicMa
 async function buildSaleFilterV2(search: SalesSearchOptions): Promise<void> {
     const {values, query, ctx} = search;
     const args = await filterQueryArgs(values, {
-        max_assets: {type: 'int', min: 1},
-        min_assets: {type: 'int', min: 1},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -328,7 +336,7 @@ async function buildMainFilterV2(search: SalesSearchOptions): Promise<void> {
         if (value?.length) {
             // when a single filter has multiple values, search ALL of them
             if (value.length > 1) {
-                if (value.length > 50 && filter === 'collection_name') {
+                if (value.length > MAX_INDEXED_COLLECTION_NAMES && filter === 'collection_name') {
                     // Not a GIN-array predicate and unindexed (compares filter[1] per row),
                     // so the hasMainGinFilter guard's bounded GIN-bitmap path does not exist
                     // here; forcing the hint would only trade the backward btree scan for a
@@ -480,8 +488,8 @@ async function buildListingFilterV2(search: SalesSearchOptions): Promise<void> {
         taker_marketplace: {type: 'string[]', min: 1},
         marketplace: {type: 'string[]', min: 1},
 
-        min_template_mint: {type: 'int', min: 1},
-        max_template_mint: {type: 'int', min: 1}
+        min_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     if (!args.show_seller_contracts) {
@@ -502,6 +510,7 @@ async function buildListingFilterV2(search: SalesSearchOptions): Promise<void> {
     }
 
     await buildTemplateMintFilter(values, query);
+    await buildEffectiveMintFilter(values, query, SALES_FILTER_MINT_SOURCE);
 }
 
 function getDataFilters(search: SalesSearchOptions): string[] {
@@ -634,7 +643,7 @@ export async function getSalesTemplatesV2Action(params: RequestValues, ctx: Atom
         symbol: {type: 'string', min: 1},
         collection_whitelist: {type: 'list[name]'},
 
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {
             type: 'string',

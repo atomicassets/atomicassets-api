@@ -154,6 +154,17 @@ CREATE TABLE IF NOT EXISTS atomicassets_transfers_assets (
     CONSTRAINT atomicassets_transfers_assets_pkey PRIMARY KEY (transfer_id, contract, asset_id)
 );
 
+-- Links a bridged asset to the asset it was bridged from (migrations/2.0.12).
+CREATE TABLE IF NOT EXISTS atomicassets_original_mints (
+    contract character varying(12) NOT NULL,
+    asset_id bigint NOT NULL,
+    original_contract character varying(12) NOT NULL,
+    original_asset_id bigint NOT NULL,
+    original_mint bigint,
+    block_num bigint NOT NULL,
+    CONSTRAINT atomicassets_original_mints_pkey PRIMARY KEY (contract, asset_id)
+);
+
 -- FOREIGN KEYS --
 DO $$
 BEGIN
@@ -265,6 +276,8 @@ CREATE INDEX IF NOT EXISTS atomicassets_assets_backed_tokens_asset_id ON atomica
 CREATE INDEX IF NOT EXISTS atomicassets_mints_asset_id ON atomicassets_mints USING btree (asset_id);
 CREATE INDEX IF NOT EXISTS atomicassets_mints_minter ON atomicassets_mints USING btree (minter);
 CREATE INDEX IF NOT EXISTS atomicassets_mints_receiver ON atomicassets_mints USING btree (receiver);
+
+CREATE INDEX IF NOT EXISTS atomicassets_original_mints_contract_mint ON atomicassets_original_mints USING btree (contract, original_mint);
 
 CREATE INDEX IF NOT EXISTS atomicassets_balances_owner_btree ON atomicassets_balances USING btree (owner);
 CREATE INDEX IF NOT EXISTS atomicassets_balances_updated_at_time ON atomicassets_balances USING btree (updated_at_time);

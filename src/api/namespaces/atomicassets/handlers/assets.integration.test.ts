@@ -1,9 +1,12 @@
 import 'mocha';
+import * as fs from 'fs';
 import { expect } from 'chai';
 import { RequestValues } from '../../utils';
 import { initAtomicAssetsTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
-import { getRawAssetsAction } from './assets';
+import { getAssetStatsAction, getRawAssetsAction } from './assets';
+import AtomicAssetsHandler from '../../../../filler/handlers/atomicassets';
+import { ApiError } from '../../../error';
 import { fillAssets } from '../filler';
 import { formatAsset } from '../format';
 
@@ -875,6 +878,301 @@ describe('AtomicAssets Assets API', () => {
 
             expect(asset.template.deleted_at_block).to.equal('4711');
             expect(asset.template.deleted_at_time).to.equal('4712');
+        });
+    });
+
+    describe('original mint', () => {
+
+        const group = JSON.stringify(['cards', '7', 'a', '']);
+
+        async function linkedAsset(original_mint: number | null, extra: Record<string, any> = {}): Promise<string> {
+            const {asset_id} = await client.createAsset(extra);
+            await client.createOriginalMint({asset_id, original_mint});
+
+            return asset_id;
+        }
+
+        txit('filters by original mint', async () => {
+            await linkedAsset(1);
+            const wanted = await linkedAsset(2);
+            await client.createAsset();
+
+            expect(await getAssetIds({original_mint: '2'})).to.deep.equal([wanted]);
+        });
+
+        txit('filters by the original mint range', async () => {
+            const {collection_name} = await client.createCollection();
+            await linkedAsset(1, {collection_name});
+            const second = await linkedAsset(2, {collection_name});
+            const third = await linkedAsset(3, {collection_name});
+            await linkedAsset(4, {collection_name});
+
+            expect(await getAssetIds({collection_name, min_original_mint: '2', max_original_mint: '3', sort: 'original_mint', order: 'asc'}))
+                .to.deep.equal([second, third]);
+        });
+
+        txit('filters by the minimum alone and by the maximum alone', async () => {
+            const one = await linkedAsset(1);
+            const two = await linkedAsset(2);
+            await client.createAsset();
+
+            expect(await getAssetIds({min_original_mint: '2'})).to.deep.equal([two]);
+            expect(await getAssetIds({max_original_mint: '1'})).to.deep.equal([one]);
+        });
+
+        txit('does not match a link row of another contract', async () => {
+            const {asset_id} = await client.createAsset();
+            await client.createOriginalMint({asset_id, original_mint: 5, contract: 'other'});
+
+            expect(await getAssetIds({original_mint: '5'})).to.deep.equal([]);
+        });
+
+        txit('sorts by original mint in both directions and lists only assets that have one', async () => {
+            await client.createAsset();
+            await linkedAsset(null);
+            const three = await linkedAsset(3);
+            const one = await linkedAsset(1);
+            const two = await linkedAsset(2);
+
+            expect(await getAssetIds({sort: 'original_mint', order: 'asc'})).to.deep.equal([one, two, three]);
+            expect(await getAssetIds({sort: 'original_mint', order: 'desc'})).to.deep.equal([three, two, one]);
+        });
+
+        txit('orders equal original mints by asset id in both directions', async () => {
+            const first = await linkedAsset(5);
+            const second = await linkedAsset(5);
+            const lower = await linkedAsset(4);
+
+            expect(await getAssetIds({sort: 'original_mint', order: 'asc'})).to.deep.equal([lower, first, second]);
+            expect(await getAssetIds({sort: 'original_mint', order: 'desc'})).to.deep.equal([first, second, lower]);
+        });
+
+        txit('counts the assets the original mint sort can return', async () => {
+            await client.createAsset();
+            await linkedAsset(null);
+            await linkedAsset(1);
+            await linkedAsset(2);
+
+            const listed = await getAssetIds({sort: 'original_mint'}) as number[];
+
+            expect(await getAssetCount({sort: 'original_mint'})).to.equal(String(listed.length));
+            expect(listed.length).to.equal(2);
+        });
+
+        txit('counts by original mint', async () => {
+            await linkedAsset(1);
+            await linkedAsset(2);
+
+            expect(await getAssetCount({min_original_mint: '2'})).to.equal('1');
+        });
+
+        txit('rejects an original mint below one', async () => {
+            let error: any = null;
+
+            try {
+                await getAssetIds({original_mint: '0'});
+            } catch (e) {
+                error = e;
+            }
+
+            expect(error).to.be.instanceOf(ApiError);
+            expect(error.code).to.equal(400);
+            expect(error.message).to.contain('Invalid value for parameter original_mint');
+        });
+
+        txit('leaves the template mint filters on assets that have no link', async () => {
+            const {asset_id} = await client.createAsset({
+                template_mint: 3,
+                template_id: (await client.createTemplate()).template_id,
+            });
+
+            expect(await getAssetIds({template_mint: '3'})).to.deep.equal([asset_id]);
+        });
+
+        describe('formatted asset', () => {
+
+            async function getAsset(assetId: string): Promise<any> {
+                const [asset] = await fillAssets(
+                    client, 'aatest', [assetId], formatAsset, 'atomicassets_assets_master'
+                );
+
+                return asset;
+            }
+
+            txit('reports the original mint as a string', async () => {
+                const asset_id = await linkedAsset(12);
+
+                expect((await getAsset(asset_id)).original_mint).to.equal('12');
+            });
+
+            txit('reports null for an asset without a link', async () => {
+                const {asset_id} = await client.createAsset();
+
+                expect((await getAsset(asset_id)).original_mint).to.equal(null);
+            });
+
+            txit('reports null for a link whose source has no mint number', async () => {
+                const asset_id = await linkedAsset(null);
+
+                expect((await getAsset(asset_id)).original_mint).to.equal(null);
+            });
+
+            txit('keeps the template mint of the same asset a string', async () => {
+                const {template_id} = await client.createTemplate();
+                const {asset_id} = await client.createAsset({template_id, template_mint: 4});
+                await client.createOriginalMint({asset_id, original_mint: 9});
+
+                const asset = await getAsset(asset_id);
+
+                expect(asset.template_mint).to.equal('4');
+                expect(asset.original_mint).to.equal('9');
+            });
+
+            txit('adds original_mint as the last column of the master view', async () => {
+                const {rows} = await client.query(
+                    'SELECT attname FROM pg_attribute WHERE attrelid = \'atomicassets_assets_master\'::regclass ' +
+                    'AND attnum > 0 AND NOT attisdropped ORDER BY attnum DESC LIMIT 1'
+                );
+
+                expect(rows[0].attname).to.equal('original_mint');
+            });
+        });
+
+        describe('stats', () => {
+
+            async function getStats(assetId: string): Promise<any> {
+                return await getAssetStatsAction({}, getTestContext(client, {asset_id: assetId}));
+            }
+
+            async function seedGroup(): Promise<{original_asset_id: string}> {
+                // Four creates in the group, one burned, one held by the bridge account.
+                await client.createSimpleCardTotal({mint_group: group, total_ever: 6});
+                const first = await client.createSimpleAsset({mint_group: group, mint_number: 1});
+                await client.createSimpleAsset({mint_group: group, mint_number: 2, owner: 'bridge'});
+                await client.createSimpleAsset({mint_group: group, mint_number: 3, owner: null});
+                await client.createSimpleAsset({mint_group: group, mint_number: 4});
+                // Same contract and author, another group, and another author with the same group.
+                await client.createSimpleAsset({mint_group: JSON.stringify(['cards', '8', 'a', '']), mint_number: 1});
+                await client.createSimpleAsset({mint_group: group, mint_number: 1, author: 'someoneelse'});
+
+                return {original_asset_id: first.asset_id};
+            }
+
+            txit('reports the group totals for a linked asset as strings', async () => {
+                const {original_asset_id} = await seedGroup();
+                const {template_id} = await client.createTemplate();
+                const {asset_id} = await client.createAsset({template_id});
+                await client.createOriginalMint({asset_id, original_asset_id, original_mint: 1});
+
+                const stats = await getStats(asset_id);
+
+                expect(stats.original).to.deep.equal({mint: '1', total_ever: '6', circulation: '3', burned: '3'});
+                expect(stats.template_mint).to.equal('1');
+            });
+
+            txit('never reports a negative burned count', async () => {
+                const {original_asset_id} = await seedGroup();
+                await client.query('UPDATE simpleassets_card_totals SET total_ever = 2');
+                const {asset_id} = await client.createAsset();
+                await client.createOriginalMint({asset_id, original_asset_id, original_mint: 1});
+
+                expect((await getStats(asset_id)).original).to.deep.equal({mint: '1', total_ever: '2', circulation: '3', burned: '0'});
+            });
+
+            txit('reports original null for an asset without a link', async () => {
+                await seedGroup();
+                const {asset_id} = await client.createAsset();
+
+                expect((await getStats(asset_id)).original).to.equal(null);
+            });
+
+            txit('reports original null when the source asset is not indexed', async () => {
+                const {asset_id} = await client.createAsset();
+                await client.createOriginalMint({asset_id, original_mint: 1});
+
+                expect((await getStats(asset_id)).original).to.equal(null);
+            });
+
+            txit('reports original null when the link table does not exist', async () => {
+                const {original_asset_id} = await seedGroup();
+                const {asset_id} = await client.createAsset();
+                await client.createOriginalMint({asset_id, original_asset_id, original_mint: 1});
+                await client.query('DROP TABLE atomicassets_original_mints CASCADE');
+
+                expect((await getStats(asset_id)).original).to.equal(null);
+            });
+
+            txit('reports original null when the simpleassets tables do not exist', async () => {
+                const {original_asset_id} = await seedGroup();
+                const {template_id} = await client.createTemplate();
+                const {asset_id} = await client.createAsset({template_id});
+                await client.createOriginalMint({asset_id, original_asset_id, original_mint: 1});
+                await client.query('DROP TABLE simpleassets_card_totals, simpleassets_assets CASCADE');
+
+                const stats = await getStats(asset_id);
+
+                expect(stats.original).to.equal(null);
+                expect(stats.template_mint).to.equal('1');
+            });
+        });
+    });
+
+    // Older upgrade branches apply the view shape that predates original_mint,
+    // so a database coming from before the link table reaches 2.0.13 with a
+    // view that CREATE OR REPLACE can extend.
+    describe('master view upgrade', () => {
+
+        async function columnCount(): Promise<number> {
+            const {rows: [column]} = await client.query(
+                'SELECT count(*)::int AS found FROM pg_attribute WHERE attrelid = \'atomicassets_assets_master\'::regclass ' +
+                'AND attname = \'original_mint\''
+            );
+
+            return column.found;
+        }
+
+        txit('re-applies the view under a short lock timeout in the 2.0.13 branch', async () => {
+            await client.query('DROP VIEW atomicassets_assets_master CASCADE');
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
+
+            expect(await columnCount()).to.equal(0);
+
+            await AtomicAssetsHandler.upgrade(client as any, '2.0.13');
+
+            const {rows: [timeout]} = await client.query('SHOW lock_timeout');
+
+            expect(timeout.lock_timeout).to.equal('5s');
+            expect(await columnCount()).to.equal(1);
+        });
+
+        txit('adds the view column to a database that predates the link table', async () => {
+            await client.query('DROP VIEW atomicassets_assets_master CASCADE');
+            await client.query('DROP TABLE atomicassets_original_mints');
+
+            await AtomicAssetsHandler.upgrade(client as any, '1.2.2');
+            await AtomicAssetsHandler.upgrade(client as any, '1.3.20');
+            await AtomicAssetsHandler.upgrade(client as any, '2.0.0');
+            await client.query(fs.readFileSync('./definitions/migrations/2.0.12/atomicassets.sql', {encoding: 'utf8'}));
+            await AtomicAssetsHandler.upgrade(client as any, '2.0.13');
+
+            const {asset_id} = await client.createAsset();
+            const [asset] = await fillAssets(client, 'aatest', [asset_id], formatAsset, 'atomicassets_assets_master');
+
+            expect(asset.original_mint).to.equal(null);
+        });
+
+        // A database that took 2.0.12 without the handler has no link table
+        // when the handler SQL of 2.0.13 runs ahead of the branch.
+        txit('creates the link table from the 2.0.13 handler file ahead of the branch', async () => {
+            await client.query('DROP VIEW atomicassets_assets_master CASCADE');
+            await client.query('DROP TABLE atomicassets_original_mints');
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
+
+            await client.query(fs.readFileSync('./definitions/migrations/2.0.13/atomicassets.sql', {encoding: 'utf8'}));
+            await AtomicAssetsHandler.upgrade(client as any, '2.0.13');
+            await client.query(fs.readFileSync('./definitions/migrations/2.0.13/atomicassets.sql', {encoding: 'utf8'}));
+
+            expect(await columnCount()).to.equal(1);
         });
     });
 

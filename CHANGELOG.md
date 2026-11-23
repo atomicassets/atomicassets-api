@@ -10,6 +10,76 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.7.0]
+
+Moves the update time of a trade offer when the offer turns invalid.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.7.0`. The `2.7` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- `updated_at_time` and `updated_at_block` of an offer in `/v1/offers` now move to the block of the transfer or the burn of an offer asset when the offer turns invalid. Before, the offer turned invalid with no change to either value, so a reader that sorts or filters offers by update time never saw it. An offer that turns pending again after its assets return keeps the two values of the invalidation block. (#243)
+- When the filler commits several blocks in one transaction during catch-up, the two values of an offer that turns invalid are those of the newest block of that transaction with an asset transfer or burn. (#243)
+
+## [2.6.1]
+
+Refuses an integer request parameter above the safe integer range with a 400 response.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.1`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- An integer request parameter with a value above `Number.MAX_SAFE_INTEGER` now returns 400. Before, such a value passed the validation of the template mint filters of the asset and market endpoints, the asset count filters of the market endpoints, the supply filters of `/v1/templates`, the `before` and `after` filters, the integer forms of `lower_bound` and `upper_bound`, `page`, and the `limit` of the asset sales history. The database then refused the value, and the request ended with a 500 response and a warn log line.
+
+## [2.6.0]
+
+Adds an effective mint filter and sort to the market listing endpoints, so a client can range over the mint of a bridged asset and of a plain asset with one parameter.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.0`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Features
+
+- `/v0/sales`, `/v1/sales`, `/v2/sales`, `/v1/auctions`, `/v1/buyoffers` and `/v1/template_buyoffers` accept `min_effective_mint` and `max_effective_mint`, and `/v1/sales/templates` accepts the two filters. Each is an integer from 1 up to `Number.MAX_SAFE_INTEGER`, either one alone is valid, and a minimum above the maximum returns 400. (#234)
+- The effective mint of an asset is its `original_mint` from `atomicassets_original_mints` when a link row with a mint number exists, else its template mint. An asset with neither is ignored. A listing matches when at least one of its assets has an effective mint and every such asset lies in the range, so a listing of an asset with no link is still found by its template mint. (#234)
+- The listing endpoints above, except `/v1/sales/templates`, accept `sort=effective_mint`, which orders by the lowest effective mint of the listing. It returns only listings where an asset has an effective mint, with or without a bound, and the matching `_count` endpoint counts the same listings. (#234)
+- A request that uses `min_effective_mint`, `max_effective_mint` or `sort=effective_mint` needs `collection_name` and returns 400 without it, because without that scope each listing needs its own lookup of the link table. The `template_mint` filters and sorts keep their queries. (#234)
+- A request that uses one of these three parameters also returns 400 with more than 50 collection names, counted before deduplication, because a longer list leaves the indexed filter path of `/v2/sales`. A request without these parameters accepts any number of names. (#235)
+- For a listing with no linked asset, the effective mint filters and sort read the stored template mint range of the listing, the value the `template_mint` filter reads, so the cost does not grow with the asset rows of an unlinked collection. A listing with a linked asset still reads the mint of each of its assets. A listing whose stored range is not written yet reads the mint of each of its assets. On `/v2/sales` the stored range follows a change of an asset mint after the filter table refresh, as for the `template_mint` filter. (#235)
+
+## [2.5.0]
+
+Serves the original mint of a bridged asset, with filters, a sort and per-card totals, from a `simpleassets` handler that numbers the source assets and links each bridged asset to its source.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.5.0`. The `2.5` and `latest` tags move to it.
+- The migration set moves to `2.0.13`, and the filler applies it on boot. `2.0.11` changes only a database whose reader runs the `simpleassets` handler: it adds three nullable columns, the `simpleassets_card_totals` table and the `simpleassets_assets_mint_group` index, which builds `CONCURRENTLY` while the filler's boot waits. `2.0.12` adds the new, empty `atomicassets_original_mints` table on every chain that runs the `atomicassets` handler, and `2.0.13` re-creates `atomicassets_assets_master` with one more column. Both take seconds, and `2.0.13` waits at most 5 seconds for the view lock. An operator who does not run the `simpleassets` handler needs no action. `UPGRADING.md` covers a database that holds tables of a handler no reader configures.
+- The `simpleassets` handler takes four new args, all optional: `numbered_authors`, `numbered_group_fields`, `atomicassets_account` and `bridge_account`. With the defaults an existing reader numbers nothing and links nothing.
+
+### Features
+
+- Every asset object carries `original_mint`: a string, or null for an asset that has no link to an original and for a link whose source asset has no mint number. The `atomicassets_assets_master` view gains it as its last column. (#229)
+- `/v1/assets` and `/v1/assets/_count` accept `original_mint`, `min_original_mint` and `max_original_mint`, and `/v1/assets` accepts `sort=original_mint`, which returns only assets that have an original mint, and `/v1/assets/_count` with that sort counts the same assets. Only a request that uses one of them joins the link table, so the `template_mint` filters and sorts keep their queries. (#229)
+- `/v1/assets/:asset_id/stats` gains `original`: `mint`, `total_ever`, `circulation` and `burned` of the SimpleAssets card group the asset was bridged from, all strings. It is null when the asset has no link, the source asset is not indexed or has no card group, the group has no totals row, or the database holds no SimpleAssets tables. (#229)
+- The `simpleassets` handler numbers the assets of each author in `numbered_authors` within a card group and keeps the total per group in `simpleassets_card_totals`. The group key is the category and the `mdata` fields that `numbered_group_fields` names. (#226)
+- With `atomicassets_account` and `bridge_account` set, the `simpleassets` handler links each asset that the bridge account mints to the SimpleAssets asset its `sassets_id` names, and stores the source mint in `atomicassets_original_mints`. (#227)
+- `pnpm start:import-simpleassets-snapshot` loads a one-time seed of `simpleassets_assets`, `simpleassets_card_totals` and `simpleassets_config` from JSON lines files taken at one block, and backfills the links at or below that block. It runs in one transaction, a second run with the same files changes nothing, and it refuses a stale or partial seed. The README documents the file format and the order of operations. (#227)
+
+### Bug fixes
+
+- Every pool that `PostgresConnection.createPool()` returns has an `error` listener. A dead idle client, for example after a database restart, now logs a `PG pool error` warning and raises no uncaught exception. (#228)
+- Every `simpleassets` state change carries a block guard, so a replayed block cannot move an asset back to an older owner or older data. (#226)
+- The `simpleassets` authors processor writes only the columns that `simpleassets_authors` has. It wrote two that do not exist, which stopped the reader on the first author registration. (#226)
+
 ## [2.4.1]
 
 Takes the SHIP serialization helpers from the published package so the filler decodes with one copy of them.

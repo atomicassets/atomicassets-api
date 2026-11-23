@@ -1,0 +1,16 @@
+-- 2.0.11 deferred - index the card group of each simpleassets asset. Runs
+-- OUTSIDE the migration transaction because CREATE INDEX CONCURRENTLY cannot
+-- run inside one. The deferred runner strips these line comments, splits the
+-- rest into statements and runs each on its own connection.
+--
+-- The key matches simpleassets_card_totals, so a reader counts the surviving
+-- assets of one group with an index range scan.
+--
+-- A process killed during the build leaves an INVALID index, and the runner
+-- never returns to this version (UPGRADING.md, "Interrupting an upgrade").
+-- Find one with
+--   SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid
+-- If it lists simpleassets_assets_mint_group, run
+--   DROP INDEX CONCURRENTLY simpleassets_assets_mint_group
+-- and then the statement below. IF NOT EXISTS alone would skip the rebuild.
+CREATE INDEX CONCURRENTLY IF NOT EXISTS simpleassets_assets_mint_group ON simpleassets_assets USING btree (contract, author, mint_group);

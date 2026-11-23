@@ -67,7 +67,9 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         asset.burned_by_account, asset.burned_at_block, asset.burned_at_time,
         asset.updated_at_block, asset.updated_at_time,
         asset.transferred_at_block, asset.transferred_at_time,
-        asset.minted_at_block, asset.minted_at_time
+        asset.minted_at_block, asset.minted_at_time,
+
+        original_link.original_mint
     FROM
         atomicassets_assets asset
         LEFT JOIN atomicassets_templates "template" ON (
@@ -75,3 +77,6 @@ CREATE OR REPLACE VIEW atomicassets_assets_master AS
         )
         JOIN atomicassets_collections collection ON (collection.contract = asset.contract AND collection.collection_name = asset.collection_name)
         JOIN atomicassets_schemas "schema" ON ("schema".contract = asset.contract AND "schema".collection_name = asset.collection_name AND "schema".schema_name = asset.schema_name)
+        LEFT JOIN atomicassets_original_mints original_link ON (
+            original_link.contract = asset.contract AND original_link.asset_id = asset.asset_id
+        )

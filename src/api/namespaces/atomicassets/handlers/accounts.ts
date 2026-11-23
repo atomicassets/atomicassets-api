@@ -15,7 +15,7 @@ export async function getAccountsAction(
 ): Promise<any> { // TODO: Use a proper type here - can't be at the moment different return types
     const maxLimit = ctx.coreArgs.limits?.accounts || 5000;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
 
         match_owner: {type: 'name'},

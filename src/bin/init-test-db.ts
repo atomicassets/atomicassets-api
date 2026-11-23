@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     // atomicpacksx + atomicdropsx ship in 1.5.0; their *.integration.test.ts
     // files would fail in CI without the schema. Keep this list aligned with
     // any new handler that introduces *.integration.test.ts coverage.
-    const testHandlers = ['atomicassets', 'delphioracle', 'atomicmarket', 'atomicpacksx', 'atomicdropsx'];
+    const testHandlers = ['atomicassets', 'delphioracle', 'atomicmarket', 'atomicpacksx', 'atomicdropsx', 'simpleassets'];
 
     const setupClient = await connection.begin();
     for (const handlerName of testHandlers) {

@@ -102,7 +102,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
                 await client.query(fs.readFileSync('./definitions/views/' + view + '.sql', {encoding: 'utf8'}));
             }
 
-            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
 
             await client.query(fs.readFileSync('./definitions/procedures/atomicassets_mints.sql', {encoding: 'utf8'}));
 
@@ -123,7 +123,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
             await client.query(fs.readFileSync('./definitions/procedures/atomicassets_mints.sql', {encoding: 'utf8'}));
 
             await client.query('DROP VIEW IF EXISTS atomicassets_assets_master CASCADE;');
-            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
 
             await client.query('DROP VIEW IF EXISTS atomicassets_asset_mints_master CASCADE;');
             await client.query(fs.readFileSync('./definitions/views/atomicassets_asset_mints_master.sql', {encoding: 'utf8'}));
@@ -132,7 +132,7 @@ export default class AtomicAssetsHandler extends ContractHandler {
         if (version === '1.3.20') {
             await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
-            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
         }
 
         if (version === '2.0.0') {
@@ -143,6 +143,17 @@ export default class AtomicAssetsHandler extends ContractHandler {
             await client.query(fs.readFileSync('./definitions/views/atomicassets_schemas_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_collections_master.sql', {encoding: 'utf8'}));
             await client.query(fs.readFileSync('./definitions/views/atomicassets_templates_master.sql', {encoding: 'utf8'}));
+            await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.pre-original-mint.sql', {encoding: 'utf8'}));
+        }
+
+        if (version === '2.0.13') {
+            // CREATE OR REPLACE works because the view lists its columns and
+            // original_mint is appended last. The lock timeout makes a version
+            // that cannot take the view lock fail and retry on the next boot
+            // instead of queueing every reader behind it. A later re-apply of
+            // atomicmarket_assets_master.sql must drop and re-create that view,
+            // because it leads with asset.* and so keeps the columns it had.
+            await client.query('SET LOCAL lock_timeout = \'5s\'');
             await client.query(fs.readFileSync('./definitions/views/atomicassets_assets_master.sql', {encoding: 'utf8'}));
         }
     }

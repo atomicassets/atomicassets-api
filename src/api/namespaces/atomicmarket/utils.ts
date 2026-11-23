@@ -6,7 +6,7 @@ import QueryBuilder from '../../builder';
 import {ApiError} from '../../error';
 import {filterQueryArgs, FilterValues} from '../validation';
 
-async function buildListingFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
+async function buildListingFilter(values: FilterValues, query: QueryBuilder, mintSource: EffectiveMintSource): Promise<void> {
     const args = await filterQueryArgs(values, {
         show_seller_contracts: {type: 'bool', default: true},
         contract_whitelist: {type: 'list[name]', default: ['']},
@@ -75,12 +75,139 @@ async function buildListingFilter(values: FilterValues, query: QueryBuilder): Pr
     }
 
     await buildTemplateMintFilter(values, query);
+    await buildEffectiveMintFilter(values, query, mintSource);
 }
+
+/** The rows of one listing's assets, with the asset as `a` and its link row as `om`. */
+export type EffectiveMintSource = {
+    from: string,
+    where: string,
+    // Scalar test that no asset of the listing has a link row with an original mint.
+    unlinked: string,
+};
+
+function listingAssetsMintSource(
+    table: string, contractColumn: string, where: string
+): EffectiveMintSource {
+    return {
+        from: `${table} la ` +
+            `JOIN atomicassets_assets a ON a.contract = la.${contractColumn} AND a.asset_id = la.asset_id ` +
+            `LEFT JOIN atomicassets_original_mints om ON om.contract = la.${contractColumn} AND om.asset_id = la.asset_id`,
+        where,
+        unlinked: `(SELECT COUNT(*) FROM ${table} la ` +
+            `JOIN atomicassets_original_mints om ON om.contract = la.${contractColumn} AND om.asset_id = la.asset_id ` +
+            `WHERE ${where} AND om.original_mint IS NOT NULL) = 0`,
+    };
+}
+
+export const OFFER_ASSETS_MINT_SOURCE = listingAssetsMintSource(
+    'atomicassets_offers_assets', 'contract', 'la.contract = listing.assets_contract AND la.offer_id = listing.offer_id'
+);
+export const AUCTION_ASSETS_MINT_SOURCE = listingAssetsMintSource(
+    'atomicmarket_auctions_assets', 'assets_contract',
+    'la.market_contract = listing.market_contract AND la.auction_id = listing.auction_id'
+);
+export const BUYOFFER_ASSETS_MINT_SOURCE = listingAssetsMintSource(
+    'atomicmarket_buyoffers_assets', 'assets_contract',
+    'la.market_contract = listing.market_contract AND la.buyoffer_id = listing.buyoffer_id'
+);
+export const TEMPLATE_BUYOFFER_ASSETS_MINT_SOURCE = listingAssetsMintSource(
+    'atomicmarket_template_buyoffers_assets', 'assets_contract',
+    'la.market_contract = listing.market_contract AND la.buyoffer_id = listing.buyoffer_id'
+);
+
+// The sales filter table holds the asset ids of the listing itself.
+export const SALES_FILTER_MINT_SOURCE: EffectiveMintSource = {
+    from: 'atomicassets_assets a ' +
+        'LEFT JOIN atomicassets_original_mints om ON om.contract = a.contract AND om.asset_id = a.asset_id',
+    where: 'a.contract = listing.assets_contract AND a.asset_id = ANY(listing.asset_ids)',
+    unlinked: '(SELECT COUNT(*) FROM atomicassets_original_mints om ' +
+        'WHERE om.contract = listing.assets_contract AND om.asset_id = ANY(listing.asset_ids) ' +
+        'AND om.original_mint IS NOT NULL) = 0',
+};
+
+const EFFECTIVE_MINT = 'COALESCE(om.original_mint, a.template_mint)';
+
+// The sales filter query switches from the indexed array predicate to an unindexed per-row
+// predicate above this many collection names, so the mint parameters stop at the same count.
+export const MAX_INDEXED_COLLECTION_NAMES = 50;
+
+async function requireMintScope(values: FilterValues): Promise<void> {
+    const args = await filterQueryArgs(values, {collection_name: {type: 'list[name]'}});
+
+    // Without a collection each listing needs its own probe of the assets and link
+    // tables, which reads those tables end to end on a large chain.
+    if (!args.collection_name.length) {
+        throw new ApiError('The effective mint filters and sort require collection_name', 400);
+    }
+
+    if (args.collection_name.length > MAX_INDEXED_COLLECTION_NAMES) {
+        throw new ApiError(
+            `The effective mint filters and sort accept at most ${MAX_INDEXED_COLLECTION_NAMES} collection names`, 400
+        );
+    }
+}
+
+// No link with a stored range reads that range (exclusive upper bound), so cost stays flat as
+// asset rows grow. No link with no range yet, or a linked listing, reads one scalar aggregate.
+// An empty range has NULL bounds, which int8range reads as unbounded, so test empty first.
+// The link test avoids EXISTS because the planner turns it into a slower join.
+const STORED_RANGE = 'int8range(lower(listing.template_mint)::bigint, upper(listing.template_mint)::bigint)';
+
+function readsStoredRange(source: EffectiveMintSource): string {
+    return `listing.template_mint IS NOT NULL AND ${source.unlinked}`;
+}
+
+export async function buildEffectiveMintFilter(
+    values: FilterValues, query: QueryBuilder, source: EffectiveMintSource
+): Promise<void> {
+    const args = await filterQueryArgs(values, {
+        min_effective_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_effective_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+    });
+
+    if (args.min_effective_mint === undefined && args.max_effective_mint === undefined) {
+        return;
+    }
+
+    await requireMintScope(values);
+
+    if (args.max_effective_mint !== undefined && (args.min_effective_mint ?? 0) > args.max_effective_mint) {
+        throw new ApiError('Min effective mint can\'t be greater than max effective mint', 400);
+    }
+
+    const bounds = 'int8range(' +
+        query.addVariable(args.min_effective_mint ?? null) + ', ' +
+        query.addVariable(args.max_effective_mint ?? null) + ', \'[]\')';
+
+    // HAVING makes a listing without any mint a NULL range, which never matches.
+    query.addCondition(
+        `CASE WHEN ${readsStoredRange(source)} ` +
+        `THEN listing.template_mint <> 'empty' AND ${STORED_RANGE} <@ ${bounds} ` +
+        `ELSE (SELECT int8range(MIN(${EFFECTIVE_MINT}), MAX(${EFFECTIVE_MINT}), '[]') ` +
+        `FROM ${source.from} WHERE ${source.where} ` +
+        `HAVING COUNT(${EFFECTIVE_MINT}) > 0) <@ ${bounds} END`
+    );
+}
+
+/** Adds the sort's listing condition and returns the sort column. Call it before the count branch. */
+export async function buildEffectiveMintSort(
+    values: FilterValues, query: QueryBuilder, source: EffectiveMintSource
+): Promise<string> {
+    await requireMintScope(values);
+
+    const column = `CASE WHEN ${readsStoredRange(source)} THEN lower(listing.template_mint)::bigint ` +
+        `ELSE (SELECT MIN(${EFFECTIVE_MINT}) FROM ${source.from} WHERE ${source.where}) END`;
+    query.addCondition(`${column} IS NOT NULL`);
+
+    return column;
+}
+
 
 export async function buildTemplateMintFilter(values: FilterValues, query: QueryBuilder): Promise<void> {
     const args = await filterQueryArgs(values, {
-        min_template_mint: {type: 'int', min: 1},
-        max_template_mint: {type: 'int', min: 1}
+        min_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER}
     });
 
     if (args.min_template_mint || args.max_template_mint) {
@@ -105,8 +232,8 @@ export async function buildSaleFilter(values: FilterValues, query: QueryBuilder)
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        max_assets: {type: 'int', min: 1},
-        min_assets: {type: 'int', min: 1},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -119,7 +246,7 @@ export async function buildSaleFilter(values: FilterValues, query: QueryBuilder)
         throw new ApiError('Price filters are removed in /v1/sales, use /v2/sales', 400);
     }
 
-    await buildListingFilter(values, query);
+    await buildListingFilter(values, query, OFFER_ASSETS_MINT_SOURCE);
 
     if (args.template_blacklist.length || hasAssetFilter(values, ['collection_name']) || hasDataFilters(values)) {
         const assetQuery = new QueryBuilder(
@@ -217,8 +344,8 @@ export async function buildAuctionFilter(values: FilterValues, query: QueryBuild
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        min_assets: {type: 'int', min: 1},
-        max_assets: {type: 'int', min: 1},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
@@ -233,7 +360,7 @@ export async function buildAuctionFilter(values: FilterValues, query: QueryBuild
         template_blacklist: {type: 'list[id]'},
     });
 
-    await buildListingFilter(values, query);
+    await buildListingFilter(values, query, AUCTION_ASSETS_MINT_SOURCE);
 
     if (args.hide_templates_by_accounts.length || args.template_blacklist.length || hasAssetFilter(values, ['collection_name']) || hasDataFilters(values)) {
         const assetQuery = new QueryBuilder(
@@ -386,15 +513,15 @@ export async function buildBuyofferFilter(values: FilterValues, query: QueryBuil
     const args = await filterQueryArgs(values, {
         state: {type: 'string', min: 1},
 
-        min_assets: {type: 'int', min: 1},
-        max_assets: {type: 'int', min: 1},
+        min_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_assets: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         symbol: {type: 'string', min: 1},
         min_price: {type: 'float', min: 0},
         max_price: {type: 'float', min: 0}
     });
 
-    await buildListingFilter(values, query);
+    await buildListingFilter(values, query, BUYOFFER_ASSETS_MINT_SOURCE);
 
     if (hasAssetFilter(values, ['collection_name']) || hasDataFilters(values)) {
         const assetQuery = new QueryBuilder(
@@ -513,7 +640,7 @@ export async function buildTemplateBuyofferFilter(values: FilterValues, query: Q
         template_id: {type: 'list[id]'},
     });
 
-    await buildListingFilter(values, query);
+    await buildListingFilter(values, query, TEMPLATE_BUYOFFER_ASSETS_MINT_SOURCE);
 
     if (hasAssetFilter(values, ['collection_name', 'template_id']) || hasDataFilters(values)) {
         const assetQuery = new QueryBuilder(

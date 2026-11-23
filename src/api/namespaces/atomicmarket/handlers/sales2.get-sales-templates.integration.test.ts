@@ -4,6 +4,8 @@ import {RequestValues} from '../../utils';
 import {initAtomicMarketTest} from '../test';
 import {getTestContext} from '../../../../utils/test';
 import {getSalesTemplatesV2Action} from './sales2';
+import {ApiError} from '../../../error';
+import {createMintAsset} from '../effective-mint-suite';
 
 const {client, txit} = initAtomicMarketTest();
 
@@ -416,6 +418,100 @@ describe('AtomicMarket Sales API', () => {
             expect(result).to.haveOwnProperty('price');
             expect(result.price).to.have.ownProperty('amount');
             expect(result).to.haveOwnProperty('collection');
+        });
+    });
+
+    describe('effective mint filter', () => {
+        async function templateSale(collectionName: string, spec: {template?: number, original?: number | null}): Promise<number> {
+            const {template_id} = await client.createTemplate({collection_name: collectionName});
+            const asset_id = await createMintAsset(client, collectionName, spec, {template_id});
+            const {offer_id} = await client.createOffer();
+            await client.createOfferAsset({offer_id, asset_id});
+
+            return (await client.createSale({offer_id, collection_name: collectionName})).sale_id;
+        }
+
+        txit('filters by the original mint, else the template mint', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const linked = await templateSale(c, {original: 5, template: 500});
+            const unlinked = await templateSale(c, {template: 6});
+            const originalWins = await templateSale(c, {original: 500, template: 5});
+            const nullLink = await templateSale(c, {original: null, template: 60});
+            await templateSale(c, {});
+
+            expect((await getSalesIds({collection_name: c, min_effective_mint: '4', max_effective_mint: '7'})).sort())
+                .to.deep.equal([linked, unlinked].sort());
+            expect((await getSalesIds({collection_name: c, min_effective_mint: '7', max_effective_mint: '1000'})).sort())
+                .to.deep.equal([originalWins, nullLink].sort());
+            expect(await getSalesIds({collection_name: c, max_effective_mint: '5'})).to.deep.equal([linked]);
+        });
+
+        txit('combines a template mint bound with an effective mint bound of the same value', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const both = await templateSale(c, {original: 5, template: 5});
+            await templateSale(c, {original: 50, template: 5});
+            await templateSale(c, {original: 6, template: 50});
+
+            expect(await getSalesIds({
+                collection_name: c,
+                min_template_mint: '5', min_effective_mint: '5',
+                max_template_mint: '6', max_effective_mint: '6',
+            })).to.deep.equal([both]);
+        });
+
+        txit('reads the stored range of an unlinked listing, not its assets', async () => {
+            const c = (await client.createCollection()).collection_name;
+            const storedOut = await templateSale(c, {template: 5});
+            const storedIn = await templateSale(c, {template: 500});
+            await client.refreshSalesFilters();
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = $2 WHERE sale_id = $1', [storedOut, '[500,500]']);
+            await client.query('UPDATE atomicmarket_sales_filters SET template_mint = $2 WHERE sale_id = $1', [storedIn, '[5,5]']);
+
+            // no refresh here, so the stored range the updates wrote is the one read
+            const result = await getSalesTemplatesV2Action({
+                symbol: 'TEST', collection_name: c, min_effective_mint: '4', max_effective_mint: '6',
+            }, getTestContext(client));
+
+            expect(result.map((s: any) => s.sale_id)).to.deep.equal([storedIn]);
+        });
+
+        txit('rejects 51 collection names with a bound', async () => {
+            const c = (await client.createCollection()).collection_name;
+            await templateSale(c, {original: 5});
+            const names = [c, ...Array.from({length: 50}, (_, i) =>
+                `zz${String.fromCharCode(97 + Math.floor(i / 26))}${String.fromCharCode(97 + (i % 26))}`)].join(',');
+
+            let err: any;
+            try {
+                await getSalesIds({collection_name: names, min_effective_mint: '1'});
+            } catch (e) {
+                err = e;
+            }
+
+            expect(err).to.be.instanceof(ApiError);
+            expect(err.code).to.equal(400);
+            expect(err.message).to.equal('The effective mint filters and sort accept at most 50 collection names');
+        });
+
+        txit('requires collection_name and a valid range', async () => {
+            const c = (await client.createCollection()).collection_name;
+            await templateSale(c, {original: 5});
+
+            for (const [values, message] of [
+                [{collection_whitelist: c, min_effective_mint: '1'}, 'The effective mint filters and sort require collection_name'],
+                [{collection_name: c, min_effective_mint: '5', max_effective_mint: '4'}, 'Min effective mint can\'t be greater than max effective mint'],
+            ]) {
+                let err: any;
+                try {
+                    await getSalesIds(values);
+                } catch (e) {
+                    err = e;
+                }
+
+                expect(err).to.be.instanceof(ApiError);
+                expect(err.code).to.equal(400);
+                expect(err.message).to.equal(message);
+            }
         });
     });
 
