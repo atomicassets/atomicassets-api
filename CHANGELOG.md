@@ -10,6 +10,34 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.8.0]
+
+Drops templates deleted on chain from the template stats and moves three HTTP dependencies past their published advisories.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.8.0`. The `2.8` and `latest` tags move to it.
+- The release has no migration.
+- An operator rewrites an entry of `trust_proxy`, `ip_whitelist` or `peer_whitelist` in `server.config.json` that is an IPv4-mapped IPv6 subnet with a prefix shorter than 96, such as `::ffff:10.0.0.0/8`, or an IPv6 subnet with zero leading bits, such as `::/1`. Such an entry matched every IPv4 client before and matches none now. An IPv4 range in IPv4 notation, such as `10.0.0.0/8`, and `::ffff:10.0.0.0/104` match as before. (#242)
+
+### Bug fixes
+
+- `/v1/stats/templates` no longer returns a template deleted on chain. Before, the endpoint kept returning the template after its deletion, while `/v1/templates` excluded it. The new `include_deleted` parameter, `false` by default, returns the deleted templates as well. (#256)
+- A boolean filter sent as a JSON boolean in a POST body now takes effect. Before, a `bool` filter read only string values, so a native `true` or `false` was dropped and the filter kept its default. (#252)
+- `docker-compose.yml` gives the server and the filler 60 seconds and Postgres 120 seconds to stop before Docker kills the container, where the Docker default is 10 seconds, so Postgres can finish its shutdown checkpoint. The Postgres health check gains a start period of 30 seconds. (#245)
+
+### Security
+
+- `body-parser` moves to 2.4.0, clearing GHSA-27r3-jxmh-p828 (CVE-2026-111181), a denial of service through trailing bytes after a compressed request body. The server mounts it ahead of every route, so a request with a compressed body reaches it on any path. (#253)
+- `compression` moves to 1.8.2, clearing GHSA-vc2v-76pw-4v95 (CVE-2026-87776), a denial of service through a memory leak each time a client closes the connection during a compressed response. (#237)
+- `proxy-addr` moves to 2.0.8, clearing GHSA-jqcg-44mw-7w3h (CVE-2026-90711). An IPv4-mapped IPv6 subnet with a short prefix, such as `::ffff:10.0.0.0/8`, or an IPv6 subnet with zero leading bits matched every IPv4 address, so in `trust_proxy` it let any client set its own address through `X-Forwarded-For`, and in `ip_whitelist` or `peer_whitelist` it whitelisted every IPv4 client. An IPv4 address now matches an IPv6 subnet only when the subnet is IPv4-mapped and its prefix covers the mapped marker, as in `::ffff:10.0.0.0/104`. (#242)
+
+### Other changes
+
+- `body-parser` 2.4.0 also accepts a request body with `Content-Encoding: zstd` on Node.js 22.15 or later in the 22 line, and on 23.8 or later. An older Node.js keeps answering 415 for such a body, and the image runs Node.js 22. (#253)
+- `pg`, the Postgres driver of the filler and the server, moves to 8.23.0, and `@atomichub/atomicassets` moves to 2.3.0. (#223, #224)
+- The development toolchain takes its pending updates: `eslint`, `typescript-eslint`, `globals` and `@types/pg`. None of them ships in the image. (#217, #224, #232)
+
 ## [2.7.0]
 
 Moves the update time of a trade offer when the offer turns invalid.
