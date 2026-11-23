@@ -26,25 +26,26 @@ import {
     getSalesAction, getSalesCountAction
 } from '../handlers/sales';
 import { getSalesCountV2Action, getSalesTemplatesV2Action, getSalesV2Action } from '../handlers/sales2';
+import { serverSellerPolicy } from '../seller-policy';
 
 export function salesEndpoints(core: AtomicMarketNamespace, server: HTTPServer, router: express.Router): any {
     const {caching, returnAsJSON} = server.web;
 
-    router.all('/v0/sales', caching(), returnAsJSON(getSalesAction, core));
-    router.all('/v0/sales/_count', caching(), returnAsJSON(getSalesCountAction, core));
+    router.all('/v0/sales', serverSellerPolicy(core), caching(), returnAsJSON(getSalesAction, core));
+    router.all('/v0/sales/_count', serverSellerPolicy(core), caching(), returnAsJSON(getSalesCountAction, core));
 
     if (core.args.api_features?.disable_v1_sales) {
-        router.all('/v1/sales', caching(), returnAsJSON(getSalesV2Action, core));
-        router.all('/v1/sales/_count', caching(), returnAsJSON(getSalesCountV2Action, core));
+        router.all('/v1/sales', serverSellerPolicy(core), caching(), returnAsJSON(getSalesV2Action, core));
+        router.all('/v1/sales/_count', serverSellerPolicy(core), caching(), returnAsJSON(getSalesCountV2Action, core));
     } else {
-        router.all('/v1/sales', caching(), returnAsJSON(getSalesAction, core));
-        router.all('/v1/sales/_count', caching(), returnAsJSON(getSalesCountAction, core));
+        router.all('/v1/sales', serverSellerPolicy(core), caching(), returnAsJSON(getSalesAction, core));
+        router.all('/v1/sales/_count', serverSellerPolicy(core), caching(), returnAsJSON(getSalesCountAction, core));
     }
 
-    router.all('/v2/sales', caching(), returnAsJSON(getSalesV2Action, core));
-    router.all('/v2/sales/_count', caching(), returnAsJSON(getSalesCountV2Action, core));
+    router.all('/v2/sales', serverSellerPolicy(core), caching(), returnAsJSON(getSalesV2Action, core));
+    router.all('/v2/sales/_count', serverSellerPolicy(core), caching(), returnAsJSON(getSalesCountV2Action, core));
 
-    router.all('/v1/sales/templates', caching(), returnAsJSON(getSalesTemplatesV2Action, core));
+    router.all('/v1/sales/templates', serverSellerPolicy(core), caching(), returnAsJSON(getSalesTemplatesV2Action, core));
 
     router.all('/v1/sales/:sale_id', caching(), returnAsJSON(getSaleAction, core));
 
