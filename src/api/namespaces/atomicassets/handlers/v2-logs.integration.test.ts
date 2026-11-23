@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 
 import { initAtomicAssetsTest } from '../test';
 import { getTestContext } from '../../../../utils/test';
@@ -108,7 +107,7 @@ describe('AtomicAssets v2 log entries', () => {
         expect(whitelisted.map((log: any) => log.name)).to.deep.equal(['setschematyp']);
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

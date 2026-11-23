@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { describe, expect } from 'vitest';
 import {RequestValues} from '../../utils';
 import {initAtomicAssetsTest} from '../test';
 import {getTestContext} from '../../../../utils/test';

@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import { Pool, PoolClient } from 'pg';
 
@@ -27,7 +26,7 @@ describe('migration 1.7.11 against a queue table the migrating role does not own
     let client: PoolClient;
     let serverVersionNum: number;
 
-    before(async () => {
+    beforeAll(async () => {
         pool = new Pool({ ...getTestPostgresConfig(), max: 1 });
         await pool.query(`DROP ROLE IF EXISTS ${MEMBER_ROLE}`);
         await pool.query(`DROP ROLE IF EXISTS ${OWNER_ROLE}`);
@@ -37,7 +36,7 @@ describe('migration 1.7.11 against a queue table the migrating role does not own
         serverVersionNum = parseInt(rows[0].server_version_num, 10);
     });
 
-    after(async () => {
+    afterAll(async () => {
         await pool.query(`DROP ROLE IF EXISTS ${MEMBER_ROLE}`);
         await pool.query(`DROP ROLE IF EXISTS ${OWNER_ROLE}`);
         await pool.end();
@@ -142,9 +141,9 @@ describe('migration 1.7.11 against a queue table the migrating role does not own
         expect(next).to.be.greaterThan(Number(backlog.rows[0].seq));
     });
 
-    it('names both roles and keeps the Postgres detail when the migrating role cannot hand the sequence over', async function () {
+    it('names both roles and keeps the Postgres detail when the migrating role cannot hand the sequence over', async ({ skip }) => {
         if (serverVersionNum < ROLE_GRANT_OPTIONS_SINCE) {
-            this.skip();
+            skip();
         }
 
         await rewindToForeignOwner();

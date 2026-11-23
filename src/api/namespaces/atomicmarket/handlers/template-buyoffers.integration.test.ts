@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
 import {getTestContext} from '../../../../utils/test';
@@ -162,7 +162,7 @@ describe('template buy offer handler', () => {
             expect((err as any).message).to.equal('Invalid value for parameter sort');
         });
 
-        context('sort hint', () => {
+        describe('sort hint', () => {
             // Template-buyoffer filters are btree-checkable equalities, so Postgres streams
             // the ordered price index under an Incremental Sort and stops once the limit is
             // filled. An arithmetic hint on the ORDER BY would discard that plan for a full
@@ -256,7 +256,7 @@ describe('template buy offer handler', () => {
         count: async (values) => Number(await getTemplateBuyOffersCountAction({...values}, getTestContext(client))),
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

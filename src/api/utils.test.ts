@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { describe, expect, it } from 'vitest';
 
 import {applyActionGreylistFilters, buildJsonbConditionVariants, extractNotificationIdentifiers, resolveTrustProxy, respondApiError} from './utils';
 import {NotificationData} from '../filler/notifier';

@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import { Client, Pool } from 'pg';
 
@@ -797,7 +796,7 @@ describe('drainAtomicmarketTemplatePrices - TS batch loop against the real drain
     const BACKLOG = 3;
     let pool: Pool;
 
-    before(async () => {
+    beforeAll(async () => {
         // max:1 mirrors production's longRunningPool shape, which is what makes
         // "the client is released between batches" a real property here.
         pool = new Pool({ ...getTestPostgresConfig(), max: 1, statement_timeout: 300_000 });
@@ -820,7 +819,7 @@ describe('drainAtomicmarketTemplatePrices - TS batch loop against the real drain
         );
     });
 
-    after(async () => {
+    afterAll(async () => {
         await pool.query('DELETE FROM atomicmarket_template_prices_updates');
         await pool.query('DELETE FROM contract_readers WHERE name = $1', [READER]);
         await pool.end();

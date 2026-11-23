@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { describe, expect, it } from 'vitest';
 import * as sinon from 'sinon';
 
 import Filler from './filler';

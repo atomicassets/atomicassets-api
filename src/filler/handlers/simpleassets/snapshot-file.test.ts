@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -8,11 +7,11 @@ import { readSnapshotRows } from './snapshot-file';
 describe('readSnapshotRows', () => {
     let dir: string;
 
-    before(() => {
+    beforeAll(() => {
         dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sa-snapshot-'));
     });
 
-    after(() => {
+    afterAll(() => {
         fs.rmSync(dir, { recursive: true, force: true });
     });
 

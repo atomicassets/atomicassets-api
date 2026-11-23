@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 import { getBurnsAction } from './burns';
 import { AtomicAssetsContext } from '../index';
@@ -59,7 +58,7 @@ describe('getBurnsAction - burnsQueryNeedsTemplateJoin gate', () => {
     // not at module load. Register it here with a stub DB so the asset-side
     // tests below can exercise list-typed params without hitting "Invalid
     // value for parameter X" from filterQueryArgs.
-    before(() => {
+    beforeAll(() => {
         const stubDb = {
             fetchOne: async (): Promise<any> => ({ items: [] }),
         } as any;

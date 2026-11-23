@@ -1,57 +1,34 @@
 import { Client } from 'pg';
-import { AsyncFunc, Test } from 'mocha';
+import { it } from 'vitest';
+import { getTestPostgresConfig } from './test-config';
 import { DB } from '../api/server';
 import { RequestValues } from '../api/namespaces/utils';
 import { AtomicMarketContext } from '../api/namespaces/atomicmarket';
 import { IConnectionsConfig } from '../types/config';
 import { initListValidator } from '../api/namespaces/lists';
 
-function loadConnectionConfig(): IConnectionsConfig {
-    try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        return require('../../config/connections.config.json');
-    } catch {
-        // In CI, connections.config.json doesn't exist - use env vars
-        return {
-            postgres: {
-                host: process.env.POSTGRES_TEST_HOST || 'localhost',
-                port: parseInt(process.env.POSTGRES_TEST_PORT || '5432', 10),
-                user: process.env.POSTGRES_TEST_USER || 'root',
-                password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
-                database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
-            },
-            redis: {
-                host: process.env.REDIS_TEST_HOST || 'localhost',
-                port: parseInt(process.env.REDIS_TEST_PORT || '6379', 10),
-            },
-            chain: {
-                name: 'test',
-                chain_id: '0000000000000000000000000000000000000000000000000000000000000000',
-                http: 'http://localhost:8888',
-                ship: 'ws://localhost:8080',
-            },
-        } as IConnectionsConfig;
-    }
-}
+export { getTestPostgresConfig } from './test-config';
 
-export const connectionConfig: IConnectionsConfig = loadConnectionConfig();
-
-export function getTestPostgresConfig(): { host: string; port: number; user: string; password: string; database: string } {
-    // Prefer POSTGRES_TEST_* env vars (CI pattern), fall back to config file
-    if (process.env.POSTGRES_TEST_HOST) {
-        return {
-            host: process.env.POSTGRES_TEST_HOST,
-            port: parseInt(process.env.POSTGRES_TEST_PORT || '5432', 10),
-            user: process.env.POSTGRES_TEST_USER || 'root',
-            password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
-            database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
-        };
-    }
-    return {
-        ...connectionConfig.postgres,
-        database: `${connectionConfig.postgres.database}-test`,
-    };
-}
+// Never load an operator's connections.config.json from a test helper.
+export const connectionConfig: IConnectionsConfig = {
+    postgres: {
+        host: process.env.POSTGRES_TEST_HOST || '127.0.0.1',
+        port: Number(process.env.POSTGRES_TEST_PORT || 5432),
+        user: process.env.POSTGRES_TEST_USER || 'root',
+        password: process.env.POSTGRES_TEST_PASSWORD || 'testpassword',
+        database: process.env.POSTGRES_TEST_DATABASE || 'test_db',
+    },
+    redis: {
+        host: process.env.REDIS_TEST_HOST || '127.0.0.1',
+        port: Number(process.env.REDIS_TEST_PORT || 6379),
+    },
+    chain: {
+        name: 'test',
+        chain_id: '0'.repeat(64),
+        http: 'http://127.0.0.1:8888',
+        ship: 'ws://127.0.0.1:8080',
+    },
+} as IConnectionsConfig;
 
 export class TestClient extends Client implements DB {
 
@@ -166,37 +143,27 @@ export class TestClient extends Client implements DB {
 
 }
 
-export function createTxIt(client: TestClient): any {
-    async function runTxTest(fn: () => Promise<void>, self: any): Promise<any> {
-        await client.query('BEGIN');
+export function createTxIt(client: TestClient) {
+    type TransactionTest = (client: TestClient) => Promise<void>;
 
+    async function runTxTest(fn: TransactionTest): Promise<void> {
+        await client.query('BEGIN');
         initListValidator(client);
 
         try {
             await client.init();
-
-            return await fn.call(self, client);
+            await fn(client);
         } finally {
             await client.query('ROLLBACK');
         }
     }
 
-    const result = function txit(title: string, fn: () => Promise<void>): Test {
-        return it(title, async function () {
-            return await runTxTest(fn, this);
-        });
-    };
+    // Do not use concurrent tests: each helper owns one shared pg.Client.
+    const txit = (title: string, fn: TransactionTest) => it(title, () => runTxTest(fn));
+    txit.skip = (title: string, fn: TransactionTest) => it.skip(title, () => runTxTest(fn));
+    txit.only = (title: string, fn: TransactionTest) => it.only(title, () => runTxTest(fn));
 
-    result.skip = (title: string, func: () => Promise<void>): Test => it.skip(title, func as unknown as AsyncFunc);
-
-    result.only = function (title: string, fn: () => Promise<void>): Test {
-
-        return it.only(title, async () => {
-            return await runTxTest(fn, this);
-        });
-    };
-
-    return result;
+    return txit;
 }
 
 export function getTestContext(db: DB, pathParams: RequestValues = {}): AtomicMarketContext {

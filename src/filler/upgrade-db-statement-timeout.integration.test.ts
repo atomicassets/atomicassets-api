@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Pool, PoolClient } from 'pg';
 
 import { resolveMigrationStatementTimeoutMs, configureMigrationConnection, applyDeferredPoolStatementTimeout } from './upgrade-db';
@@ -24,7 +23,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
 
     let adminPool: Pool;
 
-    before(async () => {
+    beforeAll(async () => {
         adminPool = new Pool({ ...getTestPostgresConfig(), max: 1 });
 
         // A role that carries its own statement_timeout is what actually
@@ -39,7 +38,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
         await adminPool.query(`GRANT CONNECT ON DATABASE "${getTestPostgresConfig().database}" TO ${TEST_ROLE}`);
     });
 
-    after(async () => {
+    afterAll(async () => {
         // GRANT CONNECT registers a dependency (pg_shdepend) on the role, so
         // DROP ROLE fails until it's revoked - REVOKE first, then DROP.
         await adminPool.query(`REVOKE CONNECT ON DATABASE "${getTestPostgresConfig().database}" FROM ${TEST_ROLE}`);
@@ -51,7 +50,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
         let rolePool: Pool;
         let client: PoolClient;
 
-        before(async () => {
+        beforeAll(async () => {
             rolePool = new Pool({
                 ...getTestPostgresConfig(),
                 user: TEST_ROLE,
@@ -66,7 +65,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
             await configureMigrationConnection(client, resolveMigrationStatementTimeoutMs());
         });
 
-        after(async () => {
+        afterAll(async () => {
             client.release();
             await rolePool.end();
         });
@@ -86,9 +85,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
             expect(rows[0].search_path).to.equal('public');
         });
 
-        it('completes a 31-second statement, because this connection carries its own statement_timeout instead of the runtime pool\'s 30s cap', async function () {
-            this.timeout(45_000);
-
+        it('completes a 31-second statement, because this connection carries its own statement_timeout instead of the runtime pool\'s 30s cap', { timeout: 45_000 }, async () => {
             const { rows } = await client.query('SELECT pg_sleep(31) IS NOT NULL AS completed');
             expect(rows[0].completed).to.equal(true);
         });
@@ -100,7 +97,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
         let pool: Pool;
         let heldClient: PoolClient;
 
-        before(async () => {
+        beforeAll(async () => {
             pool = new Pool({ ...getTestPostgresConfig(), max: 2 });
             applyDeferredPoolStatementTimeout(pool, DEFERRED_STATEMENT_TIMEOUT_MS);
 
@@ -111,7 +108,7 @@ describe('migration connection statement_timeout - effectiveness against a real 
             heldClient = await pool.connect();
         });
 
-        after(async () => {
+        afterAll(async () => {
             heldClient.release();
             await pool.end();
         });

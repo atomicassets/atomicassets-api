@@ -1,10 +1,10 @@
+import { afterAll, describe, expect } from 'vitest';
 import {getAccountsAction} from './accounts';
-import {expect} from 'chai';
 import {initAtomicAssetsTest} from '../test';
 
 describe('getAccountsAction limits', () => {
     const {client, txit} = initAtomicAssetsTest();
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 

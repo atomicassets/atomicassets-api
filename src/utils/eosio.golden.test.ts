@@ -1,6 +1,6 @@
+import { describe, expect, it } from 'vitest';
 import { objectifyNumericFloats } from '@atomichub/antelope-ship-utils';
 import { ABI, Serializer } from '@wharfkit/antelope';
-import { expect } from 'chai';
 
 import {
     deserializeEosioType,

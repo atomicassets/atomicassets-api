@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { Redis } from 'iovalkey';
 
 import RedisConnection from './redis';

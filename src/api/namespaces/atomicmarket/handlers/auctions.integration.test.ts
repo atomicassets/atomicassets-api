@@ -1,4 +1,4 @@
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 
 import {initAtomicMarketTest} from '../test';
 import {RequestValues} from '../../utils';
@@ -34,7 +34,7 @@ describe('auction handler', () => {
                 .to.deep.equal([auction.auction_id, auction2.auction_id].sort());
         });
 
-        context('with template_blacklist args', () => {
+        describe('with template_blacklist args', () => {
             txit('filter out auctions the given template matching the blacklist', async () => {
                 const auction = await client.createAuction();
                 const asset = await client.createAsset({
@@ -127,7 +127,7 @@ describe('auction handler', () => {
                 .to.deep.equal([auction2.auction_id, auction3.auction_id, auction1.auction_id]);
         });
 
-        context('sort hint', () => {
+        describe('sort hint', () => {
             // Auction filters are btree-checkable equalities, so Postgres streams the
             // ordered price index under an Incremental Sort and stops once the limit is
             // filled. An arithmetic hint on the ORDER BY would discard that plan for a full
@@ -358,7 +358,7 @@ describe('auction handler', () => {
         count: async (values) => Number(await getAuctionsCountAction({...values}, getTestContext(client))),
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });

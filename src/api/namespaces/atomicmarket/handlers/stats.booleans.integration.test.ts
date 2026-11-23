@@ -1,5 +1,4 @@
-import 'mocha';
-import {expect} from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 import express from 'express';
 import bodyParser from 'body-parser';
 import request from 'supertest';
@@ -53,5 +52,5 @@ describe('AtomicMarket template stats boolean filters', () => {
         }
     }
 
-    after(async () => await client.end());
+    afterAll(async () => await client.end());
 });

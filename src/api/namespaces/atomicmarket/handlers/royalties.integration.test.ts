@@ -1,5 +1,4 @@
-import 'mocha';
-import { expect } from 'chai';
+import { afterAll, describe, expect } from 'vitest';
 
 import { initAtomicMarketTest } from '../test';
 import { RequestValues } from '../../utils';
@@ -262,7 +261,7 @@ describe('AtomicMarket Royalties API', () => {
         });
     });
 
-    after(async () => {
+    afterAll(async () => {
         await client.end();
     });
 });
