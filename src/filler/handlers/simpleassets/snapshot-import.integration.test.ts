@@ -6,11 +6,10 @@ import * as os from 'os';
 import * as path from 'path';
 import { Client } from 'pg';
 import { getTestPostgresConfig } from '../../../utils/test';
-import { createBlock, createTx, createActionTrace, createTestTransaction } from '../test-helper';
+import { createBlock, createTx, createActionTrace, createTestTransaction, createMockModuleLoader } from '../test-helper';
 import { importSimpleAssetsSnapshot, runSnapshotImport, SnapshotImportOptions } from './snapshot-import';
 import { assetProcessor } from './processors/assets';
 import DataProcessor, { ProcessingState } from '../../processor';
-import { ModuleLoader } from '../../modules';
 import logger from '../../../utils/winston';
 
 const SA = 'simpleassets';
@@ -31,15 +30,6 @@ const AA_ASSETS: AaAsset[] = [
     { id: '1099511627004', minter: 'gpkcrashpack', block: S - 10 },
     { id: '1099511627005', minter: BRIDGE, block: S - 5 },
 ];
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
-}
 
 describe('simpleassets snapshot import', () => {
     let client: Client;

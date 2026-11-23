@@ -1,7 +1,7 @@
 import { buildBoundaryFilter, RequestValues } from '../../utils';
 import { AtomicMarketContext } from '../index';
 import QueryBuilder from '../../../builder';
-import { buildTemplateBuyofferFilter } from '../utils';
+import { buildEffectiveMintSort, buildTemplateBuyofferFilter, TEMPLATE_BUYOFFER_ASSETS_MINT_SOURCE } from '../utils';
 import { buildGreylistFilter } from '../../atomicassets/utils';
 import { fillTemplateBuyoffers } from '../filler';
 import { formatTemplateBuyoffer } from '../format';
@@ -12,13 +12,13 @@ import { filterQueryArgs } from '../../validation';
 export async function getTemplateBuyOffersAction(params: RequestValues, ctx: AtomicMarketContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.buyoffers || 100;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {
             type: 'string',
             allowedValues: [
                 'created', 'updated', 'buyoffer_id', 'price',
-                'template_mint', 'name',
+                'template_mint', 'effective_mint', 'name',
             ],
             default: 'created'
         },
@@ -50,6 +50,11 @@ export async function getTemplateBuyOffersAction(params: RequestValues, ctx: Ato
         args.sort === 'updated' ? 'listing.updated_at_time' : 'listing.created_at_time'
     );
 
+    // Added before the count so the count equals the rows this sort can return.
+    const effectiveMintColumn = args.sort === 'effective_mint'
+        ? await buildEffectiveMintSort(params, query, TEMPLATE_BUYOFFER_ASSETS_MINT_SOURCE)
+        : '';
+
     if (args.count) {
         const countQuery = await ctx.db.query(
             'SELECT COUNT(*) counter FROM (' + query.buildString() + ') x',
@@ -65,6 +70,7 @@ export async function getTemplateBuyOffersAction(params: RequestValues, ctx: Ato
         updated: {column: 'listing.updated_at_time', nullable: false},
         price: {column: 'listing.price', nullable: false},
         template_mint: {column: 'LOWER(listing.template_mint)', nullable: true},
+        effective_mint: {column: effectiveMintColumn, nullable: false},
         name: {column: '(COALESCE(template.mutable_data, \'{}\') || COALESCE(asset.mutable_data, \'{}\') || COALESCE(asset.immutable_data, \'{}\') || COALESCE(template.immutable_data, \'{}\'))->>\'name\'', nullable: true},
     };
 
@@ -122,7 +128,7 @@ export async function getTemplateBuyOfferLogsAction(params: RequestValues, ctx: 
     const maxLimit = ctx.coreArgs.limits?.logs || 100;
     const args = await filterQueryArgs({...ctx.pathParams, ...params}, {
         buyoffer_id: {type: 'id'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'asc'},
         action_whitelist: {type: 'string[]', min: 1},

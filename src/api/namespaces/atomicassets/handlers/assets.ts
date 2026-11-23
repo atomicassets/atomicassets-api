@@ -45,10 +45,10 @@ export async function buildAssetQueryCondition(
         has_backed_tokens: {type: 'bool'},
         has_template_buyoffer: {type: 'bool'},
 
-        template_mint: {type: 'int', min: 1},
+        template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
-        min_template_mint: {type: 'int', min: 1},
-        max_template_mint: {type: 'int', min: 1},
+        min_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
+        max_template_mint: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER},
 
         template_blacklist: {type: 'list[id]'},
         template_whitelist: {type: 'list[id]'}
@@ -286,7 +286,7 @@ export async function getRawAssetsAction(
     const {search, match, ...params} = values;
     const maxLimit = ctx.coreArgs.limits?.assets || 1000;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {type: 'string', min: 1},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'desc'},
@@ -592,7 +592,7 @@ export async function getAssetLogsAction(params: RequestValues, ctx: AtomicAsset
     const maxLimit = ctx.coreArgs.limits?.logs || 100;
     const args = await filterQueryArgs({...ctx.pathParams, ...params}, {
         asset_id: {type: 'id'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'asc'},
         action_whitelist: {type: 'string[]', min: 1},

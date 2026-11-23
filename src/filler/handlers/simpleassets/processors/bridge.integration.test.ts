@@ -3,18 +3,18 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createBlock,
-    createTx,
     createActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
 } from '../../test-helper';
 import { assetProcessor } from './assets';
 import { bridgeProcessor } from './bridge';
 import SimpleAssetsHandler from '../index';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { ModuleLoader } from '../../../modules';
 import { EosioActionTrace } from '../../../../types/eosio';
 import logger from '../../../../utils/winston';
 
@@ -36,15 +36,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 // The attribute map form a logmint trace carries after ABI deserialization.

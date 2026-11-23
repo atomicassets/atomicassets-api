@@ -2,31 +2,22 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
     createBlock,
     createContractRow,
-    processContractRow,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    processContractRow,
 } from '../../test-helper';
 import { configProcessor } from './config';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { ConfigTableRow } from '../types/tables';
 import { marketDissolvesBundles } from '../legacy-bundles';
-import { ModuleLoader } from '../../../modules';
 
 const MARKET_CONTRACT = 'atomicmarket';
 const READER_NAME = 'test-reader';
 const ASSETS_CONTRACT = 'atomicassets';
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
-}
 
 function createConfigValue(version: string): ConfigTableRow {
     return {

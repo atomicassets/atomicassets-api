@@ -2,13 +2,14 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createBlock,
-    createTx,
     createActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createProcessorTestContext,
+    createTestTransaction,
+    createTx,
     processActionTrace,
     processContractRow,
-    createTestTransaction,
 } from '../../test-helper';
 import { royaltyProcessor } from './royalties';
 import { logProcessor } from './logs';
@@ -22,7 +23,6 @@ import {
     LogRoyaltyTemplateActionData,
 } from '../types/actions';
 import { RoyaltyAttrTableRow, RoyaltyConfTableRow, RoyaltyTempTableRow } from '../types/tables';
-import { ModuleLoader } from '../../../modules';
 
 const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
@@ -37,15 +37,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 describe('royaltyProcessor', () => {

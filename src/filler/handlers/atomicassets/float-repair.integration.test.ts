@@ -3,9 +3,8 @@ import { expect } from 'chai';
 import { Client, Pool } from 'pg';
 
 import { getTestPostgresConfig } from '../../../utils/test';
-import { createMockNotifier } from '../test-helper';
+import { createMockNotifier, createMockModuleLoader } from '../test-helper';
 import DataProcessor, { ProcessingState } from '../../processor';
-import { ModuleLoader } from '../../modules';
 import AtomicAssetsHandler from './index';
 import {
     clearFloatRepairState,
@@ -94,15 +93,6 @@ const ASSETS: AssetSeed[] = [
         immutable_data: '{}',
     },
 ];
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore - override private field
-    loader.modules = [];
-    // @ts-ignore - override readonly field
-    loader.names = [];
-    return loader;
-}
 
 describe('atomicassets float attribute repair', () => {
     let client: Client;

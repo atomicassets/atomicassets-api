@@ -205,6 +205,33 @@ describe('filterQueryArgs', () => {
 
     describe('bool type', () => {
 
+        for (const value of [true, 'true', false, 'false']) {
+            it(`parses ${JSON.stringify(value)} instead of using the opposite default`, async () => {
+                const expected = value === true || value === 'true';
+                const {a} = await filterQueryArgs({a: value}, {a: {type: 'bool', default: !expected}});
+                expect(a).to.equal(expected);
+            });
+        }
+
+        it('preserves defaults for omitted, empty and unsupported non-string inputs', async () => {
+            for (const value of [undefined, null, '', 'empty', 0, 1, {}, [], ['true']]) {
+                for (const defaultValue of [undefined, false, true]) {
+                    const {a} = await filterQueryArgs({a: value}, {a: {type: 'bool', default: defaultValue}});
+                    expect(a).to.equal(defaultValue);
+                }
+            }
+            expect(await filterQueryArgs({}, {a: {type: 'bool', default: false}})).to.deep.equal({a: false});
+        });
+
+        it('keeps native booleans on other filter types on their existing default path', async () => {
+            for (const value of [true, false]) {
+                expect(await filterQueryArgs({a: value}, {a: {type: 'string', default: 'default'}}))
+                    .to.deep.equal({a: 'default'});
+                expect(await filterQueryArgs({a: value}, {a: {type: 'bool[]'}}))
+                    .to.deep.equal({a: []});
+            }
+        });
+
         it('allows valid bool values', async () => {
             for (const value of ['true', '1', 'false', '0']) {
                 const {a} = await filterQueryArgs({a: value}, {a: {type: 'bool'}});

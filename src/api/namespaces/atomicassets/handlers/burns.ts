@@ -64,7 +64,7 @@ function burnsQueryNeedsTemplateJoin(params: RequestValues): boolean {
 export async function getBurnsAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.burns || 5000;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
 
         match_owner: {type: 'name'},

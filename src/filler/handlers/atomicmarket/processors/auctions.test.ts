@@ -4,6 +4,7 @@ import { expect } from 'chai';
 import {
     createActionTrace,
     createBlock,
+    createMockModuleLoader,
     createRecordingNotifier,
     createStubTransaction,
     createTx,
@@ -11,22 +12,12 @@ import {
     StubTransaction,
 } from '../../test-helper';
 import DataProcessor, { ProcessingState } from '../../../processor';
-import { ModuleLoader } from '../../../modules';
 import { auctionProcessor } from './auctions';
 import { AuctionState } from '../index';
 import { AuctionBidActionData } from '../types/actions';
 
 const MARKET_CONTRACT = 'atomicmarket';
 const ASSETS_CONTRACT = 'atomicassets';
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
-}
 
 function createMockCore(version: string): any {
     return {

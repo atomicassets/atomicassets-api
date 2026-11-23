@@ -3,17 +3,17 @@ import { expect } from 'chai';
 import * as sinon from 'sinon';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
-    createBlock,
-    createTx,
     createActionTrace,
+    createBlock,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    createTx,
 } from '../../test-helper';
 import { assetProcessor } from './assets';
 import SimpleAssetsHandler from '../index';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
-import { ModuleLoader } from '../../../modules';
 import { ShipBlock } from '../../../../types/ship';
 import logger from '../../../../utils/winston';
 
@@ -31,15 +31,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             ...overrides,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 function blockAt(blockNum: number): ShipBlock {
@@ -414,6 +405,29 @@ describe('simpleassets assetProcessor', () => {
                 'SELECT sender, recipient FROM simpleassets_transfers WHERE contract = $1', [CONTRACT]
             );
             expect(transfers.rows).to.deep.equal([{ sender: 'alice', recipient: 'bob' }]);
+        });
+    });
+
+    describe('transfer record', () => {
+        it('records the sender, the recipient, the memo cut to 256 characters and each asset when store_transfers is on', async () => {
+            register({ store_transfers: true });
+            await seedAsset('600', { owner: 'alice' });
+            await seedAsset('601', { owner: 'alice' });
+
+            await runBatch([{
+                block: blockAt(6000), name: 'transfer',
+                data: { from: 'alice', to: 'bob', assetids: ['600', '601'], memo: 'm'.repeat(300) }
+            }]);
+
+            const transfers = await client.query(
+                'SELECT sender, recipient, memo FROM simpleassets_transfers WHERE contract = $1', [CONTRACT]
+            );
+            expect(transfers.rows).to.deep.equal([{ sender: 'alice', recipient: 'bob', memo: 'm'.repeat(256) }]);
+
+            const assets = await client.query(
+                'SELECT asset_id, "index" FROM simpleassets_transfers_assets WHERE contract = $1 ORDER BY "index"', [CONTRACT]
+            );
+            expect(assets.rows.map(row => [String(row.asset_id), Number(row.index)])).to.deep.equal([['600', 1], ['601', 2]]);
         });
     });
 

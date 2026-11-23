@@ -10,7 +10,7 @@ import { filterQueryArgs } from '../../validation';
 export async function getTemplatesAction(params: RequestValues, ctx: AtomicAssetsContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.templates || 1000;
     const args = await filterQueryArgs(params, {
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         sort: {type: 'string', allowedValues: ['created', 'name'], default: 'created'},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'desc'},
@@ -19,13 +19,13 @@ export async function getTemplatesAction(params: RequestValues, ctx: AtomicAsset
         schema_name: {type: 'list[name]'},
         authorized_account: {type: 'name'},
 
-        issued_supply: {type: 'int', min: 0},
-        min_issued_supply: {type: 'int', min: 0},
-        max_issued_supply: {type: 'int', min: 0},
+        issued_supply: {type: 'int', min: 0, max: Number.MAX_SAFE_INTEGER},
+        min_issued_supply: {type: 'int', min: 0, max: Number.MAX_SAFE_INTEGER},
+        max_issued_supply: {type: 'int', min: 0, max: Number.MAX_SAFE_INTEGER},
         has_assets: {type: 'bool'},
         include_deleted: {type: 'bool'},
 
-        max_supply: {type: 'int', min: 0},
+        max_supply: {type: 'int', min: 0, max: Number.MAX_SAFE_INTEGER},
         is_transferable: {type: 'bool'},
         is_burnable: {type: 'bool'},
 
@@ -186,7 +186,7 @@ export async function getTemplateLogsAction(params: RequestValues, ctx: AtomicAs
     const maxLimit = ctx.coreArgs.limits?.logs || 100;
     const args = await filterQueryArgs({...ctx.pathParams, ...params}, {
         template_id: {type: 'id'},
-        page: {type: 'int', min: 1, default: 1},
+        page: {type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1},
         limit: {type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100)},
         order: {type: 'string', allowedValues: ['asc', 'desc'], default: 'asc'},
         action_whitelist: {type: 'string[]', min: 1},

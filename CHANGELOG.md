@@ -10,6 +10,51 @@ order; the entry is the editorial text of the version's GitHub Release. The 1.7
 maintenance line continues in `CHANGELOG.md` on the `release/1.7` branch. This
 project follows semantic versioning.
 
+## [2.7.0]
+
+Moves the update time of a trade offer when the offer turns invalid.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.7.0`. The `2.7` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- `updated_at_time` and `updated_at_block` of an offer in `/v1/offers` now move to the block of the transfer or the burn of an offer asset when the offer turns invalid. Before, the offer turned invalid with no change to either value, so a reader that sorts or filters offers by update time never saw it. An offer that turns pending again after its assets return keeps the two values of the invalidation block. (#243)
+- When the filler commits several blocks in one transaction during catch-up, the two values of an offer that turns invalid are those of the newest block of that transaction with an asset transfer or burn. (#243)
+
+## [2.6.1]
+
+Refuses an integer request parameter above the safe integer range with a 400 response.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.1`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Bug fixes
+
+- An integer request parameter with a value above `Number.MAX_SAFE_INTEGER` now returns 400. Before, such a value passed the validation of the template mint filters of the asset and market endpoints, the asset count filters of the market endpoints, the supply filters of `/v1/templates`, the `before` and `after` filters, the integer forms of `lower_bound` and `upper_bound`, `page`, and the `limit` of the asset sales history. The database then refused the value, and the request ended with a 500 response and a warn log line.
+
+## [2.6.0]
+
+Adds an effective mint filter and sort to the market listing endpoints, so a client can range over the mint of a bridged asset and of a plain asset with one parameter.
+
+### Upgrading
+
+- Image `ghcr.io/atomicassets/atomicassets-api:2.6.0`. The `2.6` and `latest` tags move to it.
+- The release has no migration and needs no operator action.
+
+### Features
+
+- `/v0/sales`, `/v1/sales`, `/v2/sales`, `/v1/auctions`, `/v1/buyoffers` and `/v1/template_buyoffers` accept `min_effective_mint` and `max_effective_mint`, and `/v1/sales/templates` accepts the two filters. Each is an integer from 1 up to `Number.MAX_SAFE_INTEGER`, either one alone is valid, and a minimum above the maximum returns 400. (#234)
+- The effective mint of an asset is its `original_mint` from `atomicassets_original_mints` when a link row with a mint number exists, else its template mint. An asset with neither is ignored. A listing matches when at least one of its assets has an effective mint and every such asset lies in the range, so a listing of an asset with no link is still found by its template mint. (#234)
+- The listing endpoints above, except `/v1/sales/templates`, accept `sort=effective_mint`, which orders by the lowest effective mint of the listing. It returns only listings where an asset has an effective mint, with or without a bound, and the matching `_count` endpoint counts the same listings. (#234)
+- A request that uses `min_effective_mint`, `max_effective_mint` or `sort=effective_mint` needs `collection_name` and returns 400 without it, because without that scope each listing needs its own lookup of the link table. The `template_mint` filters and sorts keep their queries. (#234)
+- A request that uses one of these three parameters also returns 400 with more than 50 collection names, counted before deduplication, because a longer list leaves the indexed filter path of `/v2/sales`. A request without these parameters accepts any number of names. (#235)
+- For a listing with no linked asset, the effective mint filters and sort read the stored template mint range of the listing, the value the `template_mint` filter reads, so the cost does not grow with the asset rows of an unlinked collection. A listing with a linked asset still reads the mint of each of its assets. A listing whose stored range is not written yet reads the mint of each of its assets. On `/v2/sales` the stored range follows a change of an asset mint after the filter table refresh, as for the `template_mint` filter. (#235)
+
 ## [2.5.0]
 
 Serves the original mint of a bridged asset, with filters, a sort and per-card totals, from a `simpleassets` handler that numbers the source assets and links each bridged asset to its source.

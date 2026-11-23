@@ -2,17 +2,17 @@ import 'mocha';
 import { expect } from 'chai';
 import { Client } from 'pg';
 import {
-    createProcessorTestContext,
     createBlock,
     createContractRow,
-    processContractRow,
+    createMockModuleLoader,
+    createProcessorTestContext,
     createTestTransaction,
+    processContractRow,
 } from '../../test-helper';
 import { schemaProcessor } from './schemas';
 import DataProcessor, { ProcessingState } from '../../../processor';
 import { ContractDBTransaction } from '../../../database';
 import { SchemaTypesTableRow, SchemasTableRow } from '@atomichub/atomicassets';
-import { ModuleLoader } from '../../../modules';
 
 const CONTRACT = 'atomicassets';
 const COLLECTION = 'schemacol111';
@@ -33,15 +33,6 @@ function createMockCore(overrides: Record<string, any> = {}): any {
             offer_counter: 0,
         },
     };
-}
-
-function createMockModuleLoader(): ModuleLoader {
-    const loader = Object.create(ModuleLoader.prototype) as ModuleLoader;
-    // @ts-ignore
-    loader.modules = [];
-    // @ts-ignore
-    loader.names = [];
-    return loader;
 }
 
 describe('schemaProcessor', () => {

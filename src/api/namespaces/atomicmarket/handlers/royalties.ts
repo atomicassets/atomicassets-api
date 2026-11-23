@@ -73,7 +73,7 @@ export async function getRoyaltyTemplateRulesAction(params: RequestValues, ctx: 
     const args = await filterQueryArgs(params, {
         template_id: { type: 'list[id]' },
 
-        page: { type: 'int', min: 1, default: 1 },
+        page: { type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1 },
         limit: { type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100) },
     });
 
@@ -97,10 +97,10 @@ export async function getRoyaltyTemplateRulesAction(params: RequestValues, ctx: 
 export async function getRoyaltyAttributeRulesAction(params: RequestValues, ctx: AtomicMarketContext): Promise<any> {
     const maxLimit = ctx.coreArgs.limits?.royalties || 100;
     const args = await filterQueryArgs(params, {
-        source: { type: 'int', min: 0 },
+        source: { type: 'int', min: 0, max: Number.MAX_SAFE_INTEGER },
         field: { type: 'string', min: 1 },
 
-        page: { type: 'int', min: 1, default: 1 },
+        page: { type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1 },
         limit: { type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100) },
     });
 
@@ -142,7 +142,7 @@ export async function getRoyaltyPayoutsAction(params: RequestValues, ctx: Atomic
         listing_id: { type: 'id' },
         category: { type: 'list[string]', allowedValues: Object.keys(PAYOUT_CATEGORY_BY_NAME) },
 
-        page: { type: 'int', min: 1, default: 1 },
+        page: { type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER, default: 1 },
         limit: { type: 'int', min: 1, max: maxLimit, default: Math.min(maxLimit, 100) },
         sort: { type: 'string', allowedValues: ['created', 'amount'], default: 'created' },
         order: { type: 'string', allowedValues: ['asc', 'desc'], default: 'desc' },
@@ -229,8 +229,8 @@ export async function getRoyaltyAccountAction(params: RequestValues, ctx: Atomic
     const args = await filterQueryArgs(params, {
         collection_name: { type: 'list[name]' },
         symbol: { type: 'string', min: 1 },
-        before: { type: 'int', min: 1 },
-        after: { type: 'int', min: 1 },
+        before: { type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER },
+        after: { type: 'int', min: 1, max: Number.MAX_SAFE_INTEGER },
     });
 
     const query = new QueryBuilder(`
