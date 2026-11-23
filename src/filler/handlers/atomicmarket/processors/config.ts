@@ -41,6 +41,9 @@ export function configProcessor(core: AtomicMarketHandler, processor: DataProces
                 }, ['market_contract']);
             }
 
+            // Catalog rows outlive removal from config, and init() seeds them from
+            // current RPC state before historical replay. Re-additions can therefore
+            // already exist; retain those rows just as startup seeding does.
             if (core.config.supported_tokens.length !== delta.value.supported_tokens.length) {
                 const tokens = core.config.supported_tokens.map(row => row.token_symbol.split(',')[1]);
 
@@ -53,7 +56,7 @@ export function configProcessor(core: AtomicMarketHandler, processor: DataProces
                             token_contract: token.token_contract,
                             token_symbol: token.token_symbol.split(',')[1],
                             token_precision: token.token_symbol.split(',')[0]
-                        }, ['market_contract', 'token_symbol']);
+                        }, ['market_contract', 'token_symbol'], true, true, 'nothing');
                     } else {
                         tokens.splice(index, 1);
                     }
@@ -80,7 +83,7 @@ export function configProcessor(core: AtomicMarketHandler, processor: DataProces
                             delphi_contract: delta.value.delphioracle_account,
                             delphi_pair_name: pair.delphi_pair_name,
                             invert_delphi_pair: pair.invert_delphi_pair
-                        }, ['market_contract', 'listing_symbol', 'settlement_symbol']);
+                        }, ['market_contract', 'listing_symbol', 'settlement_symbol'], true, true, 'nothing');
                     } else {
                         pairs.splice(index, 1);
                     }
