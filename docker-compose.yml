@@ -13,6 +13,8 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # Allow the image's SIGINT shutdown to finish its checkpoint before SIGKILL.
+    stop_grace_period: 120s
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: changeme
@@ -24,6 +26,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   valkey:
@@ -58,6 +61,7 @@ services:
 
   filler:
     build: .
+    stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,6 +78,7 @@ services:
 
   server:
     build: .
+    stop_grace_period: 60s
     depends_on:
       postgres:
         condition: service_healthy

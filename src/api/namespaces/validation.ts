@@ -155,6 +155,11 @@ export async function filterQueryArgs<T extends FiltersDefinition>(values: {[K i
 
         const {array} = parseTypeString(currentFilter.type);
 
+        if (currentFilter.type === 'bool' && typeof currentValue === 'boolean') {
+            result[key] = currentValue;
+            continue;
+        }
+
         if (typeof currentValue !== 'string' || currentValue === '') {
             if (array && !Array.isArray(filter[key].default)) {
                 result[key] = [];
